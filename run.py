@@ -42,7 +42,7 @@ def setup_logging(data_dir_name):
             logging.StreamHandler()
         ]
     )
-    logging.info("log 기록 시작.")
+    logging.info(f"로그 파일이 '{log_filename}'에 저장됩니다.")
     return run_dir_path
 
 # =============================================================================
