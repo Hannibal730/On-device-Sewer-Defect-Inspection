@@ -43,7 +43,7 @@ model:
 
   # --- CATS 모델 설정 ---
   cats:
-    featured_patch_dim: 32     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원(dimension).
+    featured_patch_dim: 24     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원(dimension).
     emb_dim: 24                # CATS 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원(d_model).
     n_heads: 4                 # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `n_heads`로 나누어 떨어져야 합니다.
     d_layers: 2                # CATS 모델 내부의 트랜스포머 디코더 레이어 수.

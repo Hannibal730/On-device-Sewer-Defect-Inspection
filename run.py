@@ -23,24 +23,27 @@ from CATS import Model as CatsDecoder
 # =============================================================================
 # 1. 로깅 설정
 # =============================================================================
-def setup_logging(data_dir):
+def setup_logging(data_dir_name):
     """로그 파일을 log 폴더에 생성하고, 콘솔에도 함께 출력하도록 설정합니다."""
-    data_dir_name = os.path.basename(os.path.normpath(data_dir))
-    log_dir = os.path.join("log", data_dir_name)
-    os.makedirs(log_dir, exist_ok=True)
-    
+    # 각 실행을 위한 고유한 디렉토리 생성
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = os.path.join(log_dir, f"log_{timestamp}.log")
+    run_dir_name = f"run_{timestamp}"
+    run_dir_path = os.path.join("log", data_dir_name, run_dir_name)
+    os.makedirs(run_dir_path, exist_ok=True)
+    
+    # 로그 파일 경로 설정
+    log_filename = os.path.join(run_dir_path, f"log_{timestamp}.log")
     
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_filename),
+            logging.FileHandler(log_filename, encoding='utf-8'),
             logging.StreamHandler()
         ]
     )
     logging.info("log 기록 시작.")
+    return run_dir_path
 
 # =============================================================================
 # 2. 이미지 인코더 모델 정의
@@ -236,15 +239,13 @@ def evaluate(model, data_loader, device, desc="Evaluating", class_names=None):
 
     return f1
 
-def train(run_cfg, train_cfg, model, train_loader, valid_loader, device):
+def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir_path):
     """모델 훈련 및 평가를 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("훈련 모드를 시작합니다.")
     
-    data_dir_name = os.path.basename(os.path.normpath(os.path.dirname(run_cfg.train_img_dir)))
-    checkpoints_dir = os.path.join("checkpoints", data_dir_name)
-    os.makedirs(checkpoints_dir, exist_ok=True)
-    model_path = os.path.join(checkpoints_dir, run_cfg.model_path)
-    
+    # 모델 저장 경로를 실행별 디렉토리로 설정
+    model_path = os.path.join(run_dir_path, run_cfg.model_path)
+
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
     
@@ -286,14 +287,14 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device):
             torch.save(model.state_dict(), model_path)
             logging.info(f"최고 성능 모델 저장 완료 (F1 Score: {best_f1:.4f}) -> '{model_path}'")
 
-def inference(run_cfg, model_cfg, model, data_loader, device, mode_name="추론"):
+def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode_name="추론"):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
-    data_dir_name = os.path.basename(os.path.normpath(os.path.dirname(run_cfg.train_img_dir)))
-    model_path = os.path.join("checkpoints", data_dir_name, run_cfg.model_path)
+    # 훈련 시 사용된 모델 경로를 불러옴
+    model_path = os.path.join(run_dir_path, run_cfg.model_path)
     if not os.path.exists(model_path):
-        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 먼저 훈련을 실행하세요.")
+        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'run.yaml'의 'run_dir_for_inference' 설정이 올바른지 확인하세요.")
         return
 
     try:
@@ -451,7 +452,19 @@ if __name__ == '__main__':
     model_cfg = SimpleNamespace(**config['model'])
     cats_cfg = SimpleNamespace(**model_cfg.cats)
 
-    setup_logging(os.path.basename(os.path.dirname(run_cfg.train_img_dir)))
+    data_dir_name = os.path.basename(os.path.normpath(os.path.dirname(run_cfg.train_img_dir)))
+
+    # --- 실행 디렉토리 설정 ---
+    if run_cfg.mode == 'train':
+        # 훈련 모드: 새로운 실행 디렉토리 생성
+        run_dir_path = setup_logging(data_dir_name)
+    elif run_cfg.mode == 'inference':
+        # 추론 모드: 지정된 실행 디렉토리 사용
+        run_dir_path = getattr(run_cfg, 'run_dir_for_inference', None)
+        if not run_dir_path or not os.path.isdir(run_dir_path):
+            logging.error("추론 모드에서는 'run.yaml'에 'run_dir_for_inference'를 올바르게 설정해야 합니다.")
+            exit()
+        setup_logging(data_dir_name) # 로깅만 설정, 경로는 사용 안함
     
     # --- 설정 파일 내용 로깅 ---
     config_str = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -499,11 +512,11 @@ if __name__ == '__main__':
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
         # 훈련 시에는 train_loader와 valid_loader 사용
-        train(run_cfg, train_cfg, model, train_loader, valid_loader, device)
+        train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir_path)
         
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        inference(run_cfg, model_cfg, model, test_loader, device, mode_name="Final Evaluation")
+        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Final Evaluation")
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
-        inference(run_cfg, model_cfg, model, test_loader, device, mode_name="Inference")
+        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Inference")
