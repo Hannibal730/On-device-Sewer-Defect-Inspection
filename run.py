@@ -259,27 +259,14 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
 
     return accuracy, f1, all_labels, all_preds
 
-def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir_path):
+def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path):
     """모델 훈련 및 평가를 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("훈련 모드를 시작합니다.")
     
     # 모델 저장 경로를 실행별 디렉토리로 설정
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
 
-    criterion = nn.CrossEntropyLoss()
-
-    # --- 옵티마이저 및 스케줄러 설정 ---
-    # run.yaml의 schedulefree 설정에 따라 옵티마이저를 선택합니다.
-    use_schedulefree = getattr(train_cfg, 'schedulefree', False)
-    if use_schedulefree:
-        logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
-        optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
-        scheduler = None # schedulefree는 스케줄러가 필요 없음
-    else:
-        logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
-        optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
-        scheduler = None # 스케줄러를 사용하지 않음
-    
+    criterion = nn.CrossEntropyLoss()    
     best_f1 = 0.0
 
     for epoch in range(train_cfg.epochs):
@@ -308,16 +295,16 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir
             correct += (predicted == labels).sum().item()
             
             # tqdm 프로그레스 바에 현재 loss 표시
-            progress_bar.set_postfix(loss=f"{loss.item():.4f}")
+            step_lr = optimizer.param_groups[0]['lr']
+            progress_bar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{step_lr:.6f}")
 
         # 현재 학습률 가져오기
         current_lr = optimizer.param_groups[0]['lr']
-
         train_acc = 100 * correct / total
         logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}% | LR: {current_lr:.6f}')
         
         # --- 평가 단계 ---
-        _, f1, _, _ = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
+        _, f1, _, _ = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", run_dir_path=run_dir_path)
         
         # 최고 성능 모델 저장
         if f1 > best_f1:
@@ -563,10 +550,22 @@ if __name__ == '__main__':
     # 모델 생성 후 파라미터 수 로깅
     log_model_parameters(model)
     
+    # --- 옵티마이저 및 스케줄러 설정 ---
+    # run.yaml의 schedulefree 설정에 따라 옵티마이저를 선택합니다.
+    use_schedulefree = getattr(train_cfg, 'schedulefree', False)
+    if use_schedulefree:
+        logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
+        optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
+        scheduler = None # schedulefree는 스케줄러가 필요 없음
+    else:
+        logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
+        optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
+        scheduler = None # 스케줄러를 사용하지 않음
+
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
         # 훈련 시에는 train_loader와 valid_loader 사용
-        train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir_path)
+        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path)
         
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
