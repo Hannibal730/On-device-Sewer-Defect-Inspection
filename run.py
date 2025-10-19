@@ -20,6 +20,9 @@ from datetime import datetime
 # CATS 모델 아키텍처 임포트
 from CATS import Model as CatsDecoder
 
+# 그래프 플로팅 함수 임포트
+from plot import plot_and_save_accuracy_graph
+
 # =============================================================================
 # 1. 로깅 설정
 # =============================================================================
@@ -237,7 +240,7 @@ def evaluate(model, data_loader, device, desc="Evaluating", class_names=None):
     
     logging.info(f'{desc} | Acc: {accuracy:.2f}% | Precision: {precision:.4f} | Recall: {recall:.4f} | F1 Score: {f1:.4f}')
 
-    return f1
+    return accuracy, f1
 
 def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir_path):
     """모델 훈련 및 평가를 수행하고 최고 성능 모델을 저장합니다."""
@@ -279,7 +282,7 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir
         logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
         
         # --- 평가 단계 ---
-        f1 = evaluate(model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
+        _, f1 = evaluate(model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
         
         # 최고 성능 모델 저장
         if f1 > best_f1:
@@ -293,7 +296,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode
     
     # 훈련 시 사용된 모델 경로를 불러옴
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
-    if not os.path.exists(model_path):
+    if not os.path.exists(model_path) and mode_name != "Final Evaluation":
         logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'run.yaml'의 'run_dir_for_inference' 설정이 올바른지 확인하세요.")
         return
 
@@ -323,7 +326,8 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
     # 2. 테스트셋 성능 평가
-    evaluate(model, data_loader, device, desc=f"[{mode_name}]")
+    final_acc, _ = evaluate(model, data_loader, device, desc=f"[{mode_name}]")
+    return final_acc
 
 # =============================================================================
 # 4. 데이터 준비 함수
@@ -448,6 +452,7 @@ if __name__ == '__main__':
     # SimpleNamespace를 사용하여 딕셔너리처럼 접근 가능하게 변환
     run_cfg = SimpleNamespace(**config['run'])
     train_cfg = SimpleNamespace(**config['training'])
+    # model_cfg와 cats_cfg는 model_cfg 내부에 cats가 포함된 구조이므로 아래와 같이 파싱
     model_cfg = SimpleNamespace(**config['model'])
     cats_cfg = SimpleNamespace(**model_cfg.cats)
 
@@ -456,14 +461,15 @@ if __name__ == '__main__':
     # --- 실행 디렉토리 설정 ---
     if run_cfg.mode == 'train':
         # 훈련 모드: 새로운 실행 디렉토리 생성
-        run_dir_path = setup_logging(data_dir_name)
+        run_dir_path = setup_logging(data_dir_name) # 여기서 run_dir_path가 반환됨
     elif run_cfg.mode == 'inference':
         # 추론 모드: 지정된 실행 디렉토리 사용
         run_dir_path = getattr(run_cfg, 'run_dir_for_inference', None)
         if not run_dir_path or not os.path.isdir(run_dir_path):
             logging.error("추론 모드에서는 'run.yaml'에 'run_dir_for_inference'를 올바르게 설정해야 합니다.")
             exit()
-        setup_logging(data_dir_name) # 로깅만 설정, 경로는 사용 안함
+        # 로깅 설정은 하지만, run_dir_path는 yaml에서 읽은 값을 사용
+        _ = setup_logging(data_dir_name)
     
     # --- 설정 파일 내용 로깅 ---
     config_str = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -519,7 +525,15 @@ if __name__ == '__main__':
         
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Final Evaluation")
+        final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Final Evaluation")
+
+        # --- 그래프 생성 ---
+        # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함
+        log_filename = f"log_{os.path.basename(run_dir_path).replace('run_', '')}.log"
+        log_file_path = os.path.join(run_dir_path, log_filename)
+        if final_acc is not None:
+            plot_and_save_accuracy_graph(log_file_path, run_dir_path, final_acc)
+
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
         inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Inference")
