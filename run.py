@@ -312,16 +312,15 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
-    
-    with torch.no_grad():
-        output = model(dummy_input)
         
-    if torch.cuda.is_available():
+        with torch.no_grad():
+            output = model(dummy_input)
+            
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
         logging.info(f"추론 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
-        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정할 수 없습니다.")
+        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
     # 2. 테스트셋 성능 평가
     evaluate(model, data_loader, device, desc=f"[{mode_name}]")
@@ -421,9 +420,9 @@ def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
             test_dataset = full_test_dataset
 
         # DataLoader 생성
-        train_loader = DataLoader(train_dataset, batch_size=train_cfg.batch_size, shuffle=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=train_cfg.batch_size, shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=train_cfg.batch_size, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=train_cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+        test_loader = DataLoader(test_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=4, pin_memory=True)
         
         logging.info(f"훈련 데이터: {len(train_dataset)}개, 검증 데이터: {len(valid_dataset)}개, 테스트 데이터: {len(test_dataset)}개")
         
@@ -475,6 +474,10 @@ if __name__ == '__main__':
     
     # --- 공통 파라미터 설정 ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == 'cuda':
+        logging.info(f"CUDA 사용 가능. GPU를 사용하여 훈련을 시작합니다. (Device: {torch.cuda.get_device_name(0)})")
+    else:
+        logging.info("CUDA 사용 불가능. CPU를 사용하여 훈련을 시작합니다.")
 
     # --- 데이터 준비 ---
     train_loader, valid_loader, test_loader, num_labels, class_names = prepare_data(run_cfg, train_cfg, model_cfg, "Sewer-ML")
