@@ -20,8 +20,13 @@ from datetime import datetime
 # CATS 모델 아키텍처 임포트
 from CATS import Model as CatsDecoder
 
+# Schedule-Free 옵티마이저 임포트
+import schedulefree
+
 # 그래프 플로팅 함수 임포트
 from plot import plot_and_save_accuracy_graph
+# 혼동 행렬 플로팅 함수 임포트
+from confusion_matrix import plot_and_save_confusion_matrix
 
 # =============================================================================
 # 1. 로깅 설정
@@ -208,7 +213,7 @@ def log_model_parameters(model):
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
 
-def evaluate(model, data_loader, device, desc="Evaluating", class_names=None):
+def evaluate(model, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False, run_dir_path=None):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
     model.eval()
     correct = 0
@@ -240,7 +245,15 @@ def evaluate(model, data_loader, device, desc="Evaluating", class_names=None):
     
     logging.info(f'{desc} | Acc: {accuracy:.2f}% | Precision: {precision:.4f} | Recall: {recall:.4f} | F1 Score: {f1:.4f}')
 
-    return accuracy, f1
+    # 클래스별 F1 점수 로깅
+    if log_class_metrics and class_names:
+        f1_per_class = f1_score(all_labels, all_preds, average=None, zero_division=0)
+        logging.info("-" * 30)
+        for i, class_name in enumerate(class_names):
+            logging.info(f"  - F1 Score for '{class_name}': {f1_per_class[i]:.4f}")
+        logging.info("-" * 30)
+
+    return accuracy, f1, all_labels, all_preds
 
 def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir_path):
     """모델 훈련 및 평가를 수행하고 최고 성능 모델을 저장합니다."""
@@ -250,7 +263,18 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
+
+    # --- 옵티마이저 및 스케줄러 설정 ---
+    # run.yaml의 schedulefree 설정에 따라 옵티마이저를 선택합니다.
+    use_schedulefree = getattr(train_cfg, 'schedulefree', False)
+    if use_schedulefree:
+        logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
+        optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
+        scheduler = None # schedulefree는 스케줄러가 필요 없음
+    else:
+        logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
+        optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
+        scheduler = None # 스케줄러를 사용하지 않음
     
     best_f1 = 0.0
 
@@ -278,19 +302,26 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir
             # tqdm 프로그레스 바에 현재 loss 표시
             progress_bar.set_postfix(loss=f"{loss.item():.4f}")
 
+        # 현재 학습률 가져오기
+        current_lr = optimizer.param_groups[0]['lr']
+
         train_acc = 100 * correct / total
-        logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
+        logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}% | LR: {current_lr:.6f}')
         
         # --- 평가 단계 ---
-        _, f1 = evaluate(model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
+        _, f1, _, _ = evaluate(model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
         
         # 최고 성능 모델 저장
         if f1 > best_f1:
             best_f1 = f1
             torch.save(model.state_dict(), model_path)
             logging.info(f"최고 성능 모델 저장 완료 (F1 Score: {best_f1:.4f}) -> '{model_path}'")
+        
+        # 스케줄러가 설정된 경우에만 step()을 호출
+        if scheduler:
+            scheduler.step()
 
-def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode_name="추론"):
+def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode_name="추론", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
@@ -326,7 +357,13 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
     # 2. 테스트셋 성능 평가
-    final_acc, _ = evaluate(model, data_loader, device, desc=f"[{mode_name}]")
+    final_acc, _, all_labels, all_preds = evaluate(model, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+
+    # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
+    if mode_name == "Final Evaluation" and all_labels and all_preds:
+        cm_save_path = os.path.join(run_dir_path, 'confusion_matrix.png')
+        plot_and_save_confusion_matrix(all_labels, all_preds, class_names, cm_save_path)
+
     return final_acc
 
 # =============================================================================
@@ -525,7 +562,7 @@ if __name__ == '__main__':
         
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Final Evaluation")
+        final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Final Evaluation", class_names=class_names)
 
         # --- 그래프 생성 ---
         # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함
@@ -536,4 +573,4 @@ if __name__ == '__main__':
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
-        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Inference")
+        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Inference", class_names=class_names)

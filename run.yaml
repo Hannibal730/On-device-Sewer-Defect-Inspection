@@ -11,16 +11,17 @@ run:
   valid_csv: 'D:/Sewer-ML/SewerML_Val.csv'   # 검증 데이터 CSV
   test_csv: 'D:/Sewer-ML/SewerML_Val.csv'    # 테스트 데이터로 검증 데이터 CSV를 사용
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름.
-  sampling_ratio: 0.001 # 각 데이터셋(train/valid/test)에서 사용할 데이터 비율. 1.0이면 전체 데이터 사용.
+  sampling_ratio: 0.01 # 각 데이터셋(train/valid/test)에서 사용할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_seed: 42 # 데이터 샘플링 시 사용할 랜덤 시드. 재현성을 위해 고정합니다.
 
 # =============================================================================
 # 2. 훈련 하이퍼파라미터
 # =============================================================================
 training:
-  epochs: 10                 
+  epochs: 30                 
   batch_size: 8                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   lr: 0.001                    # 옵티마이저(AdamW)의 학습률.
+  schedulefree: true           # true로 설정하면 schedule-free 옵티마이저를, false로 설정하면 AdamW와 Cosine 스케줄러를 사용합니다.
 
 # =============================================================================
 # 3. 모델 아키텍처 파라미터
@@ -45,7 +46,7 @@ model:
   cats:
     featured_patch_dim: 24     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원(dimension).
     emb_dim: 24                # CATS 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원(d_model).
-    n_heads: 4                 # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `n_heads`로 나누어 떨어져야 합니다.
+    n_heads: 2                 # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `n_heads`로 나누어 떨어져야 합니다.
     d_layers: 2                # CATS 모델 내부의 트랜스포머 디코더 레이어 수.
     d_ff_ratio: 2              # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (d_ff = emb_dim * d_ff_ratio).
     dropout: 0.1               # CATS 모델 내부에 적용될 드롭아웃 비율.
@@ -54,4 +55,4 @@ model:
     qam:                       # Query-Adaptive Masking 설정. 트랜스포머 레이어의 과적합을 방지하는 기법입니다.
       # start와 end를 0.0으로 설정하면 비활성화됩니다.
       start: 0.0
-      end: 0.5
+      end: 0.0
