@@ -213,9 +213,23 @@ def log_model_parameters(model):
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
 
-def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False, run_dir_path=None):
+def _get_model_weights_norm(model):
+    """모델의 모든 학습 가능한 파라미터에 대한 L2 Norm을 계산합니다."""
+    total_norm = 0.0
+    for p in model.parameters():
+        if p.requires_grad:
+            param_norm = p.detach().norm(2)
+            total_norm += param_norm.item() ** 2
+    return total_norm ** 0.5
+
+def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
     model.eval()
+
+    use_schedulefree = optimizer and hasattr(optimizer, 'eval')
+    if use_schedulefree:
+        norm_before = _get_model_weights_norm(model)
+
     # schedulefree 옵티마이저를 위해 optimizer도 eval 모드로 설정
     if optimizer and hasattr(optimizer, 'eval'):
         optimizer.eval()
@@ -247,7 +261,18 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     recall = recall_score(all_labels, all_preds, average='macro', zero_division=0)
     f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
     
-    logging.info(f'{desc} | Acc: {accuracy:.2f}% | Precision: {precision:.4f} | Recall: {recall:.4f} | F1 Score: {f1:.4f}')
+    if use_schedulefree:
+        norm_after = _get_model_weights_norm(model)
+        logging.info(f'[Schedule-Free] 가중치 업데이트. Norm: {norm_before:.4f} -> {norm_after:.4f}')
+
+    # desc 내용에 따라 Accuracy 라벨을 동적으로 변경
+    if desc.startswith("[Valid]"):
+        acc_label = "Val Acc"
+        log_message = f'{desc} | {acc_label}: {accuracy:.2f}% | Precision: {precision:.4f} | Recall: {recall:.4f} | F1: {f1:.4f}'
+    else: # [Test] 또는 [Inference]의 경우
+        acc_label = "Test Acc"
+        log_message = f'{desc} {acc_label}: {accuracy:.2f}% | Precision: {precision:.4f} | Recall: {recall:.4f} | F1: {f1:.4f}'
+    logging.info(log_message)
 
     # 클래스별 F1 점수 로깅
     if log_class_metrics and class_names:
@@ -260,7 +285,7 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     return accuracy, f1, all_labels, all_preds
 
 def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path):
-    """모델 훈련 및 평가를 수행하고 최고 성능 모델을 저장합니다."""
+    """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("훈련 모드를 시작합니다.")
     
     # 모델 저장 경로를 실행별 디렉토리로 설정
@@ -270,6 +295,9 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
     best_f1 = 0.0
 
     for epoch in range(train_cfg.epochs):
+        # 에포크 시작 시 구분을 위한 라인 추가
+        logging.info("-" * 50)
+
         model.train()
         # schedulefree 옵티마이저를 위해 optimizer도 train 모드로 설정
         if optimizer and hasattr(optimizer, 'train'):
@@ -298,25 +326,23 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             step_lr = optimizer.param_groups[0]['lr']
             progress_bar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{step_lr:.6f}")
 
-        # 현재 학습률 가져오기
-        current_lr = optimizer.param_groups[0]['lr']
         train_acc = 100 * correct / total
-        logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}% | LR: {current_lr:.6f}')
+        logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
         
         # --- 평가 단계 ---
-        _, f1, _, _ = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", run_dir_path=run_dir_path)
+        _, f1, _, _ = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
         
         # 최고 성능 모델 저장
         if f1 > best_f1:
             best_f1 = f1
             torch.save(model.state_dict(), model_path)
-            logging.info(f"최고 성능 모델 저장 완료 (F1 Score: {best_f1:.4f}) -> '{model_path}'")
+            logging.info(f"[Best Model Saved] (F1 Score: {best_f1:.4f}) -> '{model_path}'")
         
         # 스케줄러가 설정된 경우에만 step()을 호출
         if scheduler:
             scheduler.step()
 
-def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, mode_name="추론", class_names=None):
+def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, mode_name="Inference", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
@@ -334,6 +360,16 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
         return
 
     model.eval()
+
+    use_schedulefree = optimizer and hasattr(optimizer, 'eval')
+    if use_schedulefree:
+        norm_before = _get_model_weights_norm(model)
+
+    # schedulefree 옵티마이저를 위해 optimizer도 eval 모드로 설정
+    # 최종 가중치를 모델 파라미터에 통합(consolidate)합니다.
+    if optimizer and hasattr(optimizer, 'eval'):
+        optimizer.eval()
+
     
     # 1. GPU 메모리 사용량 측정
     dummy_input = torch.randn(1, model_cfg.in_channels, model_cfg.img_size, model_cfg.img_size).to(device)
@@ -351,11 +387,15 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
+    if use_schedulefree:
+        norm_after = _get_model_weights_norm(model)
+        logging.info(f'[Schedule-Free] 최종 가중치 업데이트. Norm: {norm_before:.4f} -> {norm_after:.4f}')
+
     # 2. 테스트셋 성능 평가
     final_acc, _, all_labels, all_preds = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
 
     # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
-    if mode_name == "Final Evaluation" and all_labels and all_preds:
+    if all_labels and all_preds:
         cm_save_path = os.path.join(run_dir_path, 'confusion_matrix.png')
         plot_and_save_confusion_matrix(all_labels, all_preds, class_names, cm_save_path)
 
@@ -569,7 +609,7 @@ if __name__ == '__main__':
         
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Final Evaluation", class_names=class_names)
+        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Test", class_names=class_names)
 
         # --- 그래프 생성 ---
         # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함

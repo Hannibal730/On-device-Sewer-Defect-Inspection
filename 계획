@@ -4,7 +4,12 @@
 4차: 3차의 positional_encoding 끄기 (3차 대비 성능 하락. 이후 차시부터 positional encoding true 고정) 85.54
 5차: 3차에 스케줄프리 도입 (성능 소폭 상승.) 86.62
 6차: 5차의 AdamW 스케줄프리 -> SGD 스케줄프리(모멘텀0.9) 70퍼대 . 30에퐄까지 안 돌려서 기록 없음.
-7차: 5차의 데이터 수를 늘리고 에포크도 늘리기. 0.01 -> 0.1, 30 ->50
+7차: 5차의 efficientnet_b0_feat2 -> mobilenet_v3_small_feat1 80.23
+8차: 5차의 efficientnet_b0_feat2 -> resnet18_layer1
+
+
+
+의 데이터 수를 늘리고 에포크도 늘리기. 0.01 -> 0.1, 30 ->50
 
 
 
@@ -13,8 +18,27 @@
 
 
 
+mobilenet_v3_small_feat1 (채널3)
+2025-10-19 22:45:34,660 - INFO -   - Encoder (PatchConvEncoder): 1,664 개
+2025-10-19 22:45:34,660 - INFO -   - Decoder (CatsDecoder):      10,200 개
+2025-10-19 22:45:34,660 - INFO -   - Classifier (Linear Head):   50 개
+2025-10-19 22:45:34,660 - INFO -   - 총 파라미터:                  11,914 개
 
 
+
+
+
+efficientnet_b0_feat2 (채널3)
+2025-10-19 04:50:15,348 - INFO -   - Encoder (PatchConvEncoder): 19,138 개
+2025-10-19 04:50:15,348 - INFO -   - Decoder (CatsDecoder):      10,200 개
+2025-10-19 04:50:15,348 - INFO -   - Classifier (Linear Head):   50 개
+2025-10-19 04:50:15,348 - INFO -   - 총 파라미터:                  29,388 개
+
+
+
+
+
+의 in_channels 3 -> 1
 
 
 
