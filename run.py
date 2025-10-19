@@ -263,7 +263,7 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     
     if use_schedulefree:
         norm_after = _get_model_weights_norm(model)
-        logging.info(f'[Schedule-Free] 가중치 업데이트. Norm: {norm_before:.4f} -> {norm_after:.4f}')
+        logging.info(f'[Schedule-Free] 가중치 업데이트의 안정화. 가중치 L2 Norm: {norm_before:.4f} -> {norm_after:.4f}')
 
     # desc 내용에 따라 Accuracy 라벨을 동적으로 변경
     if desc.startswith("[Valid]"):
@@ -389,7 +389,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
 
     if use_schedulefree:
         norm_after = _get_model_weights_norm(model)
-        logging.info(f'[Schedule-Free] 최종 가중치 업데이트. Norm: {norm_before:.4f} -> {norm_after:.4f}')
+        logging.info(f'[Schedule-Free] 최종 가중치 통합 (Consolidation). Norm: {norm_before:.4f} -> {norm_after:.4f}')
 
     # 2. 테스트셋 성능 평가
     final_acc, _, all_labels, all_preds = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
