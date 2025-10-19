@@ -23,10 +23,8 @@ from CATS import Model as CatsDecoder
 # Schedule-Free 옵티마이저 임포트
 import schedulefree
 
-# 그래프 플로팅 함수 임포트
-from plot import plot_and_save_accuracy_graph
-# 혼동 행렬 플로팅 함수 임포트
-from confusion_matrix import plot_and_save_confusion_matrix
+# 그래프 및 혼동 행렬 플로팅 함수 임포트
+from plot import plot_and_save_accuracy_graph, plot_and_save_confusion_matrix
 
 # =============================================================================
 # 1. 로깅 설정
@@ -263,7 +261,7 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     
     if use_schedulefree:
         norm_after = _get_model_weights_norm(model)
-        logging.info(f'[Schedule-Free] 가중치 업데이트의 안정화. 가중치 L2 Norm: {norm_before:.4f} -> {norm_after:.4f}')
+        logging.info(f'[Schedule-Free] 가중치 업데이트의 안정화. 가중치의 L2 Norm: {norm_before:.4f} -> {norm_after:.4f}')
 
     # desc 내용에 따라 Accuracy 라벨을 동적으로 변경
     if desc.startswith("[Valid]"):
@@ -386,10 +384,6 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
         logging.info(f"추론 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
-
-    if use_schedulefree:
-        norm_after = _get_model_weights_norm(model)
-        logging.info(f'[Schedule-Free] 최종 가중치 통합 (Consolidation). Norm: {norm_before:.4f} -> {norm_after:.4f}')
 
     # 2. 테스트셋 성능 평가
     final_acc, _, all_labels, all_preds = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
