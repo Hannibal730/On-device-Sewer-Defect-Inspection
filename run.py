@@ -213,9 +213,13 @@ def log_model_parameters(model):
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
 
-def evaluate(model, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False, run_dir_path=None):
+def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False, run_dir_path=None):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
     model.eval()
+    # schedulefree 옵티마이저를 위해 optimizer도 eval 모드로 설정
+    if optimizer and hasattr(optimizer, 'eval'):
+        optimizer.eval()
+
     correct = 0
     total = 0
     all_preds = []
@@ -280,6 +284,10 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir
 
     for epoch in range(train_cfg.epochs):
         model.train()
+        # schedulefree 옵티마이저를 위해 optimizer도 train 모드로 설정
+        if optimizer and hasattr(optimizer, 'train'):
+            optimizer.train()
+
         running_loss = 0.0
         correct = 0
         total = 0
@@ -309,7 +317,7 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir
         logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}% | LR: {current_lr:.6f}')
         
         # --- 평가 단계 ---
-        _, f1, _, _ = evaluate(model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
+        _, f1, _, _ = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
         
         # 최고 성능 모델 저장
         if f1 > best_f1:
@@ -321,7 +329,7 @@ def train(run_cfg, train_cfg, model, train_loader, valid_loader, device, run_dir
         if scheduler:
             scheduler.step()
 
-def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode_name="추론", class_names=None):
+def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, mode_name="추론", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
@@ -357,7 +365,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, mode
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
     # 2. 테스트셋 성능 평가
-    final_acc, _, all_labels, all_preds = evaluate(model, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+    final_acc, _, all_labels, all_preds = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
 
     # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
     if mode_name == "Final Evaluation" and all_labels and all_preds:
@@ -562,7 +570,7 @@ if __name__ == '__main__':
         
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Final Evaluation", class_names=class_names)
+        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Final Evaluation", class_names=class_names)
 
         # --- 그래프 생성 ---
         # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함
@@ -573,4 +581,4 @@ if __name__ == '__main__':
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
-        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, mode_name="Inference", class_names=class_names)
+        inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Inference", class_names=class_names)
