@@ -23,7 +23,7 @@ from CATS import Model as CatsDecoder
 import schedulefree
 
 # 그래프 및 혼동 행렬 플로팅 함수 임포트
-from plot import plot_and_save_accuracy_graph, plot_and_save_confusion_matrix
+from plot import plot_and_save_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps
 
 # =============================================================================
 # 1. 로깅 설정
@@ -398,6 +398,24 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
         cm_save_path = os.path.join(run_dir_path, 'confusion_matrix.png')
         plot_and_save_confusion_matrix(all_labels, all_preds, class_names, cm_save_path)
 
+    # 4. 어텐션 맵 시각화 (설정이 True인 경우)
+    if cats_cfg.save_attn:
+        logging.info("어텐션 맵 시각화를 시작합니다...")
+        try:
+            # 시각화를 위해 테스트 로더에서 첫 번째 배치를 가져옴
+            sample_images, _ = next(iter(data_loader))
+            sample_images = sample_images.to(device)
+
+            # 모델을 실행하여 어텐션 맵이 저장되도록 함
+            with torch.no_grad():
+                _ = model(sample_images)
+
+            # 마지막 디코더 레이어에 저장된 어텐션 맵을 가져옴
+            attention_maps = model.decoder.model.backbone.decoder.layers[-1].attn
+            attn_save_path = os.path.join(run_dir_path, 'attention_map.png')
+            plot_and_save_attention_maps(attention_maps, sample_images, attn_save_path, class_names, model_cfg.img_size)
+        except Exception as e:
+            logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
     return final_acc
 
 # =============================================================================
@@ -571,7 +589,7 @@ if __name__ == '__main__':
         'decoder_ff_ratio': cats_cfg.decoder_ff_ratio,
         'dropout': cats_cfg.dropout, # dropout
         'positional_encoding': cats_cfg.positional_encoding, # positional_encoding
-        'store_attn': cats_cfg.store_attn, # store_attn
+        'save_attn': cats_cfg.save_attn, # save_attn
         'qam_prob_start': cats_cfg.qam_prob_start, # qam_prob_start
         'qam_prob_end': cats_cfg.qam_prob_end, # qam_prob_end
     }
@@ -606,7 +624,7 @@ if __name__ == '__main__':
     if run_cfg.mode == 'train':
         # 훈련 시에는 train_loader와 valid_loader 사용
         train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path)
-        
+
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
         final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Test", class_names=class_names)

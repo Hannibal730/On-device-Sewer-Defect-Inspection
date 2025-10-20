@@ -4,6 +4,7 @@ import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
+import torch.nn.functional as F
 
 def plot_and_save_accuracy_graph(log_file_path, save_dir, final_acc):
     """
@@ -81,3 +82,73 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_path):
         logging.info(f"혼동 행렬 그래프가 '{save_path}'에 저장되었습니다.")
     except Exception as e:
         logging.error(f"혼동 행렬 그래프 생성 중 오류 발생: {e}")
+
+def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, class_names, img_size):
+    """
+    저장된 어텐션 맵을 원본 이미지 위에 히트맵으로 시각화하여 저장합니다.
+
+    Args:
+        attention_maps (torch.Tensor): 모델에서 추출한 어텐션 가중치 텐서.
+                                       Shape: [B, num_heads, num_queries, num_keys]
+        image_tensor (torch.Tensor): 원본 이미지 텐서. Shape: [B, C, H, W]
+        save_path (str): 시각화 결과를 저장할 파일 경로.
+        class_names (list of str): 클래스 이름 리스트 (쿼리 제목으로 사용).
+        img_size (int): 원본 이미지의 크기.
+    """
+    try:
+        # 1. 시각화를 위해 배치에서 첫 번째 데이터만 선택
+        attention_maps = attention_maps[0].detach().cpu() # [num_heads, num_queries, num_keys]
+        image = image_tensor[0].detach().cpu()         # [C, H, W]
+
+        # 2. 텐서 정규화 해제 및 PIL 이미지로 변환
+        # Normalize(mean=[0.5], std=[0.5])를 역으로 적용
+        image = image * 0.5 + 0.5
+        image = image.permute(1, 2, 0) # [H, W, C]
+        image = image.numpy().clip(0, 1)
+
+        # 3. 어텐션 맵 차원 정보 추출
+        num_heads, num_queries, num_patches = attention_maps.shape
+        grid_size = int(num_patches**0.5)
+        if grid_size * grid_size != num_patches:
+            logging.error("어텐션 맵의 패치 수가 제곱수가 아니므로 2D로 변환할 수 없습니다.")
+            return
+
+        # 4. Matplotlib으로 시각화 준비
+        # 각 헤드와 쿼리에 대한 서브플롯 생성
+        fig, axes = plt.subplots(num_heads, num_queries, figsize=(num_queries * 5, num_heads * 5))
+        fig.suptitle('Attention Maps per Head and Query', fontsize=20)
+
+        # 서브플롯이 하나일 경우(1x1) axes가 2D 배열이 아니므로 처리
+        if num_heads == 1 and num_queries == 1:
+            axes = [[axes]]
+        elif num_heads == 1:
+            axes = [axes]
+        elif num_queries == 1:
+            axes = [[ax] for ax in axes]
+
+        # 5. 각 헤드와 쿼리에 대해 반복하며 히트맵 생성
+        for h in range(num_heads):
+            for q in range(num_queries):
+                ax = axes[h][q]
+                
+                # 1D 어텐션 맵 -> 2D 그리드로 변환
+                attn_map_2d = attention_maps[h, q].view(1, 1, grid_size, grid_size)
+                
+                # 원본 이미지 크기로 업샘플링
+                upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+                upscaled_map = upscaled_map.squeeze().numpy()
+
+                # 원본 이미지와 히트맵 그리기
+                ax.imshow(image, extent=(0, img_size, 0, img_size))
+                ax.imshow(upscaled_map, cmap='jet', alpha=0.5, extent=(0, img_size, 0, img_size))
+
+                ax.set_title(f'Head {h+1} / Query for "{class_names[q]}"')
+                ax.axis('off')
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.savefig(save_path)
+        plt.close()
+        logging.info(f"어텐션 맵 시각화 결과가 '{save_path}'에 저장되었습니다.")
+
+    except Exception as e:
+        logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
