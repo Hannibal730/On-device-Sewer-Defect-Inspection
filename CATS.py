@@ -59,7 +59,7 @@ class QueryAdaptiveMasking(nn.Module):
 # 입력 패치 시퀀스를 처리하고, 트랜스포머 기반의 디코더 구조를 통해 특징을 추출합니다.
 class Model_backbone(nn.Module):
     # 모델 백본의 생성자입니다. 모델의 구조와 하이퍼파라미터를 초기화합니다.
-    def __init__(self, num_encoder_patches:int, num_labels:int, featured_patch_dim:int=24, num_decoder_blocks:int=3, emb_dim=128, num_heads=16, d_ff:int=256, attn_dropout:float=0., 
+    def __init__(self, num_encoder_patches:int, num_labels:int, featured_patch_dim:int=24, num_decoder_blocks:int=3, emb_dim=128, num_heads=16, decoder_ff_dim:int=256, attn_dropout:float=0., 
                  dropout:float=0., res_attention:bool=True, store_attn:bool=False, qam_prob_start:float = 0.1, qam_prob_end:float =0.5, 
                  positional_encoding:bool=True, **kwargs):
         
@@ -74,7 +74,7 @@ class Model_backbone(nn.Module):
 
         # --- 백본 모델(임베딩 및 디코더) 초기화 --- 
         self.backbone = Learnable_Query_Embedding(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches,
-                                num_decoder_blocks=num_decoder_blocks, emb_dim=emb_dim, num_heads=num_heads, d_ff=d_ff, positional_encoding=positional_encoding,
+                                num_decoder_blocks=num_decoder_blocks, emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, positional_encoding=positional_encoding,
                                 attn_dropout=attn_dropout, dropout=dropout, qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end,
                                 res_attention=res_attention, store_attn=store_attn, **kwargs)
         # `Learnable_Query_Embedding` 클래스를 사용하여 실제 트랜스포머 연산을 수행할 백본을 생성합니다.
@@ -101,8 +101,8 @@ class Model_backbone(nn.Module):
 # 이 파라미터는 처음에는 무작위 값으로 시작하지만, 훈련 과정을 통해 분류에 중요한 특징을 추출하기 위한 유의미한 질문(쿼리)으로 학습되기 때문에 "학습 가능한 쿼리"라고 부릅니다.
 class Learnable_Query_Embedding(nn.Module): 
     # 클래스의 생성자입니다.
-    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, num_decoder_blocks=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5, 
-                 d_ff=256, attn_dropout=0., dropout=0., store_attn=False, res_attention=True, positional_encoding=True, **kwargs):
+    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, num_decoder_blocks=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5,
+                 decoder_ff_dim=256, attn_dropout=0., dropout=0., store_attn=False, res_attention=True, positional_encoding=True, **kwargs):
              
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
@@ -128,8 +128,8 @@ class Learnable_Query_Embedding(nn.Module):
         else:
             self.PE = None
         # --- 디코더 ---
-        self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, d_ff=d_ff, attn_dropout=attn_dropout, dropout=dropout,
-                               qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, res_attention=res_attention, n_layers=num_decoder_blocks, store_attn=store_attn)
+        self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
+                               qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, res_attention=res_attention, num_decoder_blocks=num_decoder_blocks, store_attn=store_attn)
         # 실제 어텐션 연산을 수행할 트랜스포머 디코더를 초기화합니다.
         
     # 순전파 로직을 정의합니다.
@@ -187,15 +187,15 @@ class Decoder2Classifier(nn.Module):
 # 여러 개의 디코더 레이어로 구성된 트랜스포머 디코더 클래스입니다.
 class Decoder(nn.Module):
     # 디코더의 생성자입니다.
-    def __init__(self, num_encoder_patches, emb_dim, num_heads, num_decoder_patches, d_ff=None, attn_dropout=0., dropout=0., qam_prob_start = 0.1, qam_prob_end =0.5,
-                        res_attention=False, n_layers=1, store_attn=False):
+    def __init__(self, num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=None, attn_dropout=0., dropout=0., qam_prob_start = 0.1, qam_prob_end =0.5,
+                        res_attention=False, num_decoder_blocks=1, store_attn=False):
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
         
-        self.layers = nn.ModuleList([DecoderLayer(num_encoder_patches, emb_dim, num_decoder_patches, num_heads=num_heads, d_ff=d_ff, qam_prob_start=qam_prob_start, 
+        self.layers = nn.ModuleList([DecoderLayer(num_encoder_patches, emb_dim, num_decoder_patches, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, qam_prob_start=qam_prob_start, 
                                                       qam_prob_end=qam_prob_end, attn_dropout=attn_dropout, dropout=dropout, 
-                                                      res_attention=res_attention, store_attn=store_attn) for i in range(n_layers)])
-        # `n_layers` 개수만큼의 `DecoderLayer`를 `nn.ModuleList`로 묶어 관리합니다.
+                                                      res_attention=res_attention, store_attn=store_attn) for i in range(num_decoder_blocks)])
+        # `num_decoder_blocks` 개수만큼의 `DecoderLayer`를 `nn.ModuleList`로 묶어 관리합니다.
         
         self.res_attention = res_attention
         # 잔차 어텐션(어텐션 스코어를 다음 레이어에 더해주는 기법) 메커니즘 사용 여부를 저장합니다.
@@ -218,7 +218,7 @@ class Decoder(nn.Module):
 # 크로스-어텐션(Cross-Attention)과 피드포워드 네트워크(Feed-Forward Network)로 구성됩니다.
 class DecoderLayer(nn.Module):
     # 디코더 레이어의 생성자입니다.
-    def __init__(self, num_encoder_patches, emb_dim, num_decoder_patches, num_heads, d_ff=256, store_attn=False, qam_prob_start = 0.1, qam_prob_end =0.5,
+    def __init__(self, num_encoder_patches, emb_dim, num_decoder_patches, num_heads, decoder_ff_dim=256, store_attn=False, qam_prob_start = 0.1, qam_prob_end =0.5,
                  attn_dropout=0, dropout=0., bias=True, res_attention=False):
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
@@ -237,10 +237,10 @@ class DecoderLayer(nn.Module):
 
         # --- 피드포워드 네트워크 블록 ---
         # 위치별 피드포워드 네트워크(FFN)를 `nn.Sequential`로 정의합니다.
-        self.ffn = nn.Sequential(nn.Linear(emb_dim, d_ff, bias=bias), # 1. emb_dim -> d_ff 확장
+        self.ffn = nn.Sequential(nn.Linear(emb_dim, decoder_ff_dim, bias=bias), # 1. emb_dim -> decoder_ff_dim 확장
                                 GEGLU(),                             # 2. GEGLU 활성화 함수 (이 활성함수를 거친 직후 차원이 절반이 됨))
                                 nn.Dropout(dropout),                 # 3. 드롭아웃
-                                nn.Linear(d_ff//2, emb_dim, bias=bias)) # 4. d_ff/2 -> emb_dim 축소 
+                                nn.Linear(decoder_ff_dim//2, emb_dim, bias=bias)) # 4. decoder_ff_dim/2 -> emb_dim 축소 
         self.dropout_ffn = QueryAdaptiveMasking(dim=1, start_prob=qam_prob_start, end_prob=qam_prob_end)
         # FFN 출력에 적용할 Query-Adaptive Masking 레이어를 정의합니다.
         self.norm_ffn = nn.LayerNorm(emb_dim)
@@ -383,11 +383,11 @@ class Model(nn.Module):
         qam_prob_end = getattr(args, 'qam_prob_end', 0.0)     # QAM 끝 확률
 
         # FFN의 내부 차원을 계산합니다.
-        decoder_ff_dim = emb_dim * decoder_ff_ratio
+        decoder_ff_dim = emb_dim * decoder_ff_ratio # 예: 24 * 2 = 48
 
         # 로드한 하이퍼파라미터들을 사용하여 `Model_backbone`을 초기화합니다. 
         self.model = Model_backbone(num_encoder_patches=num_encoder_patches, num_labels=num_labels, featured_patch_dim=featured_patch_dim, num_decoder_blocks=num_decoder_blocks,
-                                    emb_dim=emb_dim, num_heads=num_heads, d_ff=decoder_ff_dim, dropout=dropout, positional_encoding=positional_encoding, 
+                                    emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, dropout=dropout, positional_encoding=positional_encoding, 
                                     store_attn=store_attn, qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, **kwargs)
         
     
