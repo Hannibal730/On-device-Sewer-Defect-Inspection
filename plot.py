@@ -35,14 +35,13 @@ def plot_and_save_accuracy_graph(log_file_path, save_dir, final_acc):
             logging.warning("로그 파일에서 유효한 [Valid] Accuracy 데이터를 찾을 수 없어 그래프를 생성하지 않습니다.")
             return
 
-        plt.figure(figsize=(15, 12))
+        plt.figure(figsize=(12, 8))
         plt.plot(epochs, accuracies, marker='o', linestyle='-', color='b')
         plt.title(f'Validation Accuracy per Epoch (Final Test Acc: {final_acc:.2f}%)')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy (%)')
         plt.ylim(0, 100) # Y축 범위를 0부터 100까지로 고정
         plt.grid(True)
-        plt.xticks(epochs) # 모든 에포크 번호를 x축에 표시
 
         save_path = os.path.join(save_dir, 'validation_accuracy_plot.png')
         plt.savefig(save_path)
@@ -83,7 +82,7 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_path):
     except Exception as e:
         logging.error(f"혼동 행렬 그래프 생성 중 오류 발생: {e}")
 
-def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, class_names, img_size):
+def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, img_size):
     """
     저장된 어텐션 맵을 원본 이미지 위에 히트맵으로 시각화하여 저장합니다.
 
@@ -92,7 +91,6 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, class_
                                        Shape: [B, num_heads, num_queries, num_keys]
         image_tensor (torch.Tensor): 원본 이미지 텐서. Shape: [B, C, H, W]
         save_path (str): 시각화 결과를 저장할 파일 경로.
-        class_names (list of str): 클래스 이름 리스트 (쿼리 제목으로 사용).
         img_size (int): 원본 이미지의 크기.
     """
     try:
@@ -100,11 +98,11 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, class_
         attention_maps = attention_maps[0].detach().cpu() # [num_heads, num_queries, num_keys]
         image = image_tensor[0].detach().cpu()         # [C, H, W]
 
-        # 2. 텐서 정규화 해제 및 PIL 이미지로 변환
+        # 2. 텐서 정규화 해제 및 이미지로 변환
         # Normalize(mean=[0.5], std=[0.5])를 역으로 적용
         image = image * 0.5 + 0.5
-        image = image.permute(1, 2, 0) # [H, W, C]
-        image = image.numpy().clip(0, 1)
+        # permute 후 contiguous()를 호출하여 메모리 연속성을 보장한 후 numpy로 변환
+        image = image.permute(1, 2, 0).contiguous().numpy().clip(0, 1)
 
         # 3. 어텐션 맵 차원 정보 추출
         num_heads, num_queries, num_patches = attention_maps.shape
@@ -115,24 +113,17 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, class_
 
         # 4. Matplotlib으로 시각화 준비
         # 각 헤드와 쿼리에 대한 서브플롯 생성
-        fig, axes = plt.subplots(num_heads, num_queries, figsize=(num_queries * 5, num_heads * 5))
+        # squeeze=False를 통해 axes가 항상 2D 배열을 반환하도록 하여 예외 처리를 단순화합니다.
+        fig, axes = plt.subplots(num_heads, num_queries, figsize=(num_queries * 5, num_heads * 5), squeeze=False)
         fig.suptitle('Attention Maps per Head and Query', fontsize=20)
 
-        # 서브플롯이 하나일 경우(1x1) axes가 2D 배열이 아니므로 처리
-        if num_heads == 1 and num_queries == 1:
-            axes = [[axes]]
-        elif num_heads == 1:
-            axes = [axes]
-        elif num_queries == 1:
-            axes = [[ax] for ax in axes]
-
         # 5. 각 헤드와 쿼리에 대해 반복하며 히트맵 생성
-        for h in range(num_heads):
-            for q in range(num_queries):
-                ax = axes[h][q]
+        for head in range(num_heads):
+            for query_patch in range(num_queries):
+                ax = axes[head][query_patch]
                 
                 # 1D 어텐션 맵 -> 2D 그리드로 변환
-                attn_map_2d = attention_maps[h, q].view(1, 1, grid_size, grid_size)
+                attn_map_2d = attention_maps[head, query_patch].view(1, 1, grid_size, grid_size)
                 
                 # 원본 이미지 크기로 업샘플링
                 upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
@@ -142,7 +133,8 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, class_
                 ax.imshow(image, extent=(0, img_size, 0, img_size))
                 ax.imshow(upscaled_map, cmap='jet', alpha=0.5, extent=(0, img_size, 0, img_size))
 
-                ax.set_title(f'Head {h+1} / Query for "{class_names[q]}"')
+                # 변수명을 명확히 하고, 제목에 Query_patch를 사용하여 객관적인 정보를 표시합니다.
+                ax.set_title(f'Head {head+1} / Query_patch {query_patch+1}')
                 ax.axis('off')
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])

@@ -409,7 +409,6 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
 
     # 4. 어텐션 맵 시각화 (설정이 True인 경우)
     if cats_cfg.save_attn:
-        logging.info("어텐션 맵 시각화를 시작합니다...")
         try:
             # 시각화를 위해 테스트 로더에서 첫 번째 배치를 가져옴
             sample_images, _ = next(iter(data_loader))
@@ -422,7 +421,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
             # 마지막 디코더 레이어에 저장된 어텐션 맵을 가져옴
             attention_maps = model.decoder.model.backbone.decoder.layers[-1].attn
             attn_save_path = os.path.join(run_dir_path, 'attention_map.png')
-            plot_and_save_attention_maps(attention_maps, sample_images, attn_save_path, class_names, model_cfg.img_size)
+            plot_and_save_attention_maps(attention_maps, sample_images, attn_save_path, model_cfg.img_size)
         except Exception as e:
             logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
     return final_acc
@@ -593,8 +592,8 @@ if __name__ == '__main__':
         'num_encoder_patches': num_encoder_patches,
         'num_labels': num_labels, 'num_decoder_blocks': cats_cfg.num_decoder_blocks,
         'featured_patch_dim': cats_cfg.featured_patch_dim,
-        'emb_dim': cats_cfg.emb_dim, # d_model
-        'num_heads': cats_cfg.num_heads, # n_heads
+        'emb_dim': cats_cfg.emb_dim, 
+        'num_heads': cats_cfg.num_heads, 
         'decoder_ff_ratio': cats_cfg.decoder_ff_ratio,
         'dropout': cats_cfg.dropout, # dropout
         'positional_encoding': cats_cfg.positional_encoding, # positional_encoding
