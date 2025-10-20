@@ -140,7 +140,7 @@ class PatchConvEncoder(nn.Module):
         self.shared_conv = nn.Sequential(
             CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=True, in_channels=in_channels, out_channels=featured_patch_dim),
             nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(start_dim=1) # [B*N, D, 1, 1] -> [B*N, D] 형태가 됩니다.
+            nn.Flatten(start_dim=1) # [B*num_encoder_patches, D, 1, 1] -> [B*num_encoder_patches, D] 형태가 됩니다.
         )
         self.norm = nn.LayerNorm(featured_patch_dim)
 

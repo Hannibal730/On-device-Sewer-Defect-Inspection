@@ -101,8 +101,8 @@ class Model_backbone(nn.Module):
 # 이 파라미터는 처음에는 무작위 값으로 시작하지만, 훈련 과정을 통해 분류에 중요한 특징을 추출하기 위한 유의미한 질문(쿼리)으로 학습되기 때문에 "학습 가능한 쿼리"라고 부릅니다.
 class Learnable_Query_Embedding(nn.Module): 
     # 클래스의 생성자입니다.
-    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, num_decoder_layers=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5, 
-                 decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=True, positional_encoding=True, **kwargs):
+    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, num_decoder_layers=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5,
+                 decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True, **kwargs):
              
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.

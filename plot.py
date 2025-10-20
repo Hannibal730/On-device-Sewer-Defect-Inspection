@@ -88,7 +88,7 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, img_si
 
     Args:
         attention_maps (torch.Tensor): 모델에서 추출한 어텐션 가중치 텐서.
-                                       Shape: [B, num_heads, num_queries, num_keys]
+        Shape: [B, num_heads, num_queries, num_keys]
         image_tensor (torch.Tensor): 원본 이미지 텐서. Shape: [B, C, H, W]
         save_path (str): 시각화 결과를 저장할 파일 경로.
         img_size (int): 원본 이미지의 크기.
