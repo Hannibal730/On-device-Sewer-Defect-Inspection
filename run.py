@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import models, transforms
 from torch.utils.data import Dataset, DataLoader, Subset
-from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.metrics import precision_score, recall_score, f1_score
 from types import SimpleNamespace
 import numpy as np
@@ -565,16 +564,16 @@ if __name__ == '__main__':
     
     cats_params = {
         'num_encoder_patches': num_encoder_patches,
-        'num_labels': num_labels, 'd_layers': cats_cfg.num_decoder_blocks,
-        'emb_dim': cats_cfg.emb_dim,
-        'decoder_ff_dim': cats_cfg.emb_dim * cats_cfg.decoder_ff_ratio,
-        'n_heads': cats_cfg.num_heads,
+        'num_labels': num_labels, 'num_decoder_blocks': cats_cfg.num_decoder_blocks,
         'featured_patch_dim': cats_cfg.featured_patch_dim,
-        'dropout': cats_cfg.dropout,
-        'positional_encoding': cats_cfg.positional_encoding,
-        'store_attn': cats_cfg.store_attn,
-        'qam_prob_start': cats_cfg.qam_prob_start,
-        'qam_prob_end': cats_cfg.qam_prob_end,
+        'emb_dim': cats_cfg.emb_dim, # d_model
+        'num_heads': cats_cfg.num_heads, # n_heads
+        'decoder_ff_ratio': cats_cfg.decoder_ff_ratio,
+        'dropout': cats_cfg.dropout, # dropout
+        'positional_encoding': cats_cfg.positional_encoding, # positional_encoding
+        'store_attn': cats_cfg.store_attn, # store_attn
+        'qam_prob_start': cats_cfg.qam_prob_start, # qam_prob_start
+        'qam_prob_end': cats_cfg.qam_prob_end, # qam_prob_end
     }
     cats_args = SimpleNamespace(**cats_params)
 
@@ -582,7 +581,7 @@ if __name__ == '__main__':
                                featured_patch_dim=cats_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'])
     decoder = CatsDecoder(args=cats_args) # CATS.py의 Model 클래스
     
-    # 제안: 각 쿼리가 특정 클래스를 담당하도록 num_decoder_patches를 num_labels와 동일하게 설정
+    # 각 디코더 쿼리가 특정 클래스를 담당하도록 num_decoder_patches를 num_labels와 동일하게 설정합니다.
     num_decoder_patches = num_labels
     classifier = Classifier(num_decoder_patches=num_decoder_patches, 
                             featured_patch_dim=cats_cfg.featured_patch_dim, num_labels=num_labels, dropout=cats_cfg.dropout)
