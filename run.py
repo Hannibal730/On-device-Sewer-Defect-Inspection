@@ -408,7 +408,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
         plot_and_save_confusion_matrix(all_labels, all_preds, class_names, cm_save_path)
 
     # 4. 어텐션 맵 시각화 (설정이 True인 경우)
-    if cats_cfg.save_attn:
+    if cats_cfg.save_attention:
         try:
             # 시각화를 위해 테스트 로더에서 첫 번째 배치를 가져옴
             sample_images, _ = next(iter(data_loader))
@@ -590,14 +590,15 @@ if __name__ == '__main__':
     
     cats_params = {
         'num_encoder_patches': num_encoder_patches,
-        'num_labels': num_labels, 'num_decoder_blocks': cats_cfg.num_decoder_blocks,
+        'num_labels': num_labels, 'num_decoder_layers': cats_cfg.num_decoder_layers,
         'featured_patch_dim': cats_cfg.featured_patch_dim,
         'emb_dim': cats_cfg.emb_dim, 
         'num_heads': cats_cfg.num_heads, 
         'decoder_ff_ratio': cats_cfg.decoder_ff_ratio,
         'dropout': cats_cfg.dropout, # dropout
         'positional_encoding': cats_cfg.positional_encoding, # positional_encoding
-        'save_attn': cats_cfg.save_attn, # save_attn
+        'res_attention': cats_cfg.res_attention, # res_attention
+        'save_attention': cats_cfg.save_attention, # save_attention
         'qam_prob_start': cats_cfg.qam_prob_start, # qam_prob_start
         'qam_prob_end': cats_cfg.qam_prob_end, # qam_prob_end
     }
