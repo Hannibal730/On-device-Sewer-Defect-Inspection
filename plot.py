@@ -43,7 +43,7 @@ def plot_and_save_accuracy_graph(log_file_path, save_dir, final_acc):
         plt.ylim(0, 100) # Y축 범위를 0부터 100까지로 고정
         plt.grid(True)
 
-        save_path = os.path.join(save_dir, 'validation_accuracy_plot.png')
+        save_path = os.path.join(save_dir, 'val_acc_graph.png')
         plt.savefig(save_path)
         plt.close()
         logging.info(f"Val Acc 그래프가 '{save_path}'에 저장되었습니다.")
