@@ -162,13 +162,19 @@ class Classifier(nn.Module):
     """CATS 모델의 출력을 받아 최종 클래스 로짓으로 매핑하는 분류기입니다."""
     def __init__(self, num_decoder_patches, featured_patch_dim, num_labels, dropout):
         super().__init__()
-        self.dropout = nn.Dropout(dropout)
-        # CATS 출력 특징 벡터를 최종 클래스 수로 매핑하는 선형 레이어
-        self.projection = nn.Linear(num_decoder_patches * featured_patch_dim, num_labels)
+        input_dim = num_decoder_patches * featured_patch_dim # 48
+        hidden_dim = (input_dim + num_labels) // 2 # 중간 은닉층 차원 (예: (48+2)//2 = 25)
+
+        # MLP 헤드: Linear -> ReLU -> Dropout -> Linear
+        self.projection = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_labels)
+        )
 
     def forward(self, x):
         # x shape: [B, num_decoder_patches * featured_patch_dim]
-        x = self.dropout(x)
         x = self.projection(x) # -> [B, num_labels]
         return x
 
@@ -468,14 +474,14 @@ def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
         class_names = ['Normal', 'Defect']
 
         # --- 데이터 샘플링 로직 ---
-        sampling_ratio = getattr(run_cfg, 'sampling_ratio', 1.0)
-        if sampling_ratio < 1.0:
-            logging.info(f"데이터셋을 {sampling_ratio * 100:.0f}% 비율로 샘플링합니다 (random_seed={run_cfg.random_seed}).")
+        random_sampling_ratio = getattr(run_cfg, 'random_sampling_ratio', 1.0)
+        if random_sampling_ratio < 1.0:
+            logging.info(f"데이터셋을 {random_sampling_ratio * 100:.0f}% 비율로 샘플링합니다 (random_seed={run_cfg.random_seed}).")
             
             def get_subset(dataset):
                 """데이터셋에서 지정된 비율만큼 단순 랜덤 샘플링을 수행합니다."""
                 num_total = len(dataset)
-                num_to_sample = int(num_total * sampling_ratio)
+                num_to_sample = int(num_total * random_sampling_ratio)
                 rng = np.random.default_rng(run_cfg.random_seed) # 재현성을 위한 랜덤 생성기
                 indices = rng.choice(num_total, size=num_to_sample, replace=False)
                 return Subset(dataset, indices)
@@ -484,7 +490,7 @@ def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
             valid_dataset = get_subset(full_valid_dataset)
             test_dataset = get_subset(full_test_dataset)
         else:
-            logging.info("전체 데이터셋을 사용합니다 (sampling_ratio=1.0).")
+            logging.info("전체 데이터셋을 사용합니다 (random_sampling_ratio=1.0).")
             train_dataset = full_train_dataset
             valid_dataset = full_valid_dataset
             test_dataset = full_test_dataset
@@ -559,16 +565,16 @@ if __name__ == '__main__':
     
     cats_params = {
         'num_encoder_patches': num_encoder_patches,
-        'num_labels': num_labels, 'd_layers': cats_cfg.d_layers,
+        'num_labels': num_labels, 'd_layers': cats_cfg.num_decoder_blocks,
         'emb_dim': cats_cfg.emb_dim,
-        'd_ff': cats_cfg.emb_dim * cats_cfg.d_ff_ratio,
-        'n_heads': cats_cfg.n_heads,
+        'decoder_ff_dim': cats_cfg.emb_dim * cats_cfg.decoder_ff_ratio,
+        'n_heads': cats_cfg.num_heads,
         'featured_patch_dim': cats_cfg.featured_patch_dim,
         'dropout': cats_cfg.dropout,
         'positional_encoding': cats_cfg.positional_encoding,
         'store_attn': cats_cfg.store_attn,
-        'QAM_start': cats_cfg.qam['start'],
-        'QAM_end': cats_cfg.qam['end'],
+        'qam_prob_start': cats_cfg.qam_prob_start,
+        'qam_prob_end': cats_cfg.qam_prob_end,
     }
     cats_args = SimpleNamespace(**cats_params)
 
@@ -576,7 +582,8 @@ if __name__ == '__main__':
                                featured_patch_dim=cats_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'])
     decoder = CatsDecoder(args=cats_args) # CATS.py의 Model 클래스
     
-    num_decoder_patches = (num_labels + cats_cfg.featured_patch_dim - 1) // cats_cfg.featured_patch_dim
+    # 제안: 각 쿼리가 특정 클래스를 담당하도록 num_decoder_patches를 num_labels와 동일하게 설정
+    num_decoder_patches = num_labels
     classifier = Classifier(num_decoder_patches=num_decoder_patches, 
                             featured_patch_dim=cats_cfg.featured_patch_dim, num_labels=num_labels, dropout=cats_cfg.dropout)
     model = HybridModel(encoder, decoder, classifier).to(device)
