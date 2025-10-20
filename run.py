@@ -15,6 +15,7 @@ import argparse
 import yaml
 import logging
 from datetime import datetime
+import time
 
 # CATS 모델 아키텍처 임포트
 from CATS import Model as CatsDecoder
@@ -391,10 +392,18 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
     # 2. 테스트셋 성능 평가
+    logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
+    start_time = time.time()
     final_acc, _, all_labels, all_preds = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+    end_time = time.time()
+    inference_time = end_time - start_time
+    num_test_samples = len(data_loader.dataset)
+    avg_inference_time_per_sample = (inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
+    logging.info(f"총 추론 시간: {inference_time:.2f}초 (테스트 샘플 {num_test_samples}개)")
+    logging.info(f"샘플 당 평균 추론 시간: {avg_inference_time_per_sample:.2f}ms")
 
     # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
-    if all_labels and all_preds:
+    if all_labels is not None and all_preds is not None:
         cm_save_path = os.path.join(run_dir_path, 'confusion_matrix.png')
         plot_and_save_confusion_matrix(all_labels, all_preds, class_names, cm_save_path)
 
