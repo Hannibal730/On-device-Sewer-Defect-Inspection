@@ -453,38 +453,41 @@ class CustomImageDataset(Dataset):
 
 def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
     """데이터셋을 로드하고 전처리하여 DataLoader를 생성합니다."""
-    # in_channels 값에 따라 정규화 파라미터를 다르게 설정합니다.
+    img_size = model_cfg.img_size
+
     if model_cfg.in_channels == 1:
-        # 흑백 이미지: 픽셀 값을 [-1, 1] 범위로 정규화
+        # 흑백 이미지용 변환 (커스텀 트랜스폼)
         normalize = transforms.Normalize(mean=[0.5], std=[0.5])
-    else:
-        # 컬러 이미지(in_channels=3): ImageNet 사전 훈련 모델의 표준 정규화 값 사용
-        # 이는 사전 훈련된 가중치의 성능을 최대한 활용하는 데 도움이 됩니다.
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        train_transform = transforms.Compose([
+            transforms.RandomAffine(degrees=10, translate=(0.05, 0.05), scale=(0.95, 1.05)),
+            transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.Grayscale(num_output_channels=1),
+            transforms.ToTensor(),
+            normalize
+        ])
+        valid_test_transform = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.Grayscale(num_output_channels=1),
+            transforms.ToTensor(),
+            normalize
+        ])
+    else: # model_cfg.in_channels == 3:
+        # 컬러 이미지(in_channels=3)용 변환 (Sewer-ML 공식 레포의 트랜스폼)
+        normalize = transforms.Normalize(mean=[0.523, 0.453, 0.345], std=[0.210, 0.199, 0.154])
+        train_transform = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+            transforms.ToTensor(),
+            normalize
+        ])
+        valid_test_transform = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.ToTensor(),
+            normalize
+        ])
 
-    # 기본 훈련 변환 리스트
-    train_transforms_list = [
-        # 데이터 증강을 통해 모델 성능 향상 및 과적합 방지
-        transforms.RandomAffine(degrees=10, translate=(0.05, 0.05), scale=(0.95, 1.05)),
-        transforms.RandomResizedCrop(model_cfg.img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
-        transforms.RandomHorizontalFlip(p=0.5),
-    ]
-    # 기본 검증/테스트 변환 리스트
-    valid_test_transforms_list = [
-        transforms.Resize((model_cfg.img_size, model_cfg.img_size)),
-    ]
-
-    # in_channels가 1일 경우에만 Grayscale 변환을 추가
-    if model_cfg.in_channels == 1:
-        grayscale_transform = transforms.Grayscale(num_output_channels=1)
-        train_transforms_list.append(grayscale_transform)
-        valid_test_transforms_list.append(grayscale_transform)
-
-    # 공통 변환 추가 (ToTensor, Normalize)
-    common_transforms = [transforms.ToTensor(), normalize]
-    train_transform = transforms.Compose(train_transforms_list + common_transforms)
-    valid_test_transform = transforms.Compose(valid_test_transforms_list + common_transforms)
-    
     try:
         logging.info("데이터 로드를 시작합니다.")
 
