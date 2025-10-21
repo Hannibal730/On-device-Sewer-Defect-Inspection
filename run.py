@@ -453,7 +453,14 @@ class CustomImageDataset(Dataset):
 
 def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
     """데이터셋을 로드하고 전처리하여 DataLoader를 생성합니다."""
-    normalize = transforms.Normalize(mean=[0.5]*model_cfg.in_channels, std=[0.5]*model_cfg.in_channels)
+    # in_channels 값에 따라 정규화 파라미터를 다르게 설정합니다.
+    if model_cfg.in_channels == 1:
+        # 흑백 이미지: 픽셀 값을 [-1, 1] 범위로 정규화
+        normalize = transforms.Normalize(mean=[0.5], std=[0.5])
+    else:
+        # 컬러 이미지(in_channels=3): ImageNet 사전 훈련 모델의 표준 정규화 값 사용
+        # 이는 사전 훈련된 가중치의 성능을 최대한 활용하는 데 도움이 됩니다.
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     # 기본 훈련 변환 리스트
     train_transforms_list = [
