@@ -41,10 +41,9 @@ class QueryAdaptiveMasking(nn.Module):
             size = x.shape[self.dim]
             # 마스킹을 적용할 차원의 크기(예: 디코더 쿼리 패치 수)를 가져옵니다.
 
-            # [제안된 방식] 유니폼 분포에서 마스킹 확률을 랜덤하게 샘플링합니다.
-            # 0~1 사이의 랜덤 값을 생성한 뒤, [start_prob, end_prob] 범위로 스케일링합니다.
+            # 각 위치에 적용될 마스킹 확률을 [start_prob, end_prob] 범위 내에서 무작위로 샘플링합니다.
             rand_probs = torch.rand(size, device=x.device) # [0, 1) 범위의 랜덤 값 생성
-            dropout_prob = self.start_prob + (self.end_prob - self.start_prob) * rand_probs
+            dropout_prob = self.start_prob + (self.end_prob - self.start_prob) * rand_probs # 선형 보간
             
             # `.view`를 통해 확률 텐서의 모양을 입력 텐서 `x`와 브로드캐스팅이 가능하도록 조정합니다.
             dropout_prob = dropout_prob.view([-1 if i == self.dim else 1 for i in range(x.dim())])
@@ -186,7 +185,7 @@ class DecoderLayer(nn.Module):
         # --- 크로스-어텐션 블록 ---
         self.res_attention = res_attention
         # 잔차 어텐션 사용 여부를 저장합니다.
-        self.cross_attn = _MultiheadAttention(emb_dim, num_heads, attn_dropout=attn_dropout, proj_dropout=dropout, res_attention=res_attention)
+        self.cross_attn = _MultiheadAttention(emb_dim, num_heads, attn_dropout=attn_dropout, proj_dropout=dropout, res_attention=res_attention, qkv_bias=True)
         # 멀티헤드 크로스-어텐션 모듈을 초기화한다.
         self.dropout_attn = QueryAdaptiveMasking(dim=1, start_prob=qam_prob_start, end_prob=qam_prob_end)
         # 어텐션 출력에 적용할 Query-Adaptive Masking 레이어를 정의합니다.
@@ -276,7 +275,7 @@ class _MultiheadAttention(nn.Module):
         # 계산된 어텐션 가중치에 적용될 드롭아웃 레이어를 정의합니다.
         
         # 여러 헤드의 출력을 합친 벡터를 최종 임베딩 차원으로 변환하는 출력 레이어를 정의합니다.
-        self.heads2emb = nn.Sequential(nn.Linear(num_heads * head_dim, emb_dim), nn.Dropout(proj_dropout))
+        self.concatheads2emb = nn.Sequential(nn.Linear(num_heads * head_dim, emb_dim), nn.Dropout(proj_dropout))
 
     # 멀티헤드 어텐션의 순전파 로직을 정의합니다.
     def forward(self, Q:Tensor, K:Tensor, V:Tensor, prev=None):
@@ -310,7 +309,7 @@ class _MultiheadAttention(nn.Module):
         output = output.permute(0, 2, 1, 3).contiguous().view(bs, -1, self.num_heads * self.head_dim)
         # 차원을 원래대로 복원 [B, num_patches, emb_dim] 하고, 헤드들을 다시 하나의 텐서로 합칩니다.
         
-        output = self.heads2emb(output)
+        output = self.concatheads2emb(output)
         # 최종 출력 레이어를 통과시킵니다.
 
         if self.res_attention: return output, attn_weights, attn_scores

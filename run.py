@@ -212,10 +212,6 @@ def log_model_parameters(model):
     encoder_norm_params = count_parameters(model.encoder.norm)
     encoder_total_params = conv_front_params + conv_1x1_params + encoder_norm_params
 
-    decoder_params = count_parameters(model.decoder)
-    classifier_params = count_parameters(model.classifier)
-    total_params = encoder_total_params + decoder_params + classifier_params
-    # 2. Decoder (CatsDecoder) 내부를 세분화하여 파라미터 계산
     # CatsDecoder (CATS.py의 Model 클래스)의 구성 요소
     # - Embedding4Decoder (W_feat2emb, learnable_queries, PE)
     # - Embedding4Decoder 내부의 Decoder (트랜스포머 레이어들)
@@ -293,7 +289,7 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     
     if total == 0:
         logging.warning("테스트 데이터가 없습니다. 평가를 건너뜁니다.")
-        return 0.0
+        return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': []}
 
     accuracy = 100 * correct / total
     precision = precision_score(all_labels, all_preds, average='macro', zero_division=0)
@@ -691,7 +687,7 @@ if __name__ == '__main__':
         # 훈련 시에는 train_loader와 valid_loader 사용
         train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path)
 
-        logging.info("="*50)
+        logging.info("\n" + "="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
         final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Test", class_names=class_names)
 
