@@ -41,6 +41,7 @@ def plot_and_save_accuracy_graph(log_file_path, save_dir, final_acc):
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy (%)')
         plt.ylim(0, 100) # Y축 범위를 0부터 100까지로 고정
+        plt.yticks(range(0, 101, 10)) # Y축 눈금을 10 단위로 설정
         plt.grid(True)
 
         save_path = os.path.join(save_dir, 'val_acc_graph.png')
