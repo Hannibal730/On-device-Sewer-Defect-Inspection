@@ -56,50 +56,10 @@ class QueryAdaptiveMasking(nn.Module):
             # 생성된 마스크를 입력 텐서 `x`에 요소별로 곱하여 특정 요소들을 0으로 만듭니다(마스킹). 수학식은 x_out = x * mask 입니다.
 
 # 이미지 분류 모델의 디코더 백본(backbone)을 정의하는 클래스입니다.
-# 입력 패치 시퀀스를 처리하고, 트랜스포머 기반의 디코더 구조를 통해 특징을 추출합니다.
-class Model_backbone(nn.Module):
-    # 모델 백본의 생성자입니다. 모델의 구조와 하이퍼파라미터를 초기화합니다.
-    def __init__(self, num_encoder_patches:int, num_labels:int, featured_patch_dim:int=24, num_decoder_layers:int=3, emb_dim=128, num_heads=16, decoder_ff_dim:int=256, attn_dropout:float=0.,
-                 dropout:float=0., res_attention:bool=False, save_attention:bool=False, qam_prob_start:float = 0.1, qam_prob_end:float =0.5, 
-                 positional_encoding:bool=True, **kwargs):
-        
-        super().__init__()
-        # `nn.Module`의 생성자를 호출합니다.
-        
-        # featured_patch_dim을 먼저 self에 할당합니다.
-        self.featured_patch_dim = featured_patch_dim
-        
-        # 각 디코더 쿼리가 특정 클래스를 담당하도록 num_decoder_patches를 num_labels와 동일하게 설정합니다.
-        num_decoder_patches = num_labels
-
-        # --- 백본 모델(임베딩 및 디코더) 초기화 --- 
-        self.backbone = Embedding(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, 
-                                num_decoder_layers=num_decoder_layers, emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, positional_encoding=positional_encoding,
-                                attn_dropout=attn_dropout, dropout=dropout, qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, 
-                                res_attention=res_attention, save_attention=save_attention, **kwargs)
-        # `Learnable_Query_Embedding` 클래스를 사용하여 실제 트랜스포머 연산을 수행할 백본을 생성합니다.
-
-        self.num_labels = num_labels
-        # 모델이 예측해야 할 클래스의 수를 저장합니다.
-        self.proj = Decoder2Classifier(emb_dim, self.featured_patch_dim)
-        # 백본의 출력(`emb_dim` 차원)을 최종 분류기가 사용할 특징 벡터로 변환하는 헤드를 생성합니다.
-    
-    # 모델 백본의 순전파 로직을 정의합니다.
-    def forward(self, z): # 입력 z의 형태: [배치 크기, 입력 다변량 시계열 데이터의 변수 개수, 시퀀스 길이L]
-        # 입력 z의 형태: [배치 크기, 인코더 패치 수, 특징 차원]
-        
-        # --- 모델 순전파 ---
-        z = self.backbone(z)
-        # 패치화된 입력을 백본 모델(`Learnable_Query_Embedding`)에 통과시킵니다.
-        z = self.proj(z)
-        # 백본의 출력을 헤드 레이어에 통과시켜 최종 특징 벡터를 생성합니다.
-        
-        return z
-    
 # 입력 패치와 학습 가능한 쿼리(learnable queries)를 임베딩하고 트랜스포머 디코더를 통해 예측을 수행하는 클래스입니다.
 # 디코더에 입력할 seq_encoder_patches와 seq_decoder_patches를 생성합니다. 이후 디코더에 입력되어 특징 벡터를 생성하고, 오차 계산 및 역전파를 통해 훈련됩니다.
 # 이 파라미터는 처음에는 무작위 값으로 시작하지만, 훈련 과정을 통해 분류에 중요한 특징을 추출하기 위한 유의미한 질문(쿼리)으로 학습되기 때문에 "학습 가능한 쿼리"라고 부릅니다.
-class Embedding(nn.Module): 
+class Embedding4Decoder(nn.Module): 
     # 클래스의 생성자입니다.
     def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, num_decoder_layers=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5,
                  decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True, **kwargs):
@@ -121,10 +81,11 @@ class Embedding(nn.Module):
         # --- 학습 가능한 위치 인코딩 ---
         # 입력 시퀀스의 위치 정보를 제공하기 위해, '학습 가능한 위치 인코딩(Positional Encoding)'을 파라미터로 생성합니다.
         self.use_positional_encoding = positional_encoding
-        if self.use_positional_encoding:
+        if self.use_positional_encoding: # PE는 학습 가능한 파라미터이므로 nn.Parameter로 감싸야 합니다.
             # 사인/코사인 함수 대신 직접 학습하는 방식입니다.
-            self.PE = nn.Parameter(0.04*torch.rand(num_encoder_patches, emb_dim)-0.02)
-            # 0과 1 사이의 균등 분포(torch.rand)를 따르는 무작위 숫자를 요소로 [패치 개수, 임베딩 차원] 모양의 행렬을 생성합니다.
+            # 표준 초기화 방식을 따르도록 수정합니다.
+            self.PE = nn.Parameter(torch.zeros(num_encoder_patches, emb_dim))
+            nn.init.uniform_(self.PE, -0.02, 0.02) # -0.02에서 0.02 사이의 균등 분포로 초기화
         else:
             self.PE = None
         # --- 디코더 ---
@@ -156,20 +117,17 @@ class Embedding(nn.Module):
         # -> [1, num_decoder_patches, emb_dim]
         # -> [bs, num_decoder_patches, emb_dim]
         
-        # --- 3. 디코더 순전파 ---
-        z = self.decoder(seq_encoder_patches, seq_decoder_patches)
-        # 준비된 인코더 패치와 디코더 쿼리 패치를 디코더에 전달합니다.
-        # z shape: [bs, num_decoder_patches, emb_dim]
-
-        return z
+        # Embedding 클래스는 이제 디코더에 필요한 입력 시퀀스들을 반환합니다.
+        # 실제 디코더 호출은 Model 클래스의 forward에서 이루어집니다.
+        return seq_encoder_patches, seq_decoder_patches
             
-class Decoder2Classifier(nn.Module):
+class Projection4Classifier(nn.Module):
     """디코더의 출력을 받아 최종 분류기가 사용할 수 있는 특징 벡터로 변환합니다."""
     def __init__(self, emb_dim, featured_patch_dim):
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
         self.linear = nn.Linear(emb_dim, featured_patch_dim)
-        # 트랜스포머의 은닉 상태 차원, 즉 임베딩 차원(`emb_dim`)을 `featured_patch_dim`으로 변환하는 선형 레이어를 정의합니다.
+        # 트랜스포머의 은닉 상태 차원(`emb_dim`)을 `featured_patch_dim`으로 변환하는 선형 레이어를 정의합니다.
         self.flatten = nn.Flatten(start_dim=-2)
         # 디코더 패치들을 하나의 벡터로 펼치기 위한 Flatten 레이어를 정의합니다.
 
@@ -359,11 +317,10 @@ class _MultiheadAttention(nn.Module):
         else: return output, attn_weights
 
 # 전체 모델을 구성하고 순전파를 정의하는 메인 클래스입니다.
-# 하이퍼파라미터를 인자로 받아 `Model_backbone`을 초기화합니다.
+# 하이퍼파라미터를 인자로 받아 `Embedding`과 `Decoder2Classifier`를 직접 초기화합니다.
 class Model(nn.Module):
     # 전체 모델의 생성자입니다.
     def __init__(self, args, **kwargs):
-        
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
         
@@ -371,31 +328,42 @@ class Model(nn.Module):
         # `args` 객체로부터 모델 구성에 필요한 모든 하이퍼파라미터를 가져옵니다.
         num_encoder_patches = args.num_encoder_patches # 인코더 패치의 수
         num_labels = args.num_labels # 예측할 클래스의 수
-        featured_patch_dim = args.featured_patch_dim # 각 패치의 특징 차원
+        self.featured_patch_dim = args.featured_patch_dim # 각 패치의 특징 차원
         emb_dim = args.emb_dim           # 모델의 은닉 상태 차원
         num_heads = args.num_heads           # 멀티헤드 어텐션의 헤드 수
         num_decoder_layers = args.num_decoder_layers # 트랜스포머 디코더의 레이어 수
         decoder_ff_ratio = args.decoder_ff_ratio # FFN 내부 차원 비율
         dropout = args.dropout           # 드롭아웃 비율
+        attn_dropout = dropout           # 어텐션 드롭아웃도 동일한 비율 사용
         positional_encoding = args.positional_encoding # 위치 인코딩 사용 여부
         save_attention = args.save_attention     # 어텐션 가중치 저장 여부
         qam_prob_start = getattr(args, 'qam_prob_start', 0.0) # QAM 시작 확률
         qam_prob_end = getattr(args, 'qam_prob_end', 0.0)     # QAM 끝 확률
         res_attention = getattr(args, 'res_attention', False) # res_attention 사용 여부
 
+        # 각 디코더 쿼리가 특정 클래스를 담당하도록 num_decoder_patches를 num_labels와 동일하게 설정합니다.
+        num_decoder_patches = num_labels
+
         # FFN의 내부 차원을 계산합니다.
         decoder_ff_dim = emb_dim * decoder_ff_ratio # 예: 24 * 2 = 48
 
-        # 로드한 하이퍼파라미터들을 사용하여 `Model_backbone`을 초기화합니다.
-        self.model = Model_backbone(num_encoder_patches=num_encoder_patches, num_labels=num_labels, featured_patch_dim=featured_patch_dim, num_decoder_layers=num_decoder_layers,
-                                    emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, dropout=dropout, positional_encoding=positional_encoding, 
-                                    res_attention=res_attention, save_attention=save_attention, qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, **kwargs)
-        
-    
+        # --- 백본 모델(임베딩 및 디코더) 초기화 --- 
+        self.embedding4decoder = Embedding4Decoder(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, 
+                                num_decoder_layers=num_decoder_layers, emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, positional_encoding=positional_encoding,
+                                attn_dropout=attn_dropout, dropout=dropout, qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, 
+                                res_attention=res_attention, save_attention=save_attention, **kwargs)
+
+        # 백본의 출력을 최종 분류기가 사용할 특징 벡터로 변환하는 헤드를 생성합니다.
+        self.projection4classifier = Projection4Classifier(emb_dim, self.featured_patch_dim)
+
     # 전체 모델의 순전파 로직을 정의합니다.
     def forward(self, x): # 입력 x의 형태: [배치 크기, 인코더 패치 수, 특징 차원]
 
-        # 백본 모델에 입력을 통과시켜 특징 텐서를 추출합니다.
-        features = self.model(x)
+        # 1. Embedding: 인코더 패치와 학습 가능한 쿼리를 임베딩하여 디코더 입력 시퀀스 준비
+        seq_encoder_patches, seq_decoder_patches = self.embedding4decoder(x)
+        # 2. Decoder: 준비된 시퀀스들을 디코더에 통과시켜 쿼리 기반 특징 추출
+        z = self.embedding4decoder.decoder(seq_encoder_patches, seq_decoder_patches)
+        # 3. Projection4Classifier: 최종 특징 벡터로 변환
+        features = self.projection4classifier(z)
         # 결과 features의 형태: [B, num_decoder_patches * featured_patch_dim]
         return features

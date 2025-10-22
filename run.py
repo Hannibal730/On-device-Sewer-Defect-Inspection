@@ -286,7 +286,12 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
             logging.info(f"  - F1 Score for '{class_name}': {f1_per_class[i]:.4f}")
         logging.info("-" * 30)
 
-    return accuracy, f1, all_labels, all_preds
+    return {
+        'accuracy': accuracy,
+        'f1': f1,
+        'labels': all_labels,
+        'preds': all_preds
+    }
 
 def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
@@ -334,11 +339,11 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
         
         # --- 평가 단계 ---
-        _, f1, _, _ = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
+        eval_results = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
         
         # 최고 성능 모델 저장
-        if f1 > best_f1:
-            best_f1 = f1
+        if eval_results['f1'] > best_f1:
+            best_f1 = eval_results['f1']
             torch.save(model.state_dict(), model_path)
             logging.info(f"[Best Model Saved] (F1 Score: {best_f1:.4f}) -> '{model_path}'")
         
@@ -394,18 +399,19 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
     # 2. 테스트셋 성능 평가
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
     start_time = time.time()
-    final_acc, _, all_labels, all_preds = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+    eval_results = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
     end_time = time.time()
     inference_time = end_time - start_time
     num_test_samples = len(data_loader.dataset)
     avg_inference_time_per_sample = (inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
     logging.info(f"총 추론 시간: {inference_time:.2f}초 (테스트 샘플 {num_test_samples}개)")
     logging.info(f"샘플 당 평균 추론 시간: {avg_inference_time_per_sample:.2f}ms")
+    final_acc = eval_results['accuracy']
 
     # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
-    if all_labels is not None and all_preds is not None:
+    if eval_results['labels'] and eval_results['preds']:
         cm_save_path = os.path.join(run_dir_path, 'confusion_matrix.png')
-        plot_and_save_confusion_matrix(all_labels, all_preds, class_names, cm_save_path)
+        plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, cm_save_path)
 
     # 4. 어텐션 맵 시각화 (설정이 True인 경우)
     if cats_cfg.save_attention:
@@ -419,7 +425,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
                 _ = model(sample_images)
 
             # 마지막 디코더 레이어에 저장된 어텐션 맵을 가져옴
-            attention_maps = model.decoder.model.backbone.decoder.layers[-1].attn
+            attention_maps = model.decoder.embedding4decoder.decoder.layers[-1].attn
             attn_save_path = os.path.join(run_dir_path, 'attention_map.png')
             plot_and_save_attention_maps(attention_maps, sample_images, attn_save_path, model_cfg.img_size)
         except Exception as e:
