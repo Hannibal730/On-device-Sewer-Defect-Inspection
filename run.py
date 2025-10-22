@@ -165,7 +165,6 @@ class Classifier(nn.Module):
         input_dim = num_decoder_patches * featured_patch_dim # 48
         hidden_dim = (input_dim + num_labels) // 2 # 중간 은닉층 차원 (예: (48+2)//2 = 25)
 
-        # MLP 헤드: Linear -> ReLU -> Dropout -> Linear
         self.projection = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
@@ -216,16 +215,21 @@ def log_model_parameters(model):
     # - Embedding4Decoder (W_feat2emb, learnable_queries, PE)
     # - Embedding4Decoder 내부의 Decoder (트랜스포머 레이어들)
     # - Projection4Classifier
-    
-    # Embedding4Decoder의 자체 파라미터 (내부 Decoder 모듈 제외)
-    embedding4decoder_core_params = 0
-    for name, param in model.decoder.embedding4decoder.named_parameters():
-        if param.requires_grad and "decoder" not in name: # 'decoder'라는 이름이 포함되지 않은 파라미터만 카운트
-            embedding4decoder_core_params += param.numel()
+
+    # Embedding4Decoder의 파라미터를 세분화하여 계산
+    embedding_module = model.decoder.embedding4decoder
+    pe_params = count_parameters(embedding_module.PE) if hasattr(embedding_module, 'PE') and embedding_module.PE is not None else 0
+
+    # W_feat2emb와 learnable_queries의 파라미터를 각각 계산
+    w_feat2emb_params = count_parameters(embedding_module.W_feat2emb)
+    queries_params = count_parameters(embedding_module.learnable_queries)
+
+    # Embedding4Decoder의 자체 파라미터 총합 (내부 Decoder 제외)
+    embedding4decoder_total_params = w_feat2emb_params + queries_params + pe_params
 
     cats_decoder_layers_params = count_parameters(model.decoder.embedding4decoder.decoder)
     cats_decoder_projection4classifier_params = count_parameters(model.decoder.projection4classifier)
-    cats_decoder_total_params = embedding4decoder_core_params + cats_decoder_layers_params + cats_decoder_projection4classifier_params
+    cats_decoder_total_params = embedding4decoder_total_params + cats_decoder_layers_params + cats_decoder_projection4classifier_params
 
     # 3. Classifier (Linear Head) 내부를 세분화하여 파라미터 계산
     classifier_projection_params = count_parameters(model.classifier.projection)
@@ -240,7 +244,9 @@ def log_model_parameters(model):
     logging.info(f"    - 1x1_conv (Channel Proj):    {conv_1x1_params:,} 개")
     logging.info(f"    - norm (LayerNorm):           {encoder_norm_params:,} 개")
     logging.info(f"  - Decoder (CatsDecoder):        {cats_decoder_total_params:,} 개")
-    logging.info(f"    - Embedding4Decoder (Embedding):   {embedding4decoder_core_params:,} 개")
+    logging.info(f"    - Embedding Layer (W_feat2emb):    {w_feat2emb_params:,} 개")
+    logging.info(f"    - Learnable Queries:               {queries_params:,} 개")
+    logging.info(f"    - Positional Encoding (PE):        {pe_params:,} 개")
     logging.info(f"    - Decoder Layers (Cross-Attention): {cats_decoder_layers_params:,} 개")
     logging.info(f"    - Projection4Classifier:      {cats_decoder_projection4classifier_params:,} 개")
     logging.info(f"  - Classifier (Projection MLP):  {classifier_total_params:,} 개")

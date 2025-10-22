@@ -80,11 +80,12 @@ class Embedding4Decoder(nn.Module):
         # --- 학습 가능한 위치 인코딩 ---
         # 입력 시퀀스의 위치 정보를 제공하기 위해, '학습 가능한 위치 인코딩(Positional Encoding)'을 파라미터로 생성합니다.
         self.use_positional_encoding = positional_encoding
-        if self.use_positional_encoding: # PE는 학습 가능한 파라미터이므로 nn.Parameter로 감싸야 합니다.
-            # 사인/코사인 함수 대신 직접 학습하는 방식입니다.
-            # 표준 초기화 방식을 따르도록 수정합니다.
+        if self.use_positional_encoding:
+            # 사인/코사인 함수 대신, 위치 정보를 담는 벡터 자체를 학습 파라미터로 사용합니다.
+            # [num_encoder_patches, emb_dim] 크기의 텐서를 생성하며, 각 행은 특정 위치(패치)에 대한 위치 인코딩 벡터를 나타냅니다.
+            # 이 파라미터는 훈련 과정에서 역전파를 통해 최적화됩니다.
             self.PE = nn.Parameter(torch.zeros(num_encoder_patches, emb_dim))
-            nn.init.uniform_(self.PE, -0.02, 0.02) # -0.02에서 0.02 사이의 균등 분포로 초기화
+            nn.init.uniform_(self.PE, -0.02, 0.02) 
         else:
             self.PE = None
         # --- 디코더 ---
@@ -100,6 +101,8 @@ class Embedding4Decoder(nn.Module):
         # --- 1. 디코더에 입력할 입력 시퀀스 준비 (Key, Value) ---
         x = self.W_feat2emb(x)
         if self.use_positional_encoding:
+            # 패치 특징 벡터에 학습 가능한 위치 인코딩(PE)을 더해줍니다.
+            # x: [B, num_patches, emb_dim], PE: [num_patches, emb_dim] -> 브로드캐스팅을 통해 덧셈
             x = x + self.PE
         # x shape: [B, num_encoder_patches, emb_dim]
 
