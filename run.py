@@ -67,41 +67,41 @@ class CnnFeatureExtractor(nn.Module):
         if cnn_feature_extractor_name == 'resnet18_layer1':
             base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
-            self.front = nn.Sequential(*list(base_model.children())[:5]) # layer1까지
+            self.conv_front = nn.Sequential(*list(base_model.children())[:5]) # layer1까지
             base_out_channels = 64
         elif cnn_feature_extractor_name == 'resnet18_layer2':
             base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
-            self.front = nn.Sequential(*list(base_model.children())[:6]) # layer2까지
+            self.conv_front = nn.Sequential(*list(base_model.children())[:6]) # layer2까지
             base_out_channels = 128
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat1':
             base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
-            self.front = base_model.features[:2] # features의 2번째 블록까지
+            self.conv_front = base_model.features[:2] # features의 2번째 블록까지
             base_out_channels = 16
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat3':
             base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
-            self.front = base_model.features[:4] # features의 4번째 블록까지
+            self.conv_front = base_model.features[:4] # features의 4번째 블록까지
             base_out_channels = 24
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat2':
             base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
-            self.front = base_model.features[:3] # features의 3번째 블록까지
+            self.conv_front = base_model.features[:3] # features의 3번째 블록까지
             base_out_channels = 24
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat3':
             base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
-            self.front = base_model.features[:4] # features의 4번째 블록까지
+            self.conv_front = base_model.features[:4] # features의 4번째 블록까지
             base_out_channels = 40
         else:
             raise ValueError(f"지원하지 않는 CNN 피처 추출기 이름입니다: {cnn_feature_extractor_name}")
 
         # 최종 출력 채널 수를 `featured_patch_channel`에 맞추기 위한 1x1 컨볼루션 레이어입니다.
         if out_channels is not None and out_channels != base_out_channels:
-            self.channel_proj = nn.Conv2d(base_out_channels, out_channels, kernel_size=1)
+            self.conv_1x1 = nn.Conv2d(base_out_channels, out_channels, kernel_size=1)
         else:
-            self.channel_proj = nn.Identity()
+            self.conv_1x1 = nn.Identity()
 
     def _adjust_input_channels(self, base_model, in_channels):
         """모델의 첫 번째 컨볼루션 레이어의 입력 채널을 조정합니다."""
@@ -125,8 +125,8 @@ class CnnFeatureExtractor(nn.Module):
             raise ValueError("in_channels는 1 또는 3만 지원합니다.")
 
     def forward(self, x):
-        x = self.front(x)
-        x = self.channel_proj(x)
+        x = self.conv_front(x)
+        x = self.conv_1x1(x)
         return x
 
 class PatchConvEncoder(nn.Module):
@@ -204,18 +204,53 @@ def log_model_parameters(model):
     def count_parameters(m):
         return sum(p.numel() for p in m.parameters() if p.requires_grad)
 
-    encoder_params = count_parameters(model.encoder)
+    # Encoder 내부를 세분화하여 파라미터 계산
+    # 1. Encoder (PatchConvEncoder) 내부를 세분화하여 파라미터 계산
+    cnn_feature_extractor = model.encoder.shared_conv[0]
+    conv_front_params = count_parameters(cnn_feature_extractor.conv_front)
+    conv_1x1_params = count_parameters(cnn_feature_extractor.conv_1x1)
+    encoder_norm_params = count_parameters(model.encoder.norm)
+    encoder_total_params = conv_front_params + conv_1x1_params + encoder_norm_params
+
     decoder_params = count_parameters(model.decoder)
     classifier_params = count_parameters(model.classifier)
-    total_params = encoder_params + decoder_params + classifier_params
+    total_params = encoder_total_params + decoder_params + classifier_params
+    # 2. Decoder (CatsDecoder) 내부를 세분화하여 파라미터 계산
+    # CatsDecoder (CATS.py의 Model 클래스)의 구성 요소
+    # - Embedding4Decoder (W_feat2emb, learnable_queries, PE)
+    # - Embedding4Decoder 내부의 Decoder (트랜스포머 레이어들)
+    # - Projection4Classifier
+    
+    # Embedding4Decoder의 자체 파라미터 (내부 Decoder 모듈 제외)
+    embedding4decoder_core_params = 0
+    for name, param in model.decoder.embedding4decoder.named_parameters():
+        if param.requires_grad and "decoder" not in name: # 'decoder'라는 이름이 포함되지 않은 파라미터만 카운트
+            embedding4decoder_core_params += param.numel()
+
+    cats_decoder_layers_params = count_parameters(model.decoder.embedding4decoder.decoder)
+    cats_decoder_projection4classifier_params = count_parameters(model.decoder.projection4classifier)
+    cats_decoder_total_params = embedding4decoder_core_params + cats_decoder_layers_params + cats_decoder_projection4classifier_params
+
+    # 3. Classifier (Linear Head) 내부를 세분화하여 파라미터 계산
+    classifier_projection_params = count_parameters(model.classifier.projection)
+    classifier_total_params = classifier_projection_params
+
+    total_params = encoder_total_params + cats_decoder_total_params + classifier_total_params
 
     logging.info("="*50)
     logging.info("모델 파라미터 수:")
-    logging.info(f"  - Encoder (PatchConvEncoder): {encoder_params:,} 개")
-    logging.info(f"  - Decoder (CatsDecoder):      {decoder_params:,} 개")
-    logging.info(f"  - Classifier (Linear Head):   {classifier_params:,} 개")
+    logging.info(f"  - Encoder (PatchConvEncoder):   {encoder_total_params:,} 개")
+    logging.info(f"    - conv_front (CNN Backbone):  {conv_front_params:,} 개")
+    logging.info(f"    - 1x1_conv (Channel Proj):    {conv_1x1_params:,} 개")
+    logging.info(f"    - norm (LayerNorm):           {encoder_norm_params:,} 개")
+    logging.info(f"  - Decoder (CatsDecoder):        {cats_decoder_total_params:,} 개")
+    logging.info(f"    - Embedding4Decoder (Embedding):   {embedding4decoder_core_params:,} 개")
+    logging.info(f"    - Decoder Layers (Cross-Attention): {cats_decoder_layers_params:,} 개")
+    logging.info(f"    - Projection4Classifier:      {cats_decoder_projection4classifier_params:,} 개")
+    logging.info(f"  - Classifier (Projection MLP):  {classifier_total_params:,} 개")
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
+
 
 def _get_model_weights_norm(model):
     """모델의 모든 학습 가능한 파라미터에 대한 L2 Norm을 계산합니다."""
