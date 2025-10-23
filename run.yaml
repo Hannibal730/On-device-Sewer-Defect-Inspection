@@ -13,14 +13,14 @@ run:
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름.
   random_sampling_ratio: 0.1  # 각 데이터셋(train/valid/test)에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_seed: 42 # 데이터 샘플링 시 사용할 랜덤 시드. 재현성을 위해 고정합니다.
-  num_workers: 8 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용.
+  num_workers: 16 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용.
 
 # =============================================================================
 # 2. 훈련 하이퍼파라미터
 # =============================================================================
 training:
   epochs: 30                 
-  batch_size: 32                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
+  batch_size: 64                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   lr: 0.001                    # 옵티마이저의 학습률.
   schedulefree: true           # true로 설정하면 schedule-free 옵티마이저를, false로 설정하면 표준 AdamW 옵티마이저를 사용합니다.
 
@@ -49,7 +49,7 @@ model:
     emb_dim: 24                # CATS 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원.
     num_heads: 2               # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `num_heads`로 나누어 떨어져야 합니다.
     num_decoder_layers: 2      # CATS 모델 내부의 디코더 레이어 수.
-    num_decoder_patches: 2     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
+    num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
     decoder_ff_ratio: 2        # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (decoder_ff_dim = emb_dim * decoder_ff_ratio).
     dropout: 0.1               # CATS 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).
     positional_encoding: True  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
