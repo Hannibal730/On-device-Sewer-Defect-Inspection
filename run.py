@@ -59,7 +59,7 @@ class CnnFeatureExtractor(nn.Module):
     다양한 CNN 아키텍처의 앞부분을 특징 추출기로 사용하는 범용 클래스입니다.
     run.yaml의 `cnn_feature_extractor.name` 설정에 따라 모델 구조가 결정됩니다.
     """
-    def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, in_channels=3, out_channels=None):
+    def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, in_channels=3, featured_patch_dim=None):
         super().__init__()
         self.cnn_feature_extractor_name = cnn_feature_extractor_name
         
@@ -97,9 +97,9 @@ class CnnFeatureExtractor(nn.Module):
         else:
             raise ValueError(f"지원하지 않는 CNN 피처 추출기 이름입니다: {cnn_feature_extractor_name}")
 
-        # 최종 출력 채널 수를 `featured_patch_channel`에 맞추기 위한 1x1 컨볼루션 레이어입니다.
-        if out_channels is not None and out_channels != base_out_channels:
-            self.conv_1x1 = nn.Conv2d(base_out_channels, out_channels, kernel_size=1)
+        # 최종 출력 채널 수를 `featured_patch_dim`에 맞추기 위한 1x1 컨볼루션 레이어입니다.
+        if featured_patch_dim is not None and featured_patch_dim != base_out_channels:
+            self.conv_1x1 = nn.Conv2d(base_out_channels, featured_patch_dim, kernel_size=1)
         else:
             self.conv_1x1 = nn.Identity()
 
@@ -138,7 +138,7 @@ class PatchConvEncoder(nn.Module):
         self.num_encoder_patches = (img_size // patch_size) ** 2
         
         self.shared_conv = nn.Sequential(
-            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=True, in_channels=in_channels, out_channels=featured_patch_dim),
+            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=True, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(start_dim=1) # [B*num_encoder_patches, D, 1, 1] -> [B*num_encoder_patches, D] 형태가 됩니다.
         )
@@ -218,11 +218,17 @@ def log_model_parameters(model):
 
     # Embedding4Decoder의 파라미터를 세분화하여 계산
     embedding_module = model.decoder.embedding4decoder
-    pe_params = count_parameters(embedding_module.PE) if hasattr(embedding_module, 'PE') and embedding_module.PE is not None else 0
-
-    # W_feat2emb와 learnable_queries의 파라미터를 각각 계산
+    
+    # PE와 learnable_queries는 nn.Parameter이므로 .numel()로 직접 개수 계산
+    pe_params = 0
+    if hasattr(embedding_module, 'PE') and embedding_module.PE is not None and embedding_module.PE.requires_grad:
+        pe_params = embedding_module.PE.numel()
+    
+    queries_params = 0
+    if hasattr(embedding_module, 'learnable_queries') and embedding_module.learnable_queries.requires_grad:
+        queries_params = embedding_module.learnable_queries.numel()
+    
     w_feat2emb_params = count_parameters(embedding_module.W_feat2emb)
-    queries_params = count_parameters(embedding_module.learnable_queries)
 
     # Embedding4Decoder의 자체 파라미터 총합 (내부 Decoder 제외)
     embedding4decoder_total_params = w_feat2emb_params + queries_params + pe_params
