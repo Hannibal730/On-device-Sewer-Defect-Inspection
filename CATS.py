@@ -330,6 +330,7 @@ class Model(nn.Module):
         # `args` 객체로부터 모델 구성에 필요한 모든 하이퍼파라미터를 가져옵니다.
         num_encoder_patches = args.num_encoder_patches # 인코더 패치의 수
         num_labels = args.num_labels # 예측할 클래스의 수
+        num_decoder_patches = args.num_decoder_patches # 디코더 쿼리의 수 (YAML에서 설정)
         self.featured_patch_dim = args.featured_patch_dim # 각 패치의 특징 차원
         emb_dim = args.emb_dim           # 모델의 은닉 상태 차원
         num_heads = args.num_heads           # 멀티헤드 어텐션의 헤드 수
@@ -342,9 +343,6 @@ class Model(nn.Module):
         qam_prob_start = getattr(args, 'qam_prob_start', 0.0) # QAM 시작 확률
         qam_prob_end = getattr(args, 'qam_prob_end', 0.0)     # QAM 끝 확률
         res_attention = getattr(args, 'res_attention', False) # res_attention 사용 여부
-
-        # 각 디코더 쿼리가 특정 클래스를 담당하도록 num_decoder_patches를 num_labels와 동일하게 설정합니다.
-        num_decoder_patches = num_labels
 
         # FFN의 내부 차원을 계산합니다.
         decoder_ff_dim = emb_dim * decoder_ff_ratio # 예: 24 * 2 = 48

@@ -655,7 +655,9 @@ if __name__ == '__main__':
     
     cats_params = {
         'num_encoder_patches': num_encoder_patches,
-        'num_labels': num_labels, 'num_decoder_layers': cats_cfg.num_decoder_layers,
+        'num_labels': num_labels, 
+        'num_decoder_layers': cats_cfg.num_decoder_layers,
+        'num_decoder_patches': cats_cfg.num_decoder_patches, # YAML에서 읽은 값 전달
         'featured_patch_dim': cats_cfg.featured_patch_dim,
         'emb_dim': cats_cfg.emb_dim, 
         'num_heads': cats_cfg.num_heads, 
@@ -673,9 +675,7 @@ if __name__ == '__main__':
                                featured_patch_dim=cats_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'])
     decoder = CatsDecoder(args=cats_args) # CATS.py의 Model 클래스
     
-    # 각 디코더 쿼리가 특정 클래스를 담당하도록 num_decoder_patches를 num_labels와 동일하게 설정합니다.
-    num_decoder_patches = num_labels
-    classifier = Classifier(num_decoder_patches=num_decoder_patches, 
+    classifier = Classifier(num_decoder_patches=cats_cfg.num_decoder_patches, 
                             featured_patch_dim=cats_cfg.featured_patch_dim, num_labels=num_labels, dropout=cats_cfg.dropout)
     model = HybridModel(encoder, decoder, classifier).to(device)
 
