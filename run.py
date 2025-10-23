@@ -685,14 +685,22 @@ if __name__ == '__main__':
     # --- 옵티마이저 및 스케줄러 설정 ---
     # run.yaml의 schedulefree 설정에 따라 옵티마이저를 선택합니다.
     use_schedulefree = getattr(train_cfg, 'schedulefree', False)
+    use_cosine_scheduler = getattr(train_cfg, 'use_cosine_scheduler', False)
+
     if use_schedulefree:
         logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
         optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
         scheduler = None # schedulefree는 스케줄러가 필요 없음
     else:
-        logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
+        # 표준 AdamW 옵티마이저 사용
         optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
-        scheduler = None # 스케줄러를 사용하지 않음
+        
+        if use_cosine_scheduler:
+            logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingLR 스케줄러를 사용합니다. (T_max={train_cfg.epochs})")
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
+        else:
+            logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
+            scheduler = None # 스케줄러를 사용하지 않음
 
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':

@@ -21,8 +21,9 @@ run:
 training:
   epochs: 30                 
   batch_size: 64                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
-  lr: 0.001                    # 옵티마이저의 학습률.
-  schedulefree: true           # true로 설정하면 schedule-free 옵티마이저를, false로 설정하면 표준 AdamW 옵티마이저를 사용합니다.
+  lr: 0.001                     # 옵티마이저의 학습률.
+  schedulefree: false           # true: schedule-free 옵티마이저 사용. false: 표준 AdamW 옵티마이저 사용.
+  use_cosine_scheduler: true    # schedulefree가 false일 때, CosineAnnealingLR 스케줄러 사용 여부.
 
 # =============================================================================
 # 3. 모델 아키텍처 파라미터
