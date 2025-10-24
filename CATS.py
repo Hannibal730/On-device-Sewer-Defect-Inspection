@@ -60,12 +60,14 @@ class QueryAdaptiveMasking(nn.Module):
 # 이 파라미터는 처음에는 무작위 값으로 시작하지만, 훈련 과정을 통해 분류에 중요한 특징을 추출하기 위한 유의미한 질문(쿼리)으로 학습되기 때문에 "학습 가능한 쿼리"라고 부릅니다.
 class Embedding4Decoder(nn.Module): 
     # 클래스의 생성자입니다.
-    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, num_decoder_layers=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5,
+    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, attn_pooling=False, num_decoder_layers=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5,
                  decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True, **kwargs):
              
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
         
+        self.attn_pooling = attn_pooling
+
         # --- 입력 인코딩 ---
         self.W_feat2emb = nn.Linear(featured_patch_dim, emb_dim)      
         # 입력 패치(`featured_patch_dim` 차원)를 모델의 은닉 상태 차원(`emb_dim`)으로 변환하는 선형 레이어(가중치 `W_feat2emb`)를 정의합니다.
@@ -91,7 +93,6 @@ class Embedding4Decoder(nn.Module):
         # --- 디코더 ---
         self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout, 
                                qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, res_attention=res_attention, num_decoder_layers=num_decoder_layers, save_attention=save_attention)
-        # 실제 어텐션 연산을 수행할 트랜스포머 디코더를 초기화합니다.
         
     # 순전파 로직을 정의합니다.
     def forward(self, x) -> Tensor:
@@ -108,21 +109,35 @@ class Embedding4Decoder(nn.Module):
 
         seq_encoder_patches = self.dropout(x)
         # 인코딩된 입력 패치에 드롭아웃을 적용합니다.
-         
-        # --- 2. 디코더에 입력할 학습 가능한 쿼리 준비 (Query) ---
-        learnable_queries = self.W_feat2emb(self.learnable_queries)
-        # 학습 가능한 쿼리 `learnable_queries` 또한 동일한 선형 레이어 `W_feat2emb`로 임베딩합니다.
         
-        seq_decoder_patches = learnable_queries.unsqueeze(0).repeat(bs, 1, 1)           
-        # 공유된 쿼리를 배치 내 모든 샘플에 대해 동일하게 복제합니다.
-        # learnable_queries: [num_decoder_patches, emb_dim]
-        # -> [1, num_decoder_patches, emb_dim]
-        # -> [bs, num_decoder_patches, emb_dim]
-        
+        # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
+        if self.attn_pooling:
+            # [신규 방식] 어텐션 풀링을 이용한 파라미터-프리 동적 쿼리 생성
+            # 1. '씨앗' 벡터 준비: 기존의 learnable_queries를 사용합니다.
+            query_seed = self.W_feat2emb(self.learnable_queries)
+            query_seed = query_seed.unsqueeze(0).repeat(bs, 1, 1)
+            
+            # 2. 어텐션 스코어 계산 (Q=씨앗, K=패치 특징)
+            attn_scores = torch.bmm(query_seed, seq_encoder_patches.transpose(1, 2))
+            attn_weights = F.softmax(attn_scores, dim=-1)
+            
+            # 3. 가중 평균으로 동적 쿼리 생성 (V=패치 특징)
+            seq_decoder_patches = torch.bmm(attn_weights, seq_encoder_patches)
+        else:
+            # [기존 방식] 고정된 학습 가능 쿼리 사용
+            # 1. learnable_queries를 임베딩
+            learnable_queries = self.W_feat2emb(self.learnable_queries)
+            # 2. 배치 크기만큼 복제하여 모든 샘플에 동일한 쿼리를 적용
+            # learnable_queries: [num_decoder_patches, emb_dim]
+            # -> [1, num_decoder_patches, emb_dim]
+            # -> [bs, num_decoder_patches, emb_dim]
+            seq_decoder_patches = learnable_queries.unsqueeze(0).repeat(bs, 1, 1)
+
         # Embedding 클래스는 이제 디코더에 필요한 입력 시퀀스들을 반환합니다.
         # 실제 디코더 호출은 Model 클래스의 forward에서 이루어집니다.
         return seq_encoder_patches, seq_decoder_patches
             
+
 class Projection4Classifier(nn.Module):
     """디코더의 출력을 받아 최종 분류기가 사용할 수 있는 특징 벡터로 변환합니다."""
     def __init__(self, emb_dim, featured_patch_dim):
@@ -332,6 +347,7 @@ class Model(nn.Module):
         num_labels = args.num_labels # 예측할 클래스의 수
         num_decoder_patches = args.num_decoder_patches # 디코더 쿼리의 수 (YAML에서 설정)
         self.featured_patch_dim = args.featured_patch_dim # 각 패치의 특징 차원
+        attn_pooling = args.attn_pooling # 어텐션 풀링 사용 여부
         emb_dim = args.emb_dim           # 모델의 은닉 상태 차원
         num_heads = args.num_heads           # 멀티헤드 어텐션의 헤드 수
         num_decoder_layers = args.num_decoder_layers # 트랜스포머 디코더의 레이어 수
@@ -348,7 +364,7 @@ class Model(nn.Module):
         decoder_ff_dim = emb_dim * decoder_ff_ratio # 예: 24 * 2 = 48
 
         # --- 백본 모델(임베딩 및 디코더) 초기화 --- 
-        self.embedding4decoder = Embedding4Decoder(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, 
+        self.embedding4decoder = Embedding4Decoder(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, attn_pooling=attn_pooling,
                                 num_decoder_layers=num_decoder_layers, emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, positional_encoding=positional_encoding,
                                 attn_dropout=attn_dropout, dropout=dropout, qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, 
                                 res_attention=res_attention, save_attention=save_attention, **kwargs)

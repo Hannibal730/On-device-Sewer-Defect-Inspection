@@ -659,6 +659,7 @@ if __name__ == '__main__':
         'num_decoder_layers': cats_cfg.num_decoder_layers,
         'num_decoder_patches': cats_cfg.num_decoder_patches, # YAML에서 읽은 값 전달
         'featured_patch_dim': cats_cfg.featured_patch_dim,
+        'attn_pooling': getattr(cats_cfg, 'attn_pooling', False), # 어텐션 풀링 사용 여부
         'emb_dim': cats_cfg.emb_dim, 
         'num_heads': cats_cfg.num_heads, 
         'decoder_ff_ratio': cats_cfg.decoder_ff_ratio,
