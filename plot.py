@@ -47,7 +47,7 @@ def plot_and_save_accuracy_graph(log_file_path, save_dir, final_acc):
         save_path = os.path.join(save_dir, 'val_acc_graph.png')
         plt.savefig(save_path)
         plt.close()
-        logging.info(f"Val Acc 그래프가 '{save_path}'에 저장되었습니다.")
+        logging.info(f"Val Acc 그래프 저장 완료. '{save_path}'")
 
     except FileNotFoundError:
         logging.error(f"로그 파일 '{log_file_path}'를 찾을 수 없습니다.")
@@ -79,9 +79,9 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_path):
         
         plt.savefig(save_path)
         plt.close()
-        logging.info(f"혼동 행렬 그래프가 '{save_path}'에 저장되었습니다.")
+        logging.info(f"혼동 행렬 저장 완료. '{save_path}'")
     except Exception as e:
-        logging.error(f"혼동 행렬 그래프 생성 중 오류 발생: {e}")
+        logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
 
 def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, img_size):
     """
@@ -141,7 +141,7 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, img_si
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.savefig(save_path)
         plt.close()
-        logging.info(f"어텐션 맵 시각화 결과가 '{save_path}'에 저장되었습니다.")
+        logging.info(f"어텐션 맵 시각화 결과 저장 완료. '{save_path}'")
 
     except Exception as e:
         logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
