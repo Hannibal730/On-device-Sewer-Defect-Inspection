@@ -458,7 +458,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
             
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
-        logging.info(f"추론 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
+        logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
@@ -471,8 +471,8 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
     num_test_samples = len(data_loader.dataset)
     avg_inference_time_per_sample = (pure_inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
     
-    logging.info(f"총 순수 추론 시간 (Forward Pass): {pure_inference_time:.2f}초 (테스트 샘플 {num_test_samples}개)")
-    logging.info(f"샘플 당 평균 추론 시간: {avg_inference_time_per_sample:.2f}ms")
+    logging.info(f"총 Forward Pass 시간: {pure_inference_time:.2f}s (테스트 샘플 {num_test_samples}개)")
+    logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms")
     final_acc = eval_results['accuracy']
 
     # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
@@ -732,7 +732,7 @@ if __name__ == '__main__':
         # 훈련 시에는 train_loader와 valid_loader 사용
         train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path)
 
-        logging.info("\n" + "="*50)
+        logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
         final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Test", class_names=class_names)
 
