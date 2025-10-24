@@ -285,12 +285,33 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     total = 0
     all_preds = []
     all_labels = []
+    total_forward_time = 0.0
     
     progress_bar = tqdm(data_loader, desc=desc, leave=False)
     with torch.no_grad():
         for images, labels in progress_bar:
             images, labels = images.to(device), labels.to(device)
-            outputs = model(images) # [B, num_labels]
+
+            # --- 순수 forward pass 시간 측정 ---
+            if device.type == 'cuda':
+                # GPU 시간 측정을 위한 이벤트 생성
+                start_event = torch.cuda.Event(enable_timing=True)
+                end_event = torch.cuda.Event(enable_timing=True)
+                
+                start_event.record() # 시작 시간 기록
+                outputs = model(images) # [B, num_labels]
+                end_event.record() # 종료 시간 기록
+
+                torch.cuda.synchronize() # GPU 연산이 끝날 때까지 대기
+                
+                # 밀리초(ms) 단위의 시간을 초 단위로 변환하여 누적
+                total_forward_time += start_event.elapsed_time(end_event) / 1000.0
+            else: # CPU의 경우 time.time() 사용
+                start_time = time.time()
+                outputs = model(images)
+                end_time = time.time()
+                total_forward_time += (end_time - start_time)
+
             _, predicted = torch.max(outputs.data, 1)
 
             total += labels.size(0)
@@ -298,10 +319,6 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
             
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
-    
-    if total == 0:
-        logging.warning("테스트 데이터가 없습니다. 평가를 건너뜁니다.")
-        return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': []}
 
     accuracy = 100 * correct / total
     precision = precision_score(all_labels, all_preds, average='macro', zero_division=0)
@@ -311,6 +328,11 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     if use_schedulefree:
         norm_after = _get_model_weights_norm(model)
         logging.info(f'[Schedule-Free] 가중치 업데이트의 안정화. 가중치의 L2 Norm: {norm_before:.4f} -> {norm_after:.4f}')
+
+    if total == 0:
+        logging.warning("테스트 데이터가 없습니다. 평가를 건너뜁니다.")
+        return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': [], 'forward_time': 0.0}
+
 
     # desc 내용에 따라 Accuracy 라벨을 동적으로 변경
     if desc.startswith("[Valid]"):
@@ -333,7 +355,8 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
         'accuracy': accuracy,
         'f1': f1,
         'labels': all_labels,
-        'preds': all_preds
+        'preds': all_preds,
+        'forward_time': total_forward_time
     }
 
 def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path):
@@ -441,13 +464,14 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
 
     # 2. 테스트셋 성능 평가
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
-    start_time = time.time()
     eval_results = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
-    end_time = time.time()
-    inference_time = end_time - start_time
+    
+    # evaluate 함수에서 반환된 순수 forward pass 시간 사용
+    pure_inference_time = eval_results.get('forward_time', 0.0)
     num_test_samples = len(data_loader.dataset)
-    avg_inference_time_per_sample = (inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
-    logging.info(f"총 추론 시간: {inference_time:.2f}초 (테스트 샘플 {num_test_samples}개)")
+    avg_inference_time_per_sample = (pure_inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
+    
+    logging.info(f"총 순수 추론 시간 (Forward Pass): {pure_inference_time:.2f}초 (테스트 샘플 {num_test_samples}개)")
     logging.info(f"샘플 당 평균 추론 시간: {avg_inference_time_per_sample:.2f}ms")
     final_acc = eval_results['accuracy']
 
