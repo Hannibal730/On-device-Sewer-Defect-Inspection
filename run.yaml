@@ -13,7 +13,7 @@ run:
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름.
   random_sampling_ratio: 0.01  # 각 데이터셋(train/valid/test)에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_seed: 42 # 데이터 샘플링 시 사용할 랜덤 시드. 재현성을 위해 고정합니다.
-  num_workers: 16 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용.
+  num_workers: 2 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용. (~24)
 
 # =============================================================================
 # 2. 훈련 하이퍼파라미터
@@ -38,8 +38,11 @@ model:
     # 사용 가능한 옵션:
     # - 'resnet18_layer1': ResNet18의 layer1까지 사용
     # - 'resnet18_layer2': ResNet18의 layer2까지 사용
+
     # - 'mobilenet_v3_small_feat1': MobileNetV3-Small의 features[1]까지 사용
     # - 'mobilenet_v3_small_feat3': MobileNetV3-Small의 features[3]까지 사용
+    # - 'mobilenet_v3_small_feat4': MobileNetV3-Small의 features[4]까지 사용
+
     # - 'efficientnet_b0_feat2': EfficientNet-B0의 features[2]까지 사용
     # - 'efficientnet_b0_feat3': EfficientNet-B0의 features[3]까지 사용
     name: 'mobilenet_v3_small_feat1'    

@@ -138,9 +138,9 @@ F1 Score for 'Normal': 0.8870
 dropout 옵션 유무가 영향력 있다고 판단.
 
 26차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat1
-
-
-
+Train Acc: 82.46%
+Val Acc: 81.92%
+너무 낮음.
 2025-10-25 02:10:59,931 - INFO - 모델 파라미터 수:
 2025-10-25 02:10:59,931 - INFO -   - Encoder (PatchConvEncoder):   1,664 개
 2025-10-25 02:10:59,931 - INFO -     - conv_front (CNN Backbone):  1,208 개
@@ -156,14 +156,58 @@ dropout 옵션 유무가 영향력 있다고 판단.
 2025-10-25 02:10:59,931 - INFO -   - 총 파라미터:                  12,217 개
 
 
+27차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat3
+Train Acc: 89.46%
+Test Acc: 86.23%
+F1 Score for 'Normal': 0.8698
+2025-10-25 02:21:55,863 - INFO - 모델 파라미터 수:
+2025-10-25 02:21:55,863 - INFO -   - Encoder (PatchConvEncoder):   10,536 개
+2025-10-25 02:21:55,863 - INFO -     - conv_front (CNN Backbone):  10,488 개
+2025-10-25 02:21:55,863 - INFO -     - 1x1_conv (Channel Proj):    0 개
+2025-10-25 02:21:55,863 - INFO -     - norm (LayerNorm):           48 개
+2025-10-25 02:21:55,863 - INFO -   - Decoder (CatsDecoder):        10,200 개
+2025-10-25 02:21:55,863 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+2025-10-25 02:21:55,863 - INFO -     - Learnable Queries:               24 개
+2025-10-25 02:21:55,863 - INFO -     - Positional Encoding (PE):        384 개
+2025-10-25 02:21:55,863 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+2025-10-25 02:21:55,863 - INFO -     - Projection4Classifier:      600 개
+2025-10-25 02:21:55,863 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-25 02:21:55,863 - INFO -   - 총 파라미터:                  21,089 개
 
 
+28차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat4
+Train Acc: 89.72%
+Test Acc: 87.00%
+F1 Score for 'Normal': 0.8807
+2025-10-25 02:50:53,310 - INFO - 모델 파라미터 수:
+2025-10-25 02:50:53,310 - INFO -   - Encoder (PatchConvEncoder):   25,256 개
+2025-10-25 02:50:53,310 - INFO -     - conv_front (CNN Backbone):  24,224 개
+2025-10-25 02:50:53,310 - INFO -     - 1x1_conv (Channel Proj):    984 개
+2025-10-25 02:50:53,310 - INFO -     - norm (LayerNorm):           48 개
+2025-10-25 02:50:53,310 - INFO -   - Decoder (CatsDecoder):        10,200 개
+2025-10-25 02:50:53,310 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+2025-10-25 02:50:53,310 - INFO -     - Learnable Queries:               24 개
+2025-10-25 02:50:53,310 - INFO -     - Positional Encoding (PE):        384 개
+2025-10-25 02:50:53,310 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+2025-10-25 02:50:53,310 - INFO -     - Projection4Classifier:      600 개
+2025-10-25 02:50:53,310 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-25 02:50:53,310 - INFO -   - 총 파라미터:                  35,809 개
 
-
-
-
-
-
+29차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat5
+2025-10-25 03:43:30,294 - INFO - 모델 파라미터 수:
+2025-10-25 03:43:30,294 - INFO -   - Encoder (PatchConvEncoder):   82,520 개
+2025-10-25 03:43:30,294 - INFO -     - conv_front (CNN Backbone):  81,488 개
+2025-10-25 03:43:30,294 - INFO -     - 1x1_conv (Channel Proj):    984 개
+2025-10-25 03:43:30,309 - INFO -     - norm (LayerNorm):           48 개
+2025-10-25 03:43:30,309 - INFO -   - Decoder (CatsDecoder):        10,200 개
+2025-10-25 03:43:30,309 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+2025-10-25 03:43:30,309 - INFO -     - Learnable Queries:               24 개
+2025-10-25 03:43:30,309 - INFO -     - Positional Encoding (PE):        384 개
+2025-10-25 03:43:30,309 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+2025-10-25 03:43:30,309 - INFO -     - Projection4Classifier:      600 개
+2025-10-25 03:43:30,309 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-25 03:43:30,309 - INFO -   - 총 파라미터:                  93,073 개
+9만개면, 이피션트넷 앞단에 리니어만 연결한 모델의 파라미터수랑 비슷한데, 그러면 경량화 의미가 없다. 따라서 진행 안 함.
 
 
 

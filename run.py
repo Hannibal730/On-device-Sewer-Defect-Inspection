@@ -74,6 +74,8 @@ class CnnFeatureExtractor(nn.Module):
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = nn.Sequential(*list(base_model.children())[:6]) # layer2까지
             base_out_channels = 128
+            
+            
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat1':
             base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
@@ -84,6 +86,14 @@ class CnnFeatureExtractor(nn.Module):
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:4] # features의 4번째 블록까지
             base_out_channels = 24
+        elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat4':
+            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model.features[:5] # features의 5번째 블록까지
+            base_out_channels = 40
+
+            
+            
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat2':
             base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
