@@ -53,27 +53,111 @@ attn_pooling 추가: 러너블 쿼리를 임베딩시키고(시드쿼리) 인코
 스케줄프리 끄고, 코사인 스케줄러 도입
 데이터 비율 1.0에서 0.1로
 
-20차 89.08 : 19차에서 attn_pooling 제거
+20차 89.08 : 19차에서 attn_pooling 제거 89.18
 
 21차: 19차에서
 self.learnable_queries = nn.Parameter(0.5*torch.randn(num_decoder_patches, featured_patch_dim))
 -> 
 self.learnable_queries = nn.Parameter(torch.empty(num_decoder_patches, featured_patch_dim))
+별차이 없음.
+2025-10-24 21:48:41,678 - INFO - 모델 파라미터 수:
+2025-10-24 21:48:41,678 - INFO -   - Encoder (PatchConvEncoder):   19,138 개
+2025-10-24 21:48:41,678 - INFO -     - conv_front (CNN Backbone):  19,090 개
+2025-10-24 21:48:41,678 - INFO -     - 1x1_conv (Channel Proj):    0 개
+2025-10-24 21:48:41,678 - INFO -     - norm (LayerNorm):           48 개
+2025-10-24 21:48:41,678 - INFO -   - Decoder (CatsDecoder):        10,200 개
+2025-10-24 21:48:41,678 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+2025-10-24 21:48:41,678 - INFO -     - Learnable Queries:               24 개
+2025-10-24 21:48:41,678 - INFO -     - Positional Encoding (PE):        384 개
+2025-10-24 21:48:41,678 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+2025-10-24 21:48:41,678 - INFO -     - Projection4Classifier:      600 개
+2025-10-24 21:48:41,678 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-24 21:48:41,678 - INFO -   - 총 파라미터:                  29,691 개
+
+
+22차: 21차에서
+patch_size 120 -> 80 (Positional Encoding만 바뀜: 384-> 864)
+별차이 없음.
+
+23차: 21차에서
+emb_dim 24 -> 48 (임베딩 차원): 모델의 기본 체급. 늘리면 표현력이 크게 증가합니다.
+num_decoder_layers 2-> 4 (레이어 수): 모델의 깊이. 더 깊게 쌓으면 더 복잡한 관계를 학습할 수 있습니다.
+num_heads 2-> 4 (어텐션 헤드 수): 다양한 관점에서 특징을 볼 수 있는 능력.
+decoder_ff_ratio 2-> 4 (FFN 비율): FFN의 복잡도를 높여 표현력을 보강합니다
+2025-10-24 23:48:22,303 - INFO - 모델 파라미터 수:
+2025-10-24 23:48:22,318 - INFO -   - Encoder (PatchConvEncoder):   19,138 개
+2025-10-24 23:48:22,318 - INFO -     - conv_front (CNN Backbone):  19,090 개
+2025-10-24 23:48:22,318 - INFO -     - 1x1_conv (Channel Proj):    0 개
+2025-10-24 23:48:22,318 - INFO -     - norm (LayerNorm):           48 개
+2025-10-24 23:48:22,318 - INFO -   - Decoder (CatsDecoder):        97,824 개
+2025-10-24 23:48:22,318 - INFO -     - Embedding Layer (W_feat2emb):    1,200 개   emb_dim이 2배 증가해서.
+2025-10-24 23:48:22,318 - INFO -     - Learnable Queries:               24 개
+2025-10-24 23:48:22,318 - INFO -     - Positional Encoding (PE):        768 개     emb_dim이 2배 증가해서.
+2025-10-24 23:48:22,318 - INFO -     - Decoder Layers (Cross-Attention): 94,656 개
+2025-10-24 23:48:22,319 - INFO -     - Projection4Classifier:      1,176 개        emb_dim이 2배 증가해서.
+2025-10-24 23:48:22,319 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-24 23:48:22,319 - INFO -   - 총 파라미터:                  117,315 개
+별차이 없음.
+
+
+--- 작전 변경 ---
+목표:
+    데이터 비율을 0.01로 고정하고, train acc를 100%에 가깝도록 과적합부터 시켜보기.
+지금까지의 문제점:
+    에포크가 진행될 때마다 loss가 감소하긴 하지만, train acc와 val acc가 89%대에서 계속 정체함.
+    train acc가 100%에 수렴하지 않는 지금의 현상은 모델 자체의 성능이 부족하다고 판단함.
+    일단은 과적합을 시켜놓고서 추후에 일반화를 도모하기로 방향성 변경.
+방법:
+    cnn 백본들을 바꿔보면서 train acc가 90% 이상인 모델들을 찾기. 다시 말해, 피지컬이 받쳐주는 백본 찾기.
+밑 실험들은 데이터 비율 0.01
+----------------
+
+24차: 21차에서 efficientnet_b0_feat2 -> efficientnet_b0_feat3
+Train Acc: 92.30%
+Test Acc: 88.23%
+F1 Score for 'Normal': 0.8909
+2025-10-25 01:33:26,370 - INFO - 모델 파라미터 수:
+2025-10-25 01:33:26,370 - INFO -   - Encoder (PatchConvEncoder):   66,762 개
+2025-10-25 01:33:26,370 - INFO -     - conv_front (CNN Backbone):  65,730 개
+2025-10-25 01:33:26,370 - INFO -     - 1x1_conv (Channel Proj):    984 개
+2025-10-25 01:33:26,370 - INFO -     - norm (LayerNorm):           48 개
+2025-10-25 01:33:26,370 - INFO -   - Decoder (CatsDecoder):        10,200 개
+2025-10-25 01:33:26,370 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+2025-10-25 01:33:26,370 - INFO -     - Learnable Queries:               24 개
+2025-10-25 01:33:26,370 - INFO -     - Positional Encoding (PE):        384 개
+2025-10-25 01:33:26,370 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+2025-10-25 01:33:26,370 - INFO -     - Projection4Classifier:      600 개
+2025-10-25 01:33:26,370 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-25 01:33:26,370 - INFO -   - 총 파라미터:                  77,315 개
+
+25차: 24차에서 dropout 0.1 -> 0.0
+Train Acc: 93.54%
+Test Acc: 87.77%
+F1 Score for 'Normal': 0.8870
+따라서 efficientnet_b0_feat3는 모델 피지컬은 충분하다고 판단.
+dropout 옵션 유무가 영향력 있다고 판단.
+
+26차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat1
+
+
+
+2025-10-25 02:10:59,931 - INFO - 모델 파라미터 수:
+2025-10-25 02:10:59,931 - INFO -   - Encoder (PatchConvEncoder):   1,664 개
+2025-10-25 02:10:59,931 - INFO -     - conv_front (CNN Backbone):  1,208 개
+2025-10-25 02:10:59,931 - INFO -     - 1x1_conv (Channel Proj):    408 개
+2025-10-25 02:10:59,931 - INFO -     - norm (LayerNorm):           48 개
+2025-10-25 02:10:59,931 - INFO -   - Decoder (CatsDecoder):        10,200 개
+2025-10-25 02:10:59,931 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+2025-10-25 02:10:59,931 - INFO -     - Learnable Queries:               24 개
+2025-10-25 02:10:59,931 - INFO -     - Positional Encoding (PE):        384 개
+2025-10-25 02:10:59,931 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+2025-10-25 02:10:59,931 - INFO -     - Projection4Classifier:      600 개
+2025-10-25 02:10:59,931 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-25 02:10:59,931 - INFO -   - 총 파라미터:                  12,217 개
 
 
 
 
-
-patch_size 120 -> 96
-
-
-
-
-
-
-멀티헤드도 늘려봐야겠다.
-
-테스트셋 총 추론시간과 평균 추론시간을 계산할 때  순수하게 inference되는 시간만 측정하지 않고, 데이터로더 과정까지 포함한 시간을 측정하는 중이라서 수정 필요. 로컬에는 수정이 반영된 상태.
 
 
 
@@ -88,3 +172,25 @@ patch_size 120 -> 96
 
 멀티 헤드 개수 늘리기 (다양한 종류의 피처를 학습 가능. emb_dim은 고정한 채로 멀티 헤드 개수만 늘리면 각 헤드가 충분한 정보를 못 담고 성능하락 가능. 헤드 개수 느는 건 파라미터랑 영향 없음.)
 디코더 레이어 늘리기 (피처를 점진적 추상화 도모. res_attention으로 과적합 및 기울기 소실 예방 가능)
+
+
+
+
+
+
+
+
+
+21차 (레이어 1개당 4,296개 x 2개 레이어)
+emb_dim=24, num_heads=2, decoder_ff_ratio=2
+Cross-Attention: (24 * 24 * 3) + (24 * 24) (Q,K,V + Output Proj) ≈ 2,304개
+FFN: (24 * 48) + (24 * 24) (Linear1 + Linear2) ≈ 1,728개
+LayerNorm: 24*2 + 24*2 (두 개의 LayerNorm) = 96개
+레이어 1개당 약 4,296개 -> 4,296 * 2개 레이어 = 8,592개
+
+23차 (레이어 1개당 23,664개 x 4개 레이어)
+emb_dim=48, num_heads=4, decoder_ff_ratio=4
+Cross-Attention: (48 * 48 * 3) + (48 * 48) ≈ 9,216개
+FFN: (48 * 192) + (96 * 48) ≈ 13,824개
+LayerNorm: 48*2 + 48*2 = 192개
+레이어 1개당 약 23,664개 -> 23,664 * 4개 레이어 = 94,656개

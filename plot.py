@@ -6,10 +6,10 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
 
-def plot_and_save_accuracy_graph(log_file_path, save_dir, final_acc):
+def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc):
     """
     로그 파일에서 에포크별 [Valid] Accuracy를 추출하여 그래프를 그리고,
-    지정된 디렉토리에 이미지 파일로 저장합니다.
+    지정된 디렉토리에 이미지 파일로 저장합니다. (Validation Accuracy 전용)
 
     Args:
         log_file_path (str): 분석할 로그 파일의 전체 경로.
@@ -48,6 +48,64 @@ def plot_and_save_accuracy_graph(log_file_path, save_dir, final_acc):
         plt.savefig(save_path)
         plt.close()
         logging.info(f"Val Acc 그래프 저장 완료. '{save_path}'")
+
+    except FileNotFoundError:
+        logging.error(f"로그 파일 '{log_file_path}'를 찾을 수 없습니다.")
+    except Exception as e:
+        logging.error(f"그래프 생성 중 오류 발생: {e}")
+
+def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc):
+    """
+    로그 파일에서 Train 및 Valid Accuracy를 추출하여 하나의 그래프에 그리고,
+    지정된 디렉토리에 이미지 파일로 저장합니다.
+
+    Args:
+        log_file_path (str): 분석할 로그 파일의 전체 경로.
+        save_dir (str): 그래프 이미지를 저장할 디렉토리 경로.
+        final_acc (float): 그래프 제목에 표시할 최종 추론 정확도.
+    """
+    train_epochs, train_accuracies = [], []
+    val_epochs, val_accuracies = [], []
+
+    # Train 및 Valid 정확도 추출을 위한 정규 표현식
+    train_pattern = re.compile(r"\[Train\] \[(\d+)/\d+\] \| .* Train Acc: ([\d\.]+)%")
+    val_pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\] \| Val Acc: ([\d\.]+)%")
+
+    try:
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                train_match = train_pattern.search(line)
+                val_match = val_pattern.search(line)
+                if train_match:
+                    train_epochs.append(int(train_match.group(1)))
+                    train_accuracies.append(float(train_match.group(2)))
+                if val_match:
+                    val_epochs.append(int(val_match.group(1)))
+                    val_accuracies.append(float(val_match.group(2)))
+
+        if not val_epochs:
+            logging.warning("로그 파일에서 유효한 [Valid] Accuracy 데이터를 찾을 수 없어 그래프를 생성하지 않습니다.")
+            return
+
+        plt.figure(figsize=(12, 8))
+        
+        # Train Accuracy (빨간색 점선)와 Valid Accuracy (파란색 실선) 플로팅
+        if train_epochs:
+            plt.plot(train_epochs, train_accuracies, marker='^', linestyle='--', color='r', label='Train Accuracy')
+        plt.plot(val_epochs, val_accuracies, marker='o', linestyle='-', color='b', label='Validation Accuracy')
+        
+        plt.title(f'Train & Validation Accuracy per Epoch (Final Test Acc: {final_acc:.2f}%)')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy (%)')
+        plt.ylim(0, 100)
+        plt.yticks(range(0, 101, 10))
+        plt.grid(True)
+        plt.legend() # 범례 표시
+
+        save_path = os.path.join(save_dir, 'train_val_acc_graph.png')
+        plt.savefig(save_path)
+        plt.close()
+        logging.info(f"Train/Val Acc 그래프 저장 완료. '{save_path}'")
 
     except FileNotFoundError:
         logging.error(f"로그 파일 '{log_file_path}'를 찾을 수 없습니다.")

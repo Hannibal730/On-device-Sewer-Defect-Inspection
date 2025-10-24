@@ -24,7 +24,7 @@ from CATS import Model as CatsDecoder
 import schedulefree
 
 # 그래프 및 혼동 행렬 플로팅 함수 임포트
-from plot import plot_and_save_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps
+from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps
 
 # =============================================================================
 # 1. 로깅 설정
@@ -741,7 +741,8 @@ if __name__ == '__main__':
         log_filename = f"log_{os.path.basename(run_dir_path).replace('run_', '')}.log"
         log_file_path = os.path.join(run_dir_path, log_filename)
         if final_acc is not None:
-            plot_and_save_accuracy_graph(log_file_path, run_dir_path, final_acc)
+            plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc)
+            plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc)
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
