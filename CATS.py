@@ -74,10 +74,10 @@ class Embedding4Decoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
         # 일반적인 드롭아웃 레이어를 정의합니다.
 
-        # --- 학습 가능한 쿼리(Learnable Queries) 설정 ---
-        self.learnable_queries = nn.Parameter(0.5*torch.randn(num_decoder_patches, featured_patch_dim))
-        # 모든 변수가 공유하는 하나의 쿼리 셋을 학습 가능한 파라미터(nn.Parameter)로 생성합니다.
-        # 더 좁은 범위에 집중시키 위해서 0.5를 곱하여 N(0,0.5^2)를 따르게 만든다.
+        # --- 학습 가능한 쿼리(Learnable Queries) 설정 (Xavier 초기화 적용) ---
+        self.learnable_queries = nn.Parameter(torch.empty(num_decoder_patches, featured_patch_dim))
+        # Xavier 초기화는 훈련 초기 안정성을 높이고 수렴을 돕는 검증된 방법입니다.
+        nn.init.xavier_uniform_(self.learnable_queries)
         
         # --- 학습 가능한 위치 인코딩 ---
         # 입력 시퀀스의 위치 정보를 제공하기 위해, '학습 가능한 위치 인코딩(Positional Encoding)'을 파라미터로 생성합니다.
