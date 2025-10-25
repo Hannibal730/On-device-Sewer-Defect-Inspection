@@ -55,6 +55,9 @@ attn_pooling 추가: 러너블 쿼리를 임베딩시키고(시드쿼리) 인코
 
 20차 89.08 : 19차에서 attn_pooling 제거 89.18
 
+
+
+
 21차: 19차에서
 self.learnable_queries = nn.Parameter(0.5*torch.randn(num_decoder_patches, featured_patch_dim))
 -> 
@@ -217,7 +220,7 @@ F1: 0.8917
 Train Acc: 89.01%
 Test Acc: 87.62%
 F1 Score for 'Normal': 0.8836
-; 아래는 21차 꺼
+; 아래는 데이터 비율 0.1짜리 21차 꺼
 ; Train Acc: 89.01%
 ; Val Acc: 89.17% 
 ; F1: 0.8917
@@ -297,11 +300,25 @@ F1 Score for 'Normal': 0.8913
 
 
 38차: 35차의 F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
-
-
-
+Train Acc: 91.95%
+Test Acc: 87.15%
+F1 Score for 'Normal': 0.8833
 
 39차는 38차에 드롭아웃 0.1 추가
+Train Acc: 89.39%
+Test Acc: 88.69%
+F1 Score for 'Normal': 0.8949
+
+; 아래는 데이터 비율 0.1짜리 21차 꺼
+; Train Acc: 89.01%
+; Val Acc: 89.17% 
+; F1: 0.8917
+
+
+
+
+
+
 
 
 
