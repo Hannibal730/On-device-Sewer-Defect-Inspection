@@ -66,9 +66,6 @@ class CnnFeatureExtractor(nn.Module):
     def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, in_channels=3, featured_patch_dim=None):
         super().__init__()
         self.cnn_feature_extractor_name = cnn_feature_extractor_name
-        
-        # FPN 스타일 특징 융합을 위한 플래그
-        self.use_fpn_style_fusion = 'fpn' in cnn_feature_extractor_name
 
         # CNN 모델 이름에 따라 모델과 잘라낼 레이어, 기본 출력 채널을 설정합니다.
         if cnn_feature_extractor_name == 'resnet18_layer1':
@@ -106,15 +103,6 @@ class CnnFeatureExtractor(nn.Module):
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:3] # features의 3번째 블록까지
             base_out_channels = 24
-        elif cnn_feature_extractor_name == 'efficientnet_b0_feat2_fpn':
-            base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
-            # FPN을 위해 두 개의 다른 깊이의 특징을 추출
-            self.feat1_extractor = base_model.features[:2] # 얕은 특징 (16 채널)
-            self.feat2_extractor = base_model.features[2:3] # 깊은 특징 (24 채널)
-            # 얕은 특징의 채널 수를 깊은 특징에 맞추기 위한 1x1 conv
-            self.align_channels = nn.Conv2d(16, 24, kernel_size=1)
-            base_out_channels = 24 # 융합 후 채널 수
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat3':
             base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             self._adjust_input_channels(base_model, in_channels)
@@ -151,17 +139,7 @@ class CnnFeatureExtractor(nn.Module):
             raise ValueError("in_channels는 1 또는 3만 지원합니다.")
 
     def forward(self, x):
-        if self.use_fpn_style_fusion:
-            feat1 = self.feat1_extractor(x)
-            # feat2는 feat1의 출력을 받아 계산
-            feat2 = self.feat2_extractor(feat1)
-            
-            # feat1을 feat2 크기로 업샘플링하고 채널 맞추기
-            feat1_aligned = self.align_channels(feat1)
-            feat1_upsampled = nn.functional.interpolate(feat1_aligned, size=feat2.shape[2:], mode='bilinear', align_corners=False)
-            x = feat1_upsampled + feat2 # 두 특징을 더함 (융합)
-        else:
-            x = self.conv_front(x)
+        x = self.conv_front(x)
         
         x = self.conv_1x1(x) # 최종 채널 수 조정
         return x
@@ -244,15 +222,8 @@ def log_model_parameters(model):
     # 1. Encoder (PatchConvEncoder) 내부를 세분화하여 파라미터 계산
     cnn_feature_extractor = model.encoder.shared_conv[0]
 
-    # FPN 사용 여부에 따라 파라미터 계산 분기
-    if cnn_feature_extractor.use_fpn_style_fusion:
-        feat1_params = count_parameters(cnn_feature_extractor.feat1_extractor)
-        feat2_params = count_parameters(cnn_feature_extractor.feat2_extractor)
-        align_params = count_parameters(cnn_feature_extractor.align_channels)
-        conv_front_params = feat1_params + feat2_params + align_params
-    else:
-        conv_front_params = count_parameters(cnn_feature_extractor.conv_front)
-
+    # CNN 백본의 파라미터를 계산합니다.
+    conv_front_params = count_parameters(cnn_feature_extractor.conv_front)
     conv_1x1_params = count_parameters(cnn_feature_extractor.conv_1x1)
     encoder_norm_params = count_parameters(model.encoder.norm)
     encoder_total_params = conv_front_params + conv_1x1_params + encoder_norm_params
@@ -293,12 +264,7 @@ def log_model_parameters(model):
     logging.info("="*50)
     logging.info("모델 파라미터 수:")
     logging.info(f"  - Encoder (PatchConvEncoder):   {encoder_total_params:,} 개")
-    if cnn_feature_extractor.use_fpn_style_fusion:
-        logging.info(f"    - feat1_extractor (FPN):      {feat1_params:,} 개")
-        logging.info(f"    - feat2_extractor (FPN):      {feat2_params:,} 개")
-        logging.info(f"    - align_channels (FPN):       {align_params:,} 개")
-    else:
-        logging.info(f"    - conv_front (CNN Backbone):  {conv_front_params:,} 개")
+    logging.info(f"    - conv_front (CNN Backbone):  {conv_front_params:,} 개")
     logging.info(f"    - 1x1_conv (Channel Proj):    {conv_1x1_params:,} 개")
     logging.info(f"    - norm (LayerNorm):           {encoder_norm_params:,} 개")
     logging.info(f"  - Decoder (CatsDecoder):        {cats_decoder_total_params:,} 개")
@@ -310,25 +276,6 @@ def log_model_parameters(model):
     logging.info(f"  - Classifier (Projection MLP):  {classifier_total_params:,} 개")
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
-
-def rand_bbox(size, lam):
-    """CutMix를 위한 랜덤 바운딩 박스를 생성하는 함수"""
-    W = size[2]
-    H = size[3]
-    cut_rat = np.sqrt(1. - lam)
-    cut_w = int(W * cut_rat)
-    cut_h = int(H * cut_rat)
-
-    # uniform
-    cx = np.random.randint(W)
-    cy = np.random.randint(H)
-
-    bbx1 = np.clip(cx - cut_w // 2, 0, W)
-    bby1 = np.clip(cy - cut_h // 2, 0, H)
-    bbx2 = np.clip(cx + cut_w // 2, 0, W)
-    bby2 = np.clip(cy + cut_h // 2, 0, H)
-
-    return bbx1, bby1, bbx2, bby2
 
 def _get_model_weights_norm(model):
     """모델의 모든 학습 가능한 파라미터에 대한 L2 Norm을 계산합니다."""
@@ -436,13 +383,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
     # 모델 저장 경로를 실행별 디렉토리로 설정
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
 
-    # CutMix를 위한 손실 함수 정의
-    def cutmix_criterion(preds, mixed_targets):
-        targets1, targets2, lam = mixed_targets
-        criterion = nn.CrossEntropyLoss()
-        # CutMix 논문에 따라, 혼합된 레이블에 대한 손실을 계산합니다.
-        return lam * criterion(preds, targets1) + (1 - lam) * criterion(preds, targets2)
-
     criterion = nn.CrossEntropyLoss()
     best_f1 = 0.0
 
@@ -465,22 +405,8 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             
             optimizer.zero_grad()
 
-            # 50% 확률로 CutMix 적용
-            if np.random.rand() < 0.5:
-                # CutMix를 위한 데이터 셔플링 및 혼합
-                shuffled_indices = torch.randperm(images.size(0))
-                shuffled_images = images[shuffled_indices]
-                shuffled_labels = labels[shuffled_indices]
-                lam = np.random.beta(1.0, 1.0)
-                bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
-                images[:, :, bbx1:bbx2, bby1:bby2] = shuffled_images[:, :, bbx1:bbx2, bby1:bby2]
-                lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (images.size()[-1] * images.size()[-2]))
-                outputs = model(images)
-                loss = cutmix_criterion(outputs, (labels, shuffled_labels, lam))
-            else:
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-
+            outputs = model(images)
+            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
             
