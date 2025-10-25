@@ -60,6 +60,8 @@ self.learnable_queries = nn.Parameter(0.5*torch.randn(num_decoder_patches, featu
 -> 
 self.learnable_queries = nn.Parameter(torch.empty(num_decoder_patches, featured_patch_dim))
 별차이 없음.
+Train Acc: 89.01%
+Val Acc: 89.17% 
 2025-10-24 21:48:41,678 - INFO - 모델 파라미터 수:
 2025-10-24 21:48:41,678 - INFO -   - Encoder (PatchConvEncoder):   19,138 개
 2025-10-24 21:48:41,678 - INFO -     - conv_front (CNN Backbone):  19,090 개
@@ -98,6 +100,17 @@ decoder_ff_ratio 2-> 4 (FFN 비율): FFN의 복잡도를 높여 표현력을 보
 2025-10-24 23:48:22,319 - INFO -   - Classifier (Projection MLP):  353 개
 2025-10-24 23:48:22,319 - INFO -   - 총 파라미터:                  117,315 개
 별차이 없음.
+
+
+
+
+
+
+
+
+
+
+
 
 
 --- 작전 변경 ---
@@ -210,12 +223,52 @@ F1 Score for 'Normal': 0.8807
 9만개면, 이피션트넷 앞단에 리니어만 연결한 모델의 파라미터수랑 비슷한데, 그러면 경량화 의미가 없다. 따라서 진행 안 함.
 
 
+30차: 25차에서 efficientnet_b0_feat3 -> 원래 쓰던 efficientnet_b0_feat2
+21차는 드롭아웃 0.1이었고, 이건 드롭아웃 0.0
+Train Acc: 89.01%
+Test Acc: 87.62%
+F1 Score for 'Normal': 0.8836
+efficientnet_b0_feat3 에 비하면 efficientnet_b0_feat2는 성능이 많이 안 좋아지는 모습을 확인
+    아래는 25차 꺼
+    Train Acc: 93.54%
+    Test Acc: 87.77%
+    F1 Score for 'Normal': 0.8870
+
+
+31차: 25차에서 efficientnet_b0_feat3 -> mobilenet_v3_small_feat4 30에포크
+Train Acc: 90.70%
+Test Acc: 87.46%
+F1 Score for 'Normal': 0.8838
+2025-10-25 11:55:37,666 - INFO - 모델 파라미터 수:
+2025-10-25 11:55:37,666 - INFO -   - Encoder (PatchConvEncoder):   25,256 개
+2025-10-25 11:55:37,666 - INFO -     - conv_front (CNN Backbone):  24,224 개
+2025-10-25 11:55:37,666 - INFO -     - 1x1_conv (Channel Proj):    984 개
+2025-10-25 11:55:37,666 - INFO -     - norm (LayerNorm):           48 개
+2025-10-25 11:55:37,666 - INFO -   - Decoder (CatsDecoder):        10,200 개
+2025-10-25 11:55:37,666 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+2025-10-25 11:55:37,666 - INFO -     - Learnable Queries:               24 개
+2025-10-25 11:55:37,666 - INFO -     - Positional Encoding (PE):        384 개
+2025-10-25 11:55:37,666 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+2025-10-25 11:55:37,666 - INFO -     - Projection4Classifier:      600 개
+2025-10-25 11:55:37,666 - INFO -   - Classifier (Projection MLP):  353 개
+2025-10-25 11:55:37,666 - INFO -   - 총 파라미터:                  35,809 개
+
+
+32차: 30차의 CnnFeatureExtractor forward 마지막에 SEBlock 추가.
+train acc가 89를 넘겨야 의미있는 시도가 된다.
+Train Acc: 88.78%
+Test Acc: 87.31%
+F1 Score for 'Normal': 0.8805
+따라서 seblock 추가는 폐기
+
+
+33차: 30차에 cutmix, fpn 추가
 
 
 
 
-멀티 헤드 개수 늘리기 (다양한 종류의 피처를 학습 가능. emb_dim은 고정한 채로 멀티 헤드 개수만 늘리면 각 헤드가 충분한 정보를 못 담고 성능하락 가능. 헤드 개수 느는 건 파라미터랑 영향 없음.)
-디코더 레이어 늘리기 (피처를 점진적 추상화 도모. res_attention으로 과적합 및 기울기 소실 예방 가능)
+
+
 
 
 

@@ -45,7 +45,7 @@ model:
 
     # - 'efficientnet_b0_feat2': EfficientNet-B0의 features[2]까지 사용
     # - 'efficientnet_b0_feat3': EfficientNet-B0의 features[3]까지 사용
-    name: 'mobilenet_v3_small_feat1'    
+    name: 'efficientnet_b0_feat2_fpn'    
 
   # --- CATS 모델 설정 ---
   cats:
