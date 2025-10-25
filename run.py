@@ -370,7 +370,8 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
 
     return {
         'accuracy': accuracy,
-        'f1': f1,
+        'f1_macro': f1, # 평균 F1 점수
+        'f1_per_class': f1_per_class if log_class_metrics and class_names else None, # 클래스별 F1 점수
         'labels': all_labels,
         'preds': all_preds,
         'forward_time': total_forward_time
@@ -385,7 +386,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
 
     criterion = nn.CrossEntropyLoss()
     best_f1 = 0.0
-    best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average') # 기본값은 F1_average
+    best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
 
     for epoch in range(train_cfg.epochs):
         # 에포크 시작 시 구분을 위한 라인 추가
@@ -424,13 +425,25 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
         
         # --- 평가 단계 ---
-        eval_results = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]")
+        # 클래스별 F1 점수를 계산하고 로깅하도록 옵션 전달
+        eval_results = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
+        
+        # --- 최고 성능 모델 저장 기준 선택 ---
+        current_f1 = 0.0
+        if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
+            current_f1 = eval_results['f1_per_class'][0] # 'Normal' 클래스는 인덱스 0
+        elif best_model_criterion == 'F1_Defect' and eval_results['f1_per_class'] is not None:
+            current_f1 = eval_results['f1_per_class'][1] # 'Defect' 클래스는 인덱스 1
+        else: # 'F1_average' 또는 그 외
+            current_f1 = eval_results['f1_macro']
         
         # 최고 성능 모델 저장
-        if eval_results['f1'] > best_f1:
-            best_f1 = eval_results['f1']
+        if current_f1 > best_f1:
+            best_f1 = current_f1
             torch.save(model.state_dict(), model_path)
-            logging.info(f"[Best Model Saved] (F1 Score: {best_f1:.4f}) -> '{model_path}'")
+            # 어떤 기준으로 저장되었는지 명확히 로그에 남깁니다.
+            criterion_name = best_model_criterion.replace('_', ' ')
+            logging.info(f"[Best Model Saved] ({criterion_name}: {best_f1:.4f}) -> '{model_path}'")
         
         # 스케줄러가 설정된 경우에만 step()을 호출
         if scheduler:

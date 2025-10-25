@@ -289,14 +289,16 @@ F1 Score for 'Normal': 0.8892
 이거이거 학습률이 너무 중요해보인다....
 
 
-
 36차: 30차 (efficientnet_b0_feat2, 드롭아웃0.0, 에포크30, CosineAnnealingLR) 에서
-CosineAnnealingWarmRestarts (T_0=10, T_mult=2, 에포크 150)으로 수정.
-10 에포크부터, 2배의 에포크기간동안 코사인 주기.
+CosineAnnealingWarmRestarts (T_0=10, T_mult=2, 에포크 70 (10 에포크부터, 2배의 에포크기간동안 코사인 주기.)) 으로 수정.
+F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
 
 
 
 
+
+
+37차는 36차에 드롭아웃 0.1 추가?
 
 
 
