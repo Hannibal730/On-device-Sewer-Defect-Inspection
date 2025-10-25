@@ -703,9 +703,9 @@ if __name__ == '__main__':
     # --- 공통 파라미터 설정 ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == 'cuda':
-        logging.info(f"CUDA 사용 가능. GPU를 사용하여 훈련을 시작합니다. (Device: {torch.cuda.get_device_name(0)})")
+        logging.info(f"CUDA 사용 가능. GPU 사용을 시작합니다. (Device: {torch.cuda.get_device_name(0)})")
     else:
-        logging.info("CUDA 사용 불가능. CPU를 사용하여 훈련을 시작합니다.")
+        logging.info("CUDA 사용 불가능. CPU 사용을 시작합니다.")
 
     # --- 데이터 준비 ---
     train_loader, valid_loader, test_loader, num_labels, class_names = prepare_data(run_cfg, train_cfg, model_cfg, "Sewer-ML")
