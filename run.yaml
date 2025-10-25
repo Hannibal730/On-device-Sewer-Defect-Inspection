@@ -19,12 +19,16 @@ run:
 # 2. 훈련 하이퍼파라미터
 # =============================================================================
 training:
-  epochs: 60                 
+  epochs: 150                 
   batch_size: 64                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   lr: 0.001                     # 옵티마이저의 학습률.
   schedulefree: false           # true: schedule-free 옵티마이저 사용. false: 표준 AdamW 옵티마이저 사용.
-  use_cosine_scheduler: true    # schedulefree가 false일 때, CosineAnnealingLR 스케줄러 사용 여부.
 
+  # schedulefree가 false일 때 사용할 스케줄러 옵션들. 하나만 true로 설정해야 합니다.
+  CosineAnnealingLR: false           # 기본 코사인 어닐링 스케줄러 사용 여부.
+  CosineAnnealingWarmRestarts: true  # 재시작을 포함한 코사인 어닐링 스케줄러 사용 여부.
+  T_0: 10                           # CosineAnnealingWarmRestarts의 첫 번째 재시작 주기 (에포크 단위).
+  T_mult: 2                         # CosineAnnealingWarmRestarts의 주기 증가 배수. (T_mult = 2가 가장 인기 있는 전략)
 # =============================================================================
 # 3. 모델 아키텍처 파라미터
 # =============================================================================

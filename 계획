@@ -279,13 +279,35 @@ F1 Score for 'Normal': 0.8925
 
 
 35차: 30차 (efficientnet_b0_feat2, 드롭아웃0.0, 에포크30) 의 에포크를 60으로 수정
+Train Acc: 91.77%
+Test Acc: 88.08%
+F1 Score for 'Normal': 0.8892
+; 아래는 30차
+; Train Acc: 89.01%
+; Test Acc: 87.62%
+; F1 Score for 'Normal': 0.8836
+이거이거 학습률이 너무 중요해보인다....
+
+
+
+36차: 30차 (efficientnet_b0_feat2, 드롭아웃0.0, 에포크30, CosineAnnealingLR) 에서 CosineAnnealingWarmRestarts (T_0=10, T_mult=2)
 
 
 
 
 
 
-bce랑 sewer-ml의 이진분류 모델들이 사용한 로스함수는?
+
+
+
+
+
+샘플 원본 사이즈에 따라 img_size랑 patch_size 동적 변환...  패치 개수만 동일하게끔!!
+
+
+
+
+
 
 
 
