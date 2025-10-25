@@ -385,6 +385,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
 
     criterion = nn.CrossEntropyLoss()
     best_f1 = 0.0
+    best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average') # 기본값은 F1_average
 
     for epoch in range(train_cfg.epochs):
         # 에포크 시작 시 구분을 위한 라인 추가
