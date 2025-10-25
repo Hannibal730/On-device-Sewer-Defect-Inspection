@@ -49,7 +49,7 @@ def setup_logging(data_dir_name):
         ]
     )
     logging.info(f"로그 파일이 '{log_filename}'에 저장됩니다.")
-    return run_dir_path
+    return run_dir_path, timestamp
 
 def cutmix(data, targets, alpha=1.0):
     """CutMix를 적용하는 함수"""
@@ -270,7 +270,7 @@ def log_model_parameters(model):
     logging.info(f"  - Decoder (CatsDecoder):        {cats_decoder_total_params:,} 개")
     logging.info(f"    - Embedding Layer (W_feat2emb):    {w_feat2emb_params:,} 개")
     logging.info(f"    - Learnable Queries:               {queries_params:,} 개")
-    logging.info(f"    - Positional Encoding (PE):        {pe_params:,} 개")
+    logging.info(f"    - Positional Encoding:             {pe_params:,} 개")
     logging.info(f"    - Decoder Layers (Cross-Attention): {cats_decoder_layers_params:,} 개")
     logging.info(f"    - Projection4Classifier:      {cats_decoder_projection4classifier_params:,} 개")
     logging.info(f"  - Classifier (Projection MLP):  {classifier_total_params:,} 개")
@@ -449,7 +449,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         if scheduler:
             scheduler.step()
 
-def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, mode_name="Inference", class_names=None):
+def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
@@ -509,8 +509,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
 
     # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
     if eval_results['labels'] and eval_results['preds']:
-        cm_save_path = os.path.join(run_dir_path, 'confusion_matrix.png')
-        plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, cm_save_path)
+        plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, run_dir_path, timestamp)
 
     # 4. 어텐션 맵 시각화 (설정이 True인 경우)
     if cats_cfg.save_attention:
@@ -525,8 +524,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
 
             # 마지막 디코더 레이어에 저장된 어텐션 맵을 가져옴
             attention_maps = model.decoder.embedding4decoder.decoder.layers[-1].attn
-            attn_save_path = os.path.join(run_dir_path, 'attention_map.png')
-            plot_and_save_attention_maps(attention_maps, sample_images, attn_save_path, model_cfg.img_size)
+            plot_and_save_attention_maps(attention_maps, sample_images, run_dir_path, model_cfg.img_size, timestamp)
         except Exception as e:
             logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
     return final_acc
@@ -683,7 +681,7 @@ if __name__ == '__main__':
     # --- 실행 디렉토리 설정 ---
     if run_cfg.mode == 'train':
         # 훈련 모드: 새로운 실행 디렉토리 생성
-        run_dir_path = setup_logging(data_dir_name) # 여기서 run_dir_path가 반환됨
+        run_dir_path, timestamp = setup_logging(data_dir_name) # 여기서 run_dir_path와 timestamp가 반환됨
     elif run_cfg.mode == 'inference':
         # 추론 모드: 지정된 실행 디렉토리 사용
         run_dir_path = getattr(run_cfg, 'run_dir_for_inference', None)
@@ -691,7 +689,7 @@ if __name__ == '__main__':
             logging.error("추론 모드에서는 'run.yaml'에 'run_dir_for_inference'를 올바르게 설정해야 합니다.")
             exit()
         # 로깅 설정은 하지만, run_dir_path는 yaml에서 읽은 값을 사용
-        _ = setup_logging(data_dir_name)
+        _, timestamp = setup_logging(data_dir_name)
     
     # --- 설정 파일 내용 로깅 ---
     config_str = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -770,6 +768,8 @@ if __name__ == '__main__':
         if scheduler is None:
             logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
 
+    logging.info("="*50)
+
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
         # 훈련 시에는 train_loader와 valid_loader 사용
@@ -777,16 +777,16 @@ if __name__ == '__main__':
 
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Test", class_names=class_names)
+        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
 
         # --- 그래프 생성 ---
         # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함
-        log_filename = f"log_{os.path.basename(run_dir_path).replace('run_', '')}.log"
+        log_filename = f"log_{timestamp}.log"
         log_file_path = os.path.join(run_dir_path, log_filename)
         if final_acc is not None:
-            plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc)
-            plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc)
+            plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
+            plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
-        inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, mode_name="Inference", class_names=class_names)
+        inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)

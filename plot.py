@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
+from datetime import datetime
 
-def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc):
+def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timestamp):
     """
     로그 파일에서 에포크별 [Valid] Accuracy를 추출하여 그래프를 그리고,
     지정된 디렉토리에 이미지 파일로 저장합니다. (Validation Accuracy 전용)
@@ -15,6 +16,7 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc):
         log_file_path (str): 분석할 로그 파일의 전체 경로.
         save_dir (str): 그래프 이미지를 저장할 디렉토리 경로.
         final_acc (float): 그래프 제목에 표시할 최종 추론 정확도.
+        timestamp (str): 파일 이름에 추가할 타임스탬프.
     """
     epochs = []
     accuracies = []
@@ -44,7 +46,7 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc):
         plt.yticks(range(0, 101, 10)) # Y축 눈금을 10 단위로 설정
         plt.grid(True)
 
-        save_path = os.path.join(save_dir, 'val_acc_graph.png')
+        save_path = os.path.join(save_dir, f'val_acc_graph_{timestamp}.png')
         plt.savefig(save_path)
         plt.close()
         logging.info(f"Val Acc 그래프 저장 완료. '{save_path}'")
@@ -54,7 +56,7 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc):
     except Exception as e:
         logging.error(f"그래프 생성 중 오류 발생: {e}")
 
-def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc):
+def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc, timestamp):
     """
     로그 파일에서 Train 및 Valid Accuracy를 추출하여 하나의 그래프에 그리고,
     지정된 디렉토리에 이미지 파일로 저장합니다.
@@ -63,6 +65,7 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc):
         log_file_path (str): 분석할 로그 파일의 전체 경로.
         save_dir (str): 그래프 이미지를 저장할 디렉토리 경로.
         final_acc (float): 그래프 제목에 표시할 최종 추론 정확도.
+        timestamp (str): 파일 이름에 추가할 타임스탬프.
     """
     train_epochs, train_accuracies = [], []
     val_epochs, val_accuracies = [], []
@@ -102,7 +105,7 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc):
         plt.grid(True)
         plt.legend() # 범례 표시
 
-        save_path = os.path.join(save_dir, 'train_val_acc_graph.png')
+        save_path = os.path.join(save_dir, f'train_val_acc_graph_{timestamp}.png')
         plt.savefig(save_path)
         plt.close()
         logging.info(f"Train/Val Acc 그래프 저장 완료. '{save_path}'")
@@ -112,7 +115,7 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc):
     except Exception as e:
         logging.error(f"그래프 생성 중 오류 발생: {e}")
 
-def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_path):
+def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_dir, timestamp):
     """
     실제 값과 예측 값을 기반으로 혼동 행렬(Confusion Matrix)을 계산하고,
     이를 시각화하여 지정된 경로에 이미지 파일로 저장합니다.
@@ -121,7 +124,8 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_path):
         y_true (list or np.array): 실제 레이블 리스트.
         y_pred (list or np.array): 모델이 예측한 레이블 리스트.
         class_names (list of str): 클래스 이름 리스트 (e.g., ['Normal', 'Defect']).
-        save_path (str): 혼동 행렬 이미지를 저장할 전체 경로.
+        save_dir (str): 혼동 행렬 이미지를 저장할 디렉토리 경로.
+        timestamp (str): 파일 이름에 추가할 타임스탬프.
     """
     try:
         cm = confusion_matrix(y_true, y_pred)
@@ -135,13 +139,14 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_path):
         plt.ylabel('Actual', fontsize=15)
         plt.xlabel('Predicted', fontsize=15)
         
+        save_path = os.path.join(save_dir, f'confusion_matrix_{timestamp}.png')
         plt.savefig(save_path)
         plt.close()
         logging.info(f"혼동 행렬 저장 완료. '{save_path}'")
     except Exception as e:
         logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
 
-def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, img_size):
+def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, timestamp):
     """
     저장된 어텐션 맵을 원본 이미지 위에 히트맵으로 시각화하여 저장합니다.
 
@@ -149,8 +154,9 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, img_si
         attention_maps (torch.Tensor): 모델에서 추출한 어텐션 가중치 텐서.
         Shape: [B, num_heads, num_queries, num_keys]
         image_tensor (torch.Tensor): 원본 이미지 텐서. Shape: [B, C, H, W]
-        save_path (str): 시각화 결과를 저장할 파일 경로.
+        save_dir (str): 시각화 결과를 저장할 디렉토리 경로.
         img_size (int): 원본 이미지의 크기.
+        timestamp (str): 파일 이름에 추가할 타임스탬프.
     """
     try:
         # 1. 시각화를 위해 배치에서 첫 번째 데이터만 선택
@@ -197,6 +203,7 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_path, img_si
                 ax.axis('off')
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        save_path = os.path.join(save_dir, f'attention_map_{timestamp}.png')
         plt.savefig(save_path)
         plt.close()
         logging.info(f"어텐션 맵 시각화 결과 저장 완료. '{save_path}'")
