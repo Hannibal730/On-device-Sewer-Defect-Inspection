@@ -620,26 +620,30 @@ def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
         class_names = ['Normal', 'Defect']
 
         # --- 데이터 샘플링 로직 ---
-        random_sampling_ratio = getattr(run_cfg, 'random_sampling_ratio', 1.0)
-        if random_sampling_ratio < 1.0:
-            logging.info(f"데이터셋을 {random_sampling_ratio * 100:.0f}% 비율로 샘플링합니다 (random_seed={run_cfg.random_seed}).")
-            
-            def get_subset(dataset):
-                """데이터셋에서 지정된 비율만큼 단순 랜덤 샘플링을 수행합니다."""
+        sampling_ratios = getattr(run_cfg, 'random_sampling_ratio', None)
+
+        def get_subset(dataset, name):
+            """데이터셋에서 지정된 비율만큼 단순 랜덤 샘플링을 수행합니다."""
+            # sampling_ratios가 딕셔너리인지 확인하고, 해당 데이터셋의 비율을 가져옵니다.
+            ratio = 1.0
+            if isinstance(sampling_ratios, dict):
+                ratio = sampling_ratios.get(name, 1.0)
+            elif isinstance(sampling_ratios, (float, int)): # 이전 버전 호환성
+                ratio = sampling_ratios
+
+            if ratio < 1.0:
+                logging.info(f"'{name}' 데이터셋을 {ratio * 100:.0f}% 비율로 샘플링합니다 (random_seed={run_cfg.random_seed}).")
                 num_total = len(dataset)
-                num_to_sample = int(num_total * random_sampling_ratio)
+                num_to_sample = int(num_total * ratio)
                 rng = np.random.default_rng(run_cfg.random_seed) # 재현성을 위한 랜덤 생성기
                 indices = rng.choice(num_total, size=num_to_sample, replace=False)
                 return Subset(dataset, indices)
+            else:
+                return dataset
 
-            train_dataset = get_subset(full_train_dataset)
-            valid_dataset = get_subset(full_valid_dataset)
-            test_dataset = get_subset(full_test_dataset)
-        else:
-            logging.info("전체 데이터셋을 사용합니다 (random_sampling_ratio=1.0).")
-            train_dataset = full_train_dataset
-            valid_dataset = full_valid_dataset
-            test_dataset = full_test_dataset
+        train_dataset = get_subset(full_train_dataset, 'train')
+        valid_dataset = get_subset(full_valid_dataset, 'valid')
+        test_dataset = get_subset(full_test_dataset, 'test')
 
         # DataLoader 생성
         train_loader = DataLoader(train_dataset, batch_size=train_cfg.batch_size, shuffle=True, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False)
