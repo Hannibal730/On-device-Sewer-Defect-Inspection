@@ -377,9 +377,9 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
         'forward_time': total_forward_time
     }
 
-def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path):
+def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
-    logging.info("훈련 모드를 시작합니다.")
+    logging.info("train 모드를 시작합니다.")
     
     # 모델 저장 경로를 실행별 디렉토리로 설정
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
@@ -657,10 +657,8 @@ def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
         exit()
 
 
-# =============================================================================
-# 5. 메인 실행 블록
-# =============================================================================
-if __name__ == '__main__':
+def main():
+    """메인 실행 함수"""
     # --- YAML 설정 파일 로드 ---
     parser = argparse.ArgumentParser(description="YAML 설정을 이용한 CATS 기반 이미지 분류기")
     parser.add_argument('--config', type=str, default='run.yaml', help='설정 파일 경로')
@@ -741,39 +739,38 @@ if __name__ == '__main__':
     # 모델 생성 후 파라미터 수 로깅
     log_model_parameters(model)
     
-    # --- 옵티마이저 및 스케줄러 설정 ---
-    # run.yaml의 schedulefree 설정에 따라 옵티마이저를 선택합니다.
-    if getattr(train_cfg, 'schedulefree', False):
-        logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
-        optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
-        scheduler = None # schedulefree는 스케줄러가 필요 없음
-    else:
-        # 표준 AdamW 옵티마이저 사용
-        optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
-        scheduler = None # 기본값은 스케줄러 없음
-        
-        # YAML 설정에 따라 스케줄러를 선택합니다.
-        use_cosine_lr = getattr(train_cfg, 'CosineAnnealingLR', False)
-        use_cosine_warm_restarts = getattr(train_cfg, 'CosineAnnealingWarmRestarts', False)
-
-        if use_cosine_lr:
-            logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingLR 스케줄러를 사용합니다. (T_max={train_cfg.epochs})")
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
-        elif use_cosine_warm_restarts:
-            T_0 = getattr(train_cfg, 'T_0', 10)
-            T_mult = getattr(train_cfg, 'T_mult', 1)
-            logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingWarmRestarts 스케줄러를 사용합니다. (T_0={T_0}, T_mult={T_mult})")
-            scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=T_0, T_mult=T_mult)
-        
-        if scheduler is None:
-            logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
-
-    logging.info("="*50)
-
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
+        # --- 옵티마이저 및 스케줄러 설정 (훈련 모드에서만) ---
+        if getattr(train_cfg, 'schedulefree', False):
+            logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
+            optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
+            scheduler = None # schedulefree는 스케줄러가 필요 없음
+        else:
+            # 표준 AdamW 옵티마이저 사용
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
+            scheduler = None # 기본값은 스케줄러 없음
+            
+            # YAML 설정에 따라 스케줄러를 선택합니다.
+            use_cosine_lr = getattr(train_cfg, 'CosineAnnealingLR', False)
+            use_cosine_warm_restarts = getattr(train_cfg, 'CosineAnnealingWarmRestarts', False)
+
+            if use_cosine_lr:
+                logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingLR 스케줄러를 사용합니다. (T_max={train_cfg.epochs})")
+                scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
+            elif use_cosine_warm_restarts:
+                T_0 = getattr(train_cfg, 'T_0', 10)
+                T_mult = getattr(train_cfg, 'T_mult', 1)
+                logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingWarmRestarts 스케줄러를 사용합니다. (T_0={T_0}, T_mult={T_mult})")
+                scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=T_0, T_mult=T_mult)
+            
+            if scheduler is None:
+                logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
+
+        logging.info("="*50)
+
         # 훈련 시에는 train_loader와 valid_loader 사용
-        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path)
+        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names)
 
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
@@ -789,4 +786,11 @@ if __name__ == '__main__':
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
+        optimizer, scheduler = None, None # 추론 시에는 옵티마이저/스케줄러가 필요 없음
         inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
+
+# =============================================================================
+# 5. 메인 실행 블록
+# =============================================================================
+if __name__ == '__main__':
+    main()

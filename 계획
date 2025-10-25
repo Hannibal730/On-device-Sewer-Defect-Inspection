@@ -282,21 +282,21 @@ F1 Score for 'Normal': 0.8892
 일단 에포크는 30보다 커야 하는 게 맞다.
 
 
-36차: 30차의 CosineAnnealingLR를
-CosineAnnealingWarmRestarts (T_0=10, T_mult=2, 에포크 70 (10 에포크부터, 2배의 에포크기간동안 코사인 주기.)) 으로 수정.
-F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
-Train Acc: 92.42%
-Test Acc: 87.38%
-F1 Score for 'Normal': 0.8815
-35차랑 36차의 차이점이 스케줄러랑 베스트 모델 저장 기준이다.
-근데 스케줄러는 35차의 CosineAnnealingLR이 Test Acc랑 F1 normal이 더 높다.
+; 36차: 30차의 CosineAnnealingLR를
+; CosineAnnealingWarmRestarts (T_0=10, T_mult=2, 에포크 70 (10 에포크부터, 2배의 에포크기간동안 코사인 주기.)) 으로 수정.
+; F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
+; Train Acc: 92.42%
+; Test Acc: 87.38%
+; F1 Score for 'Normal': 0.8815
+; 35차랑 36차의 차이점이 스케줄러랑 베스트 모델 저장 기준이다.
+; 근데 스케줄러는 35차의 CosineAnnealingLR이 Test Acc랑 F1 normal이 더 높다.
 
 
-37차는 36차에 드롭아웃 0.1 추가.
-Train Acc: 90.15%
-Test Acc: 88.23%
-F1 Score for 'Normal': 0.8913
-35차보다는 36차가 낫네..
+; 37차는 36차에 드롭아웃 0.1 추가.
+; Train Acc: 90.15%
+; Test Acc: 88.23%
+; F1 Score for 'Normal': 0.8913
+; 35차보다는 36차가 낫네..
 
 
 38차: 35차의 F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
@@ -315,6 +315,22 @@ F1 Score for 'Normal': 0.8949
 ; F1: 0.8917
 
 
+--- 39차를 메인으로 삼기로 결정---
+39차 정보
+트레인, 벨리드, 테스트셋 0.01 비율
+에포크 60
+CosineAnnealingLR
+efficientnet_b0_feat2
+best_model_criterion: F1_Normal
+
+39차 가중치로 테스트셋 전체를 추론한 결과: Test Acc: 87.13%, F1 Score for 'Normal': 0.8770
+따라서 데이터를 늘릴 필요가 있어보인다.
+또 다른 옵션으로는... 정규화 강도 높이기?
+--------------------------------
+
+
+
+40차: 39차에서 학습, 벨리드 데이터 비율 0.01 -> 0.1, 테스트비율 0.01 -> 0.1
 
 
 
