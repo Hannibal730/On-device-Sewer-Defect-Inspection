@@ -62,6 +62,7 @@ self.learnable_queries = nn.Parameter(torch.empty(num_decoder_patches, featured_
 별차이 없음.
 Train Acc: 89.01%
 Val Acc: 89.17% 
+F1: 0.8917
 2025-10-24 21:48:41,678 - INFO - 모델 파라미터 수:
 2025-10-24 21:48:41,678 - INFO -   - Encoder (PatchConvEncoder):   19,138 개
 2025-10-24 21:48:41,678 - INFO -     - conv_front (CNN Backbone):  19,090 개
@@ -77,208 +78,196 @@ Val Acc: 89.17%
 2025-10-24 21:48:41,678 - INFO -   - 총 파라미터:                  29,691 개
 
 
-22차: 21차에서
-patch_size 120 -> 80 (Positional Encoding만 바뀜: 384-> 864)
-별차이 없음.
+; 22차: 21차에서
+; patch_size 120 -> 80 (Positional Encoding만 바뀜: 384-> 864)
+; 별차이 없음.
 
-23차: 21차에서
-emb_dim 24 -> 48 (임베딩 차원): 모델의 기본 체급. 늘리면 표현력이 크게 증가합니다.
-num_decoder_layers 2-> 4 (레이어 수): 모델의 깊이. 더 깊게 쌓으면 더 복잡한 관계를 학습할 수 있습니다.
-num_heads 2-> 4 (어텐션 헤드 수): 다양한 관점에서 특징을 볼 수 있는 능력.
-decoder_ff_ratio 2-> 4 (FFN 비율): FFN의 복잡도를 높여 표현력을 보강합니다
-2025-10-24 23:48:22,303 - INFO - 모델 파라미터 수:
-2025-10-24 23:48:22,318 - INFO -   - Encoder (PatchConvEncoder):   19,138 개
-2025-10-24 23:48:22,318 - INFO -     - conv_front (CNN Backbone):  19,090 개
-2025-10-24 23:48:22,318 - INFO -     - 1x1_conv (Channel Proj):    0 개
-2025-10-24 23:48:22,318 - INFO -     - norm (LayerNorm):           48 개
-2025-10-24 23:48:22,318 - INFO -   - Decoder (CatsDecoder):        97,824 개
-2025-10-24 23:48:22,318 - INFO -     - Embedding Layer (W_feat2emb):    1,200 개   emb_dim이 2배 증가해서.
-2025-10-24 23:48:22,318 - INFO -     - Learnable Queries:               24 개
-2025-10-24 23:48:22,318 - INFO -     - Positional Encoding (PE):        768 개     emb_dim이 2배 증가해서.
-2025-10-24 23:48:22,318 - INFO -     - Decoder Layers (Cross-Attention): 94,656 개
-2025-10-24 23:48:22,319 - INFO -     - Projection4Classifier:      1,176 개        emb_dim이 2배 증가해서.
-2025-10-24 23:48:22,319 - INFO -   - Classifier (Projection MLP):  353 개
-2025-10-24 23:48:22,319 - INFO -   - 총 파라미터:                  117,315 개
-별차이 없음.
-
-
+; 23차: 21차에서
+; emb_dim 24 -> 48 (임베딩 차원): 모델의 기본 체급. 늘리면 표현력이 크게 증가합니다.
+; num_decoder_layers 2-> 4 (레이어 수): 모델의 깊이. 더 깊게 쌓으면 더 복잡한 관계를 학습할 수 있습니다.
+; num_heads 2-> 4 (어텐션 헤드 수): 다양한 관점에서 특징을 볼 수 있는 능력.
+; decoder_ff_ratio 2-> 4 (FFN 비율): FFN의 복잡도를 높여 표현력을 보강합니다
+; 2025-10-24 23:48:22,303 - INFO - 모델 파라미터 수:
+; 2025-10-24 23:48:22,318 - INFO -   - Encoder (PatchConvEncoder):   19,138 개
+; 2025-10-24 23:48:22,318 - INFO -     - conv_front (CNN Backbone):  19,090 개
+; 2025-10-24 23:48:22,318 - INFO -     - 1x1_conv (Channel Proj):    0 개
+; 2025-10-24 23:48:22,318 - INFO -     - norm (LayerNorm):           48 개
+; 2025-10-24 23:48:22,318 - INFO -   - Decoder (CatsDecoder):        97,824 개
+; 2025-10-24 23:48:22,318 - INFO -     - Embedding Layer (W_feat2emb):    1,200 개   emb_dim이 2배 증가해서.
+; 2025-10-24 23:48:22,318 - INFO -     - Learnable Queries:               24 개
+; 2025-10-24 23:48:22,318 - INFO -     - Positional Encoding (PE):        768 개     emb_dim이 2배 증가해서.
+; 2025-10-24 23:48:22,318 - INFO -     - Decoder Layers (Cross-Attention): 94,656 개
+; 2025-10-24 23:48:22,319 - INFO -     - Projection4Classifier:      1,176 개        emb_dim이 2배 증가해서.
+; 2025-10-24 23:48:22,319 - INFO -   - Classifier (Projection MLP):  353 개
+; 2025-10-24 23:48:22,319 - INFO -   - 총 파라미터:                  117,315 개
+; 별차이 없음.
 
 
+; --- 작전 변경 ---
+; 목표:
+;     데이터 비율을 0.01로 고정하고, train acc를 100%에 가깝도록 과적합부터 시켜보기.
+; 지금까지의 문제점:
+;     에포크가 진행될 때마다 loss가 감소하긴 하지만, train acc와 val acc가 89%대에서 계속 정체함.
+;     train acc가 100%에 수렴하지 않는 지금의 현상은 모델 자체의 성능이 부족하다고 판단함.
+;     일단은 과적합을 시켜놓고서 추후에 일반화를 도모하기로 방향성 변경.
+; 방법:
+;     cnn 백본들을 바꿔보면서 train acc가 90% 이상인 모델들을 찾기. 다시 말해, 피지컬이 받쳐주는 백본 찾기.
+; 밑 실험들은 데이터 비율 0.01
+; ----------------
 
+; 24차: 21차에서 efficientnet_b0_feat2 -> efficientnet_b0_feat3
+; Train Acc: 92.30%
+; Test Acc: 88.23%
+; F1 Score for 'Normal': 0.8909
+; 2025-10-25 01:33:26,370 - INFO - 모델 파라미터 수:
+; 2025-10-25 01:33:26,370 - INFO -   - Encoder (PatchConvEncoder):   66,762 개
+; 2025-10-25 01:33:26,370 - INFO -     - conv_front (CNN Backbone):  65,730 개
+; 2025-10-25 01:33:26,370 - INFO -     - 1x1_conv (Channel Proj):    984 개
+; 2025-10-25 01:33:26,370 - INFO -     - norm (LayerNorm):           48 개
+; 2025-10-25 01:33:26,370 - INFO -   - Decoder (CatsDecoder):        10,200 개
+; 2025-10-25 01:33:26,370 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+; 2025-10-25 01:33:26,370 - INFO -     - Learnable Queries:               24 개
+; 2025-10-25 01:33:26,370 - INFO -     - Positional Encoding (PE):        384 개
+; 2025-10-25 01:33:26,370 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+; 2025-10-25 01:33:26,370 - INFO -     - Projection4Classifier:      600 개
+; 2025-10-25 01:33:26,370 - INFO -   - Classifier (Projection MLP):  353 개
+; 2025-10-25 01:33:26,370 - INFO -   - 총 파라미터:                  77,315 개
 
-
-
-
-
-
-
-
---- 작전 변경 ---
-목표:
-    데이터 비율을 0.01로 고정하고, train acc를 100%에 가깝도록 과적합부터 시켜보기.
-지금까지의 문제점:
-    에포크가 진행될 때마다 loss가 감소하긴 하지만, train acc와 val acc가 89%대에서 계속 정체함.
-    train acc가 100%에 수렴하지 않는 지금의 현상은 모델 자체의 성능이 부족하다고 판단함.
-    일단은 과적합을 시켜놓고서 추후에 일반화를 도모하기로 방향성 변경.
-방법:
-    cnn 백본들을 바꿔보면서 train acc가 90% 이상인 모델들을 찾기. 다시 말해, 피지컬이 받쳐주는 백본 찾기.
-밑 실험들은 데이터 비율 0.01
-----------------
-
-24차: 21차에서 efficientnet_b0_feat2 -> efficientnet_b0_feat3
-Train Acc: 92.30%
-Test Acc: 88.23%
-F1 Score for 'Normal': 0.8909
-2025-10-25 01:33:26,370 - INFO - 모델 파라미터 수:
-2025-10-25 01:33:26,370 - INFO -   - Encoder (PatchConvEncoder):   66,762 개
-2025-10-25 01:33:26,370 - INFO -     - conv_front (CNN Backbone):  65,730 개
-2025-10-25 01:33:26,370 - INFO -     - 1x1_conv (Channel Proj):    984 개
-2025-10-25 01:33:26,370 - INFO -     - norm (LayerNorm):           48 개
-2025-10-25 01:33:26,370 - INFO -   - Decoder (CatsDecoder):        10,200 개
-2025-10-25 01:33:26,370 - INFO -     - Embedding Layer (W_feat2emb):    600 개
-2025-10-25 01:33:26,370 - INFO -     - Learnable Queries:               24 개
-2025-10-25 01:33:26,370 - INFO -     - Positional Encoding (PE):        384 개
-2025-10-25 01:33:26,370 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
-2025-10-25 01:33:26,370 - INFO -     - Projection4Classifier:      600 개
-2025-10-25 01:33:26,370 - INFO -   - Classifier (Projection MLP):  353 개
-2025-10-25 01:33:26,370 - INFO -   - 총 파라미터:                  77,315 개
-
-25차: 24차에서 dropout 0.1 -> 0.0
-Train Acc: 93.54%
-Test Acc: 87.77%
-F1 Score for 'Normal': 0.8870
-따라서 efficientnet_b0_feat3는 모델 피지컬은 충분하다고 판단.
-dropout 옵션 유무가 영향력 있다고 판단.
-
-26차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat1
-Train Acc: 82.46%
-Val Acc: 81.92%
-너무 낮음.
-2025-10-25 02:10:59,931 - INFO - 모델 파라미터 수:
-2025-10-25 02:10:59,931 - INFO -   - Encoder (PatchConvEncoder):   1,664 개
-2025-10-25 02:10:59,931 - INFO -     - conv_front (CNN Backbone):  1,208 개
-2025-10-25 02:10:59,931 - INFO -     - 1x1_conv (Channel Proj):    408 개
-2025-10-25 02:10:59,931 - INFO -     - norm (LayerNorm):           48 개
-2025-10-25 02:10:59,931 - INFO -   - Decoder (CatsDecoder):        10,200 개
-2025-10-25 02:10:59,931 - INFO -     - Embedding Layer (W_feat2emb):    600 개
-2025-10-25 02:10:59,931 - INFO -     - Learnable Queries:               24 개
-2025-10-25 02:10:59,931 - INFO -     - Positional Encoding (PE):        384 개
-2025-10-25 02:10:59,931 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
-2025-10-25 02:10:59,931 - INFO -     - Projection4Classifier:      600 개
-2025-10-25 02:10:59,931 - INFO -   - Classifier (Projection MLP):  353 개
-2025-10-25 02:10:59,931 - INFO -   - 총 파라미터:                  12,217 개
-
-
-27차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat3
-Train Acc: 89.46%
-Test Acc: 86.23%
-F1 Score for 'Normal': 0.8698
-2025-10-25 02:21:55,863 - INFO - 모델 파라미터 수:
-2025-10-25 02:21:55,863 - INFO -   - Encoder (PatchConvEncoder):   10,536 개
-2025-10-25 02:21:55,863 - INFO -     - conv_front (CNN Backbone):  10,488 개
-2025-10-25 02:21:55,863 - INFO -     - 1x1_conv (Channel Proj):    0 개
-2025-10-25 02:21:55,863 - INFO -     - norm (LayerNorm):           48 개
-2025-10-25 02:21:55,863 - INFO -   - Decoder (CatsDecoder):        10,200 개
-2025-10-25 02:21:55,863 - INFO -     - Embedding Layer (W_feat2emb):    600 개
-2025-10-25 02:21:55,863 - INFO -     - Learnable Queries:               24 개
-2025-10-25 02:21:55,863 - INFO -     - Positional Encoding (PE):        384 개
-2025-10-25 02:21:55,863 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
-2025-10-25 02:21:55,863 - INFO -     - Projection4Classifier:      600 개
-2025-10-25 02:21:55,863 - INFO -   - Classifier (Projection MLP):  353 개
-2025-10-25 02:21:55,863 - INFO -   - 총 파라미터:                  21,089 개
-
-
-28차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat4
-Train Acc: 89.72%
-Test Acc: 87.00%
-F1 Score for 'Normal': 0.8807
-2025-10-25 02:50:53,310 - INFO - 모델 파라미터 수:
-2025-10-25 02:50:53,310 - INFO -   - Encoder (PatchConvEncoder):   25,256 개
-2025-10-25 02:50:53,310 - INFO -     - conv_front (CNN Backbone):  24,224 개
-2025-10-25 02:50:53,310 - INFO -     - 1x1_conv (Channel Proj):    984 개
-2025-10-25 02:50:53,310 - INFO -     - norm (LayerNorm):           48 개
-2025-10-25 02:50:53,310 - INFO -   - Decoder (CatsDecoder):        10,200 개
-2025-10-25 02:50:53,310 - INFO -     - Embedding Layer (W_feat2emb):    600 개
-2025-10-25 02:50:53,310 - INFO -     - Learnable Queries:               24 개
-2025-10-25 02:50:53,310 - INFO -     - Positional Encoding (PE):        384 개
-2025-10-25 02:50:53,310 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
-2025-10-25 02:50:53,310 - INFO -     - Projection4Classifier:      600 개
-2025-10-25 02:50:53,310 - INFO -   - Classifier (Projection MLP):  353 개
-2025-10-25 02:50:53,310 - INFO -   - 총 파라미터:                  35,809 개
-
-29차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat5
-2025-10-25 03:43:30,294 - INFO - 모델 파라미터 수:
-2025-10-25 03:43:30,294 - INFO -   - Encoder (PatchConvEncoder):   82,520 개
-2025-10-25 03:43:30,294 - INFO -     - conv_front (CNN Backbone):  81,488 개
-2025-10-25 03:43:30,294 - INFO -     - 1x1_conv (Channel Proj):    984 개
-2025-10-25 03:43:30,309 - INFO -     - norm (LayerNorm):           48 개
-2025-10-25 03:43:30,309 - INFO -   - Decoder (CatsDecoder):        10,200 개
-2025-10-25 03:43:30,309 - INFO -     - Embedding Layer (W_feat2emb):    600 개
-2025-10-25 03:43:30,309 - INFO -     - Learnable Queries:               24 개
-2025-10-25 03:43:30,309 - INFO -     - Positional Encoding (PE):        384 개
-2025-10-25 03:43:30,309 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
-2025-10-25 03:43:30,309 - INFO -     - Projection4Classifier:      600 개
-2025-10-25 03:43:30,309 - INFO -   - Classifier (Projection MLP):  353 개
-2025-10-25 03:43:30,309 - INFO -   - 총 파라미터:                  93,073 개
-9만개면, 이피션트넷 앞단에 리니어만 연결한 모델의 파라미터수랑 비슷한데, 그러면 경량화 의미가 없다. 따라서 진행 안 함.
-
-
-30차: 25차에서 efficientnet_b0_feat3 -> 원래 쓰던 efficientnet_b0_feat2
-21차는 드롭아웃 0.1이었고, 이건 드롭아웃 0.0
-Train Acc: 89.01%
-Test Acc: 87.62%
-F1 Score for 'Normal': 0.8836
-efficientnet_b0_feat3 에 비하면 efficientnet_b0_feat2는 성능이 많이 안 좋아지는 모습을 확인
-; 아래는 25차 꺼
+; 25차: 24차에서 dropout 0.1 -> 0.0
 ; Train Acc: 93.54%
 ; Test Acc: 87.77%
 ; F1 Score for 'Normal': 0.8870
+; 따라서 efficientnet_b0_feat3는 모델 피지컬은 충분하다고 판단.
+; dropout 옵션 유무가 영향력 있다고 판단.
+
+; 26차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat1
+; Train Acc: 82.46%
+; Val Acc: 81.92%
+; 너무 낮음.
+; 2025-10-25 02:10:59,931 - INFO - 모델 파라미터 수:
+; 2025-10-25 02:10:59,931 - INFO -   - Encoder (PatchConvEncoder):   1,664 개
+; 2025-10-25 02:10:59,931 - INFO -     - conv_front (CNN Backbone):  1,208 개
+; 2025-10-25 02:10:59,931 - INFO -     - 1x1_conv (Channel Proj):    408 개
+; 2025-10-25 02:10:59,931 - INFO -     - norm (LayerNorm):           48 개
+; 2025-10-25 02:10:59,931 - INFO -   - Decoder (CatsDecoder):        10,200 개
+; 2025-10-25 02:10:59,931 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+; 2025-10-25 02:10:59,931 - INFO -     - Learnable Queries:               24 개
+; 2025-10-25 02:10:59,931 - INFO -     - Positional Encoding (PE):        384 개
+; 2025-10-25 02:10:59,931 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+; 2025-10-25 02:10:59,931 - INFO -     - Projection4Classifier:      600 개
+; 2025-10-25 02:10:59,931 - INFO -   - Classifier (Projection MLP):  353 개
+; 2025-10-25 02:10:59,931 - INFO -   - 총 파라미터:                  12,217 개
 
 
-31차: 25차에서 efficientnet_b0_feat3 -> mobilenet_v3_small_feat4 30에포크
-Train Acc: 90.70%
-Test Acc: 87.46%
-F1 Score for 'Normal': 0.8838
-2025-10-25 11:55:37,666 - INFO - 모델 파라미터 수:
-2025-10-25 11:55:37,666 - INFO -   - Encoder (PatchConvEncoder):   25,256 개
-2025-10-25 11:55:37,666 - INFO -     - conv_front (CNN Backbone):  24,224 개
-2025-10-25 11:55:37,666 - INFO -     - 1x1_conv (Channel Proj):    984 개
-2025-10-25 11:55:37,666 - INFO -     - norm (LayerNorm):           48 개
-2025-10-25 11:55:37,666 - INFO -   - Decoder (CatsDecoder):        10,200 개
-2025-10-25 11:55:37,666 - INFO -     - Embedding Layer (W_feat2emb):    600 개
-2025-10-25 11:55:37,666 - INFO -     - Learnable Queries:               24 개
-2025-10-25 11:55:37,666 - INFO -     - Positional Encoding (PE):        384 개
-2025-10-25 11:55:37,666 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
-2025-10-25 11:55:37,666 - INFO -     - Projection4Classifier:      600 개
-2025-10-25 11:55:37,666 - INFO -   - Classifier (Projection MLP):  353 개
-2025-10-25 11:55:37,666 - INFO -   - 총 파라미터:                  35,809 개
+; 27차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat3
+; Train Acc: 89.46%
+; Test Acc: 86.23%
+; F1 Score for 'Normal': 0.8698
+; 2025-10-25 02:21:55,863 - INFO - 모델 파라미터 수:
+; 2025-10-25 02:21:55,863 - INFO -   - Encoder (PatchConvEncoder):   10,536 개
+; 2025-10-25 02:21:55,863 - INFO -     - conv_front (CNN Backbone):  10,488 개
+; 2025-10-25 02:21:55,863 - INFO -     - 1x1_conv (Channel Proj):    0 개
+; 2025-10-25 02:21:55,863 - INFO -     - norm (LayerNorm):           48 개
+; 2025-10-25 02:21:55,863 - INFO -   - Decoder (CatsDecoder):        10,200 개
+; 2025-10-25 02:21:55,863 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+; 2025-10-25 02:21:55,863 - INFO -     - Learnable Queries:               24 개
+; 2025-10-25 02:21:55,863 - INFO -     - Positional Encoding (PE):        384 개
+; 2025-10-25 02:21:55,863 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+; 2025-10-25 02:21:55,863 - INFO -     - Projection4Classifier:      600 개
+; 2025-10-25 02:21:55,863 - INFO -   - Classifier (Projection MLP):  353 개
+; 2025-10-25 02:21:55,863 - INFO -   - 총 파라미터:                  21,089 개
 
 
-32차: 30차의 CnnFeatureExtractor forward 마지막에 SEBlock 추가.
-train acc가 89를 넘겨야 의미있는 시도가 된다.
-Train Acc: 88.78%
-Test Acc: 87.31%
-F1 Score for 'Normal': 0.8805
-따라서 seblock 추가는 폐기
+; 28차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat4
+; Train Acc: 89.72%
+; Test Acc: 87.00%
+; F1 Score for 'Normal': 0.8807
+; 2025-10-25 02:50:53,310 - INFO - 모델 파라미터 수:
+; 2025-10-25 02:50:53,310 - INFO -   - Encoder (PatchConvEncoder):   25,256 개
+; 2025-10-25 02:50:53,310 - INFO -     - conv_front (CNN Backbone):  24,224 개
+; 2025-10-25 02:50:53,310 - INFO -     - 1x1_conv (Channel Proj):    984 개
+; 2025-10-25 02:50:53,310 - INFO -     - norm (LayerNorm):           48 개
+; 2025-10-25 02:50:53,310 - INFO -   - Decoder (CatsDecoder):        10,200 개
+; 2025-10-25 02:50:53,310 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+; 2025-10-25 02:50:53,310 - INFO -     - Learnable Queries:               24 개
+; 2025-10-25 02:50:53,310 - INFO -     - Positional Encoding (PE):        384 개
+; 2025-10-25 02:50:53,310 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+; 2025-10-25 02:50:53,310 - INFO -     - Projection4Classifier:      600 개
+; 2025-10-25 02:50:53,310 - INFO -   - Classifier (Projection MLP):  353 개
+; 2025-10-25 02:50:53,310 - INFO -   - 총 파라미터:                  35,809 개
+
+; 29차: 21차에서 efficientnet_b0_feat2 -> mobilenet_v3_small_feat5
+; 2025-10-25 03:43:30,294 - INFO - 모델 파라미터 수:
+; 2025-10-25 03:43:30,294 - INFO -   - Encoder (PatchConvEncoder):   82,520 개
+; 2025-10-25 03:43:30,294 - INFO -     - conv_front (CNN Backbone):  81,488 개
+; 2025-10-25 03:43:30,294 - INFO -     - 1x1_conv (Channel Proj):    984 개
+; 2025-10-25 03:43:30,309 - INFO -     - norm (LayerNorm):           48 개
+; 2025-10-25 03:43:30,309 - INFO -   - Decoder (CatsDecoder):        10,200 개
+; 2025-10-25 03:43:30,309 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+; 2025-10-25 03:43:30,309 - INFO -     - Learnable Queries:               24 개
+; 2025-10-25 03:43:30,309 - INFO -     - Positional Encoding (PE):        384 개
+; 2025-10-25 03:43:30,309 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+; 2025-10-25 03:43:30,309 - INFO -     - Projection4Classifier:      600 개
+; 2025-10-25 03:43:30,309 - INFO -   - Classifier (Projection MLP):  353 개
+; 2025-10-25 03:43:30,309 - INFO -   - 총 파라미터:                  93,073 개
+; 9만개면, 이피션트넷 앞단에 리니어만 연결한 모델의 파라미터수랑 비슷한데, 그러면 경량화 의미가 없다. 따라서 진행 안 함.
 
 
-33차: 30차에 cutmix, fpn 추가
-Train Acc: 84.88%
-Test Acc: 87.46%
-F1 Score for 'Normal': 0.8863
-cutmix와 fpn을 적용하니까 train acc보다 val acc가 훨씬 높은 현상이 발생함.
-CutMix가 훈련 시에만 적용되고, 검증 시에는 적용되지 않기 때문으로 추측.
-fpn은 저수준 특징 (Low-level): features[:2], 고수준 특징 (High-level): features[2:3]을 기존처럼 구하고, 두 특징의 해상도와 채널 수를 맞춘 뒤, 이를 더합니다 (feat1_upsampled + feat2). 덕분에 더 다채롭게 특징을 뽑아서 성능개선에 영향 줄 듯.
+30차: 21차의 드롭아웃 0.1 -> 0.0, 데이터비율 0.1 -> 0.01
+Train Acc: 89.01%
+Test Acc: 87.62%
+F1 Score for 'Normal': 0.8836
+; 아래는 21차 꺼
+; Train Acc: 89.01%
+; Val Acc: 89.17% 
+; F1: 0.8917
+드롭아웃 0.0이 0.1보다 안 좋은 것 같다.
 
 
-34차: 33차의 에포크를 30 -> 60
-만약 33차보다 성능이 좋다면, 에포크 이슈일 수 있으니까 30차꺼를 에포크 30 -> 60으로 해보자.
-Train Acc: 85.87%
-Test Acc: 88.31%
-F1 Score for 'Normal': 0.8925
+; 31차: 25차에서 efficientnet_b0_feat3 -> mobilenet_v3_small_feat4 30에포크
+; Train Acc: 90.70%
+; Test Acc: 87.46%
+; F1 Score for 'Normal': 0.8838
+; 2025-10-25 11:55:37,666 - INFO - 모델 파라미터 수:
+; 2025-10-25 11:55:37,666 - INFO -   - Encoder (PatchConvEncoder):   25,256 개
+; 2025-10-25 11:55:37,666 - INFO -     - conv_front (CNN Backbone):  24,224 개
+; 2025-10-25 11:55:37,666 - INFO -     - 1x1_conv (Channel Proj):    984 개
+; 2025-10-25 11:55:37,666 - INFO -     - norm (LayerNorm):           48 개
+; 2025-10-25 11:55:37,666 - INFO -   - Decoder (CatsDecoder):        10,200 개
+; 2025-10-25 11:55:37,666 - INFO -     - Embedding Layer (W_feat2emb):    600 개
+; 2025-10-25 11:55:37,666 - INFO -     - Learnable Queries:               24 개
+; 2025-10-25 11:55:37,666 - INFO -     - Positional Encoding (PE):        384 개
+; 2025-10-25 11:55:37,666 - INFO -     - Decoder Layers (Cross-Attention): 8,592 개
+; 2025-10-25 11:55:37,666 - INFO -     - Projection4Classifier:      600 개
+; 2025-10-25 11:55:37,666 - INFO -   - Classifier (Projection MLP):  353 개
+; 2025-10-25 11:55:37,666 - INFO -   - 총 파라미터:                  35,809 개
 
 
-35차: 30차 (efficientnet_b0_feat2, 드롭아웃0.0, 에포크30) 의 에포크를 60으로 수정
+; 32차: 30차의 CnnFeatureExtractor forward 마지막에 SEBlock 추가.
+; train acc가 89를 넘겨야 의미있는 시도가 된다.
+; Train Acc: 88.78%
+; Test Acc: 87.31%
+; F1 Score for 'Normal': 0.8805
+; 따라서 seblock 추가는 폐기
+
+
+; 33차: 30차에 cutmix, fpn 추가
+; Train Acc: 84.88%
+; Test Acc: 87.46%
+; F1 Score for 'Normal': 0.8863
+; cutmix와 fpn을 적용하니까 train acc보다 val acc가 훨씬 높은 현상이 발생함.
+; CutMix가 훈련 시에만 적용되고, 검증 시에는 적용되지 않기 때문으로 추측.
+; fpn은 저수준 특징 (Low-level): features[:2], 고수준 특징 (High-level): features[2:3]을 기존처럼 구하고, 두 특징의 해상도와 채널 수를 맞춘 뒤, 이를 더합니다 (feat1_upsampled + feat2). 덕분에 더 다채롭게 특징을 뽑아서 성능개선에 영향 줄 듯.
+
+
+; 34차: 33차의 에포크를 30 -> 60
+; 만약 33차보다 성능이 좋다면, 에포크 이슈일 수 있으니까 30차꺼를 에포크 30 -> 60으로 해보자.
+; Train Acc: 85.87%
+; Test Acc: 88.31%
+; F1 Score for 'Normal': 0.8925
+
+
+35차: 30차의 에포크를 60으로 수정
 Train Acc: 91.77%
 Test Acc: 88.08%
 F1 Score for 'Normal': 0.8892
@@ -286,20 +275,33 @@ F1 Score for 'Normal': 0.8892
 ; Train Acc: 89.01%
 ; Test Acc: 87.62%
 ; F1 Score for 'Normal': 0.8836
-이거이거 학습률이 너무 중요해보인다....
+이거이거 에포크나 스케줄러가 너무 중요해보인다....
+일단 에포크는 30보다 커야 하는 게 맞다.
 
 
-36차: 30차 (efficientnet_b0_feat2, 드롭아웃0.0, 에포크30, CosineAnnealingLR) 에서
+36차: 30차의 CosineAnnealingLR를
 CosineAnnealingWarmRestarts (T_0=10, T_mult=2, 에포크 70 (10 에포크부터, 2배의 에포크기간동안 코사인 주기.)) 으로 수정.
 F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
+Train Acc: 92.42%
+Test Acc: 87.38%
+F1 Score for 'Normal': 0.8815
+35차랑 36차의 차이점이 스케줄러랑 베스트 모델 저장 기준이다.
+근데 스케줄러는 35차의 CosineAnnealingLR이 Test Acc랑 F1 normal이 더 높다.
+
+
+37차는 36차에 드롭아웃 0.1 추가.
+아마 낮게 나올 듯.
+만약 낮게 나온다면 CosineAnnealingWarmRestarts를 안 쓰고, 다시 CosineAnnealingLR를 쓰는 35차로 돌아가자.
 
 
 
 
+38차: 35차의 F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
 
 
-37차는 36차에 드롭아웃 0.1 추가?
 
+
+39차는 38차에 드롭아웃 0.1 추가
 
 
 
