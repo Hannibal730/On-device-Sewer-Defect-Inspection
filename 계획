@@ -290,10 +290,10 @@ F1 Score for 'Normal': 0.8815
 
 
 37차는 36차에 드롭아웃 0.1 추가.
-아마 낮게 나올 듯.
-만약 낮게 나온다면 CosineAnnealingWarmRestarts를 안 쓰고, 다시 CosineAnnealingLR를 쓰는 35차로 돌아가자.
-
-
+Train Acc: 90.15%
+Test Acc: 88.23%
+F1 Score for 'Normal': 0.8913
+35차보다는 36차가 낫네..
 
 
 38차: 35차의 F1 average 기준 베스트 모델 저장에서 F1 Normal 기준으로 변경
