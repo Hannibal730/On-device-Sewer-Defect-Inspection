@@ -15,8 +15,8 @@ run:
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름.  
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
-    train: 0.1
-    valid: 0.1
+    train: 1.0
+    valid: 1.0
     test: 1.0
   random_seed: 42 # 데이터 샘플링 시 사용할 랜덤 시드. 재현성을 위해 고정합니다.
   num_workers: 8 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용. (~24)
