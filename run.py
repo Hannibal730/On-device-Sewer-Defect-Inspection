@@ -449,7 +449,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         if scheduler:
             scheduler.step()
 
-def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
+def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
@@ -774,7 +774,7 @@ def main():
 
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
+        final_acc = inference(run_cfg, model_cfg, cats_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
 
         # --- 그래프 생성 ---
         # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함
@@ -787,7 +787,7 @@ def main():
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
         optimizer, scheduler = None, None # 추론 시에는 옵티마이저/스케줄러가 필요 없음
-        inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
+        inference(run_cfg, model_cfg, cats_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
 
 # =============================================================================
 # 5. 메인 실행 블록
