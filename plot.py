@@ -3,6 +3,7 @@ import re
 import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
+import torch
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
 from datetime import datetime
@@ -146,26 +147,31 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_dir, timest
     except Exception as e:
         logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
 
-def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, timestamp):
+def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
     """
     저장된 어텐션 맵을 원본 이미지 위에 히트맵으로 시각화하여 저장합니다.
 
     Args:
         attention_maps (torch.Tensor): 모델에서 추출한 어텐션 가중치 텐서.
-        Shape: [B, num_heads, num_queries, num_keys]
+            Shape: [B, num_heads, num_queries, num_keys]
         image_tensor (torch.Tensor): 원본 이미지 텐서. Shape: [B, C, H, W]
-        save_dir (str): 시각화 결과를 저장할 디렉토리 경로.
+        save_dir (str): 시각화 결과를 저장할 '전용' 디렉토리 경로 (e.g., .../attention_map_timestamp/).
         img_size (int): 원본 이미지의 크기.
-        timestamp (str): 파일 이름에 추가할 타임스탬프.
+        sample_idx (int): 배치에서 시각화할 샘플의 인덱스.
+        original_filename (str, optional): 원본 이미지 파일 이름.
+        actual_class (str, optional): 실제 클래스 이름.
+        predicted_class (str, optional): 예측된 클래스 이름.
     """
     try:
-        # 1. 시각화를 위해 배치에서 첫 번째 데이터만 선택
-        attention_maps = attention_maps[0].detach().cpu() # [num_heads, num_queries, num_keys]
-        image = image_tensor[0].detach().cpu()         # [C, H, W]
+        # 1. 시각화를 위해 배치에서 해당 인덱스(sample_idx)의 데이터만 선택
+        attention_maps = attention_maps[sample_idx].detach().cpu() # [num_heads, num_queries, num_keys]
+        image = image_tensor[sample_idx].detach().cpu()         # [C, H, W]
 
         # 2. 텐서 정규화 해제 및 이미지로 변환
-        # Normalize(mean=[0.5], std=[0.5])를 역으로 적용
-        image = image * 0.5 + 0.5
+        # Normalize(mean=[0.523, 0.453, 0.345], std=[0.210, 0.199, 0.154])를 역으로 적용
+        mean = torch.tensor([0.523, 0.453, 0.345]).view(3, 1, 1)
+        std = torch.tensor([0.210, 0.199, 0.154]).view(3, 1, 1)
+        image = image * std + mean
         # permute 후 contiguous()를 호출하여 메모리 연속성을 보장한 후 numpy로 변환
         image = image.permute(1, 2, 0).contiguous().numpy().clip(0, 1)
 
@@ -178,14 +184,29 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
 
         # 4. Matplotlib으로 시각화 준비
         # 각 헤드와 쿼리에 대한 서브플롯 생성
-        # squeeze=False를 통해 axes가 항상 2D 배열을 반환하도록 하여 예외 처리를 단순화합니다.
-        fig, axes = plt.subplots(num_heads, num_queries, figsize=(num_queries * 5, num_heads * 5), squeeze=False)
-        fig.suptitle('Attention Maps per Head and Query', fontsize=20)
+        # 원본 이미지를 위한 열을 추가하여 (num_heads + 1) 열로 설정하고, 가로로 나열합니다.
+        fig, axes = plt.subplots(num_queries, num_heads + 1, figsize=((num_heads + 1) * 5, num_queries * 5), squeeze=False)
+        
+        # 그래프 전체 제목 설정
+        title = 'Attention Maps per Head and Query'
+        subtitle = f'Actual: {actual_class} / Predicted: {predicted_class}'
+        fig.suptitle(f'{title}\n\n{subtitle}', fontsize=16)
 
-        # 5. 각 헤드와 쿼리에 대해 반복하며 히트맵 생성
+        # 5. 첫 번째 열에 원본 이미지 표시
+        # 각 쿼리 행(row)의 첫 번째 열(column)에 원본 이미지를 그립니다.
+        for query_idx in range(num_queries):
+            ax_orig = axes[query_idx, 0]
+            ax_orig.imshow(image)
+            # 첫 번째 쿼리에 대해서만 제목을 표시합니다.
+            if query_idx == 0:
+                ax_orig.set_title('Original Image')
+            ax_orig.axis('off')
+
+        # 6. 두 번째 열부터 각 헤드와 쿼리에 대해 반복하며 히트맵 생성
         for head in range(num_heads):
             for query_patch in range(num_queries):
-                ax = axes[head][query_patch]
+                # 올바른 위치: [해당 쿼리 행, 원본 이미지 열 다음부터]
+                ax = axes[query_patch, head + 1]
                 
                 # 1D 어텐션 맵 -> 2D 그리드로 변환
                 attn_map_2d = attention_maps[head, query_patch].view(1, 1, grid_size, grid_size)
@@ -196,17 +217,25 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
 
                 # 원본 이미지와 히트맵 그리기
                 ax.imshow(image, extent=(0, img_size, 0, img_size))
-                ax.imshow(upscaled_map, cmap='jet', alpha=0.5, extent=(0, img_size, 0, img_size))
+                ax.imshow(upscaled_map, cmap='jet', alpha=0.3, extent=(0, img_size, 0, img_size))
 
                 # 변수명을 명확히 하고, 제목에 Query_patch를 사용하여 객관적인 정보를 표시합니다.
                 ax.set_title(f'Head {head+1} / Query_patch {query_patch+1}')
                 ax.axis('off')
 
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        save_path = os.path.join(save_dir, f'attention_map_{timestamp}.png')
+        plt.tight_layout(rect=[0, 0.03, 1, 0.93]) # suptitle 공간 확보를 위해 rect 조정
+        
+        # 원본 파일명을 기반으로 저장 파일명 생성
+        if original_filename:
+            # 원본 파일명에서 확장자를 제거하고, 새로운 .png 확장자를 붙입니다.
+            base_name, _ = os.path.splitext(original_filename)
+            output_filename = f"{base_name}.png"
+        else:
+            output_filename = f"attention_map_{sample_idx}.png"
+        save_path = os.path.join(save_dir, output_filename)
+        
         plt.savefig(save_path)
         plt.close()
-        logging.info(f"어텐션 맵 시각화 결과 저장 완료. '{save_path}'")
 
     except Exception as e:
         logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")

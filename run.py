@@ -306,7 +306,7 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     
     progress_bar = tqdm(data_loader, desc=desc, leave=False)
     with torch.no_grad():
-        for images, labels in progress_bar:
+        for images, labels, _ in progress_bar: # 파일명은 사용하지 않으므로 _로 받음
             images, labels = images.to(device), labels.to(device)
 
             # --- 순수 forward pass 시간 측정 ---
@@ -402,7 +402,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         total = 0
         
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False)
-        for images, labels in progress_bar:
+        for images, labels, _ in progress_bar: # 파일명은 사용하지 않으므로 _로 받음
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             
             optimizer.zero_grad()
@@ -514,17 +514,36 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     # 4. 어텐션 맵 시각화 (설정이 True인 경우)
     if cats_cfg.save_attention:
         try:
+            # 1. 어텐션 맵을 저장할 전용 폴더 생성
+            attn_save_dir = os.path.join(run_dir_path, f'attention_map_{timestamp}')
+            os.makedirs(attn_save_dir, exist_ok=True)
+
+            num_to_save = getattr(cats_cfg, 'num_plot_attention', 1)
+            logging.info(f"어텐션 맵 시각화를 시작합니다 (최대 {num_to_save}개 샘플, 저장 위치: '{attn_save_dir}').")
+
             # 시각화를 위해 테스트 로더에서 첫 번째 배치를 가져옴
-            sample_images, _ = next(iter(data_loader))
+            sample_images, sample_labels, sample_filenames = next(iter(data_loader))
             sample_images = sample_images.to(device)
+            batch_size = sample_images.size(0)
 
             # 모델을 실행하여 어텐션 맵이 저장되도록 함
             with torch.no_grad():
-                _ = model(sample_images)
+                outputs = model(sample_images)
 
-            # 마지막 디코더 레이어에 저장된 어텐션 맵을 가져옴
+            _, predicted_indices = torch.max(outputs.data, 1)
             attention_maps = model.decoder.embedding4decoder.decoder.layers[-1].attn
-            plot_and_save_attention_maps(attention_maps, sample_images, run_dir_path, model_cfg.img_size, timestamp)
+
+            # 배치에서 최대 num_plot_attention개의 샘플에 대해 어텐션 맵 저장
+            num_samples_to_plot = min(num_to_save, batch_size)
+            for i in range(num_samples_to_plot):
+                actual_class = class_names[sample_labels[i].item()]
+                predicted_class = class_names[predicted_indices[i].item()]
+                original_filename = sample_filenames[i]
+
+                plot_and_save_attention_maps(
+                    attention_maps, sample_images, attn_save_dir, model_cfg.img_size,
+                    sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class
+                )
         except Exception as e:
             logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
     return final_acc
@@ -552,7 +571,7 @@ class CustomImageDataset(Dataset):
 
         # 'Defect' 열의 값을 명시적으로 레이블로 사용합니다.
         label = int(self.img_labels.loc[idx, 'Defect'])
-        return image, label
+        return image, label, img_name
 
 def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
     """데이터셋을 로드하고 전처리하여 DataLoader를 생성합니다."""
