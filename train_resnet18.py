@@ -43,6 +43,11 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LOG_BASE_DIR = 'log/Sewer-ML'
 MODEL_FILENAME = 'best_model.pth'
 
+# --- 최고 모델 저장 기준 설정 ---
+# 옵션: 'F1_Macro', 'F1_Normal', 'F1_Defect'
+# F1_Normal: 'Normal' 클래스의 F1 점수가 가장 높을 때 모델을 저장합니다.
+BEST_MODEL_CRITERION = 'F1_Normal'
+
 # =============================================================================
 # 2. 커스텀 데이터셋 정의
 # =============================================================================
@@ -231,14 +236,25 @@ def train_model():
         
         # 검증
         eval_results = evaluate(model, valid_loader, DEVICE, desc=f"Epoch {epoch+1}/{EPOCHS} [Validating]", class_names=class_names, log_class_metrics=True)
-        valid_f1 = eval_results['f1_macro']
         logging.info(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {avg_loss:.4f}")
-
+        
+        # --- 최고 성능 모델 저장 기준 선택 ---
+        current_f1 = 0.0
+        criterion_name = "F1 Macro"
+        if BEST_MODEL_CRITERION == 'F1_Normal' and eval_results['f1_per_class'] is not None:
+            current_f1 = eval_results['f1_per_class'][0] # 'Normal' 클래스는 인덱스 0
+            criterion_name = "F1 Normal"
+        elif BEST_MODEL_CRITERION == 'F1_Defect' and eval_results['f1_per_class'] is not None:
+            current_f1 = eval_results['f1_per_class'][1] # 'Defect' 클래스는 인덱스 1
+            criterion_name = "F1 Defect"
+        else: # 'F1_Macro' 또는 그 외
+            current_f1 = eval_results['f1_macro']
+        
         # 최고 성능 모델 저장
-        if valid_f1 > best_f1:
-            best_f1 = valid_f1
+        if current_f1 > best_f1:
+            best_f1 = current_f1
             torch.save(model.state_dict(), model_save_path)
-            logging.info(f"  -> 최고 성능 모델 저장 완료 (F1: {best_f1:.4f}) -> '{model_save_path}'")
+            logging.info(f"  -> 최고 성능 모델 저장 완료 ({criterion_name}: {best_f1:.4f}) -> '{model_save_path}'")
         
         scheduler.step()
 
