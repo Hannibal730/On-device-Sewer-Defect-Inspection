@@ -18,7 +18,7 @@ from datetime import datetime
 import time
 
 # CATS 모델 아키텍처 임포트
-from CATS import Model as CatsDecoder
+from models import Model as CatsDecoder
 
 # Schedule-Free 옵티마이저 임포트
 import schedulefree
@@ -229,7 +229,7 @@ def log_model_parameters(model):
     encoder_total_params = conv_front_params + conv_1x1_params + encoder_norm_params
 
 
-    # CatsDecoder (CATS.py의 Model 클래스)의 구성 요소
+    # CatsDecoder (models.py의 Model 클래스)의 구성 요소
     # - Embedding4Decoder (W_feat2emb, learnable_queries, PE)
     # - Embedding4Decoder 내부의 Decoder (트랜스포머 레이어들)
     # - Projection4Classifier
@@ -749,7 +749,7 @@ def main():
 
     encoder = PatchConvEncoder(in_channels=model_cfg.in_channels, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, 
                                featured_patch_dim=cats_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'])
-    decoder = CatsDecoder(args=cats_args) # CATS.py의 Model 클래스
+    decoder = CatsDecoder(args=cats_args) # models.py의 Model 클래스
     
     classifier = Classifier(num_decoder_patches=cats_cfg.num_decoder_patches, 
                             featured_patch_dim=cats_cfg.featured_patch_dim, num_labels=num_labels, dropout=cats_cfg.dropout)
