@@ -16,37 +16,41 @@ import yaml
 import logging
 from datetime import datetime
 import time
-
-# CATS 모델 아키텍처 임포트
 from models import Model as CatsDecoder
-
-# Schedule-Free 옵티마이저 임포트
 import schedulefree
-
-# 그래프 및 혼동 행렬 플로팅 함수 임포트
 from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps
 
 # =============================================================================
 # 1. 로깅 설정
 # =============================================================================
-def setup_logging(data_dir_name):
+def setup_logging(run_cfg, data_dir_name):
     """로그 파일을 log 폴더에 생성하고, 콘솔에도 함께 출력하도록 설정합니다."""
-    # 각 실행을 위한 고유한 디렉토리 생성
+    show_log = getattr(run_cfg, 'show_log', True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if not show_log:
+        # 로깅을 완전히 비활성화합니다.
+        logging.disable(logging.CRITICAL)
+        # 임시 디렉토리 경로를 반환하지만, 실제 생성은 하지 않습니다.
+        # 훈련 모드에서 모델 저장을 위해 현재 디렉토리('.')를 사용합니다.
+        return '.', timestamp
+
+    # 각 실행을 위한 고유한 디렉토리 생성
     run_dir_name = f"run_{timestamp}"
     run_dir_path = os.path.join("log", data_dir_name, run_dir_name)
     os.makedirs(run_dir_path, exist_ok=True)
     
     # 로그 파일 경로 설정
     log_filename = os.path.join(run_dir_path, f"log_{timestamp}.log")
-    
+
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler(log_filename, encoding='utf-8'),
             logging.StreamHandler()
-        ]
+        ],
+        force=True # 핸들러를 다시 설정하기 위해 필요
     )
     logging.info(f"로그 파일이 '{log_filename}'에 저장됩니다.")
     return run_dir_path, timestamp
@@ -286,7 +290,7 @@ def _get_model_weights_norm(model):
             total_norm += param_norm.item() ** 2
     return total_norm ** 0.5
 
-def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False):
+def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
     model.eval()
 
@@ -304,7 +308,8 @@ def evaluate(model, optimizer, data_loader, device, desc="Evaluating", class_nam
     all_labels = []
     total_forward_time = 0.0
     
-    progress_bar = tqdm(data_loader, desc=desc, leave=False)
+    show_log = getattr(run_cfg, 'show_log', True)
+    progress_bar = tqdm(data_loader, desc=desc, leave=False, disable=not show_log)
     with torch.no_grad():
         for images, labels, _ in progress_bar: # 파일명은 사용하지 않으므로 _로 받음
             images, labels = images.to(device), labels.to(device)
@@ -401,7 +406,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         correct = 0
         total = 0
         
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False)
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False, disable=not getattr(run_cfg, 'show_log', True))
         for images, labels, _ in progress_bar: # 파일명은 사용하지 않으므로 _로 받음
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             
@@ -426,7 +431,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         
         # --- 평가 단계 ---
         # 클래스별 F1 점수를 계산하고 로깅하도록 옵션 전달
-        eval_results = evaluate(model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
+        eval_results = evaluate(run_cfg, model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
         
         # --- 최고 성능 모델 저장 기준 선택 ---
         current_f1 = 0.0
@@ -496,20 +501,59 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
 
     # 2. 테스트셋 성능 평가
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
-    eval_results = evaluate(model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
     
-    # evaluate 함수에서 반환된 순수 forward pass 시간 사용
-    pure_inference_time = eval_results.get('forward_time', 0.0)
-    num_test_samples = len(data_loader.dataset)
-    avg_inference_time_per_sample = (pure_inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
-    
-    logging.info(f"총 Forward Pass 시간: {pure_inference_time:.2f}s (테스트 샘플 {num_test_samples}개)")
-    logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms")
-    final_acc = eval_results['accuracy']
+    only_inference_mode = getattr(run_cfg, 'only_inference', False)
 
-    # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
-    if eval_results['labels'] and eval_results['preds']:
-        plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, run_dir_path, timestamp)
+    if only_inference_mode:
+        # 순수 추론 모드: 예측 결과만 생성하고 CSV로 저장
+        all_filenames = []
+        all_predictions = []
+        all_confidences = []
+        show_log = getattr(run_cfg, 'show_log', True)
+        progress_bar = tqdm(data_loader, desc=f"[{mode_name}]", leave=False, disable=not show_log)
+        with torch.no_grad():
+            for images, _, filenames in progress_bar:
+                images = images.to(device)
+                outputs = model(images)
+                
+                # Softmax를 적용하여 확률 계산
+                probabilities = torch.nn.functional.softmax(outputs, dim=1)
+                
+                # 가장 높은 확률(confidence)과 해당 인덱스(예측 클래스)를 가져옴
+                confidences, predicted_indices = torch.max(probabilities, 1)
+                
+                all_filenames.extend(filenames)
+                all_predictions.extend([class_names[p] for p in predicted_indices.cpu().numpy()])
+                all_confidences.extend(confidences.cpu().numpy())
+        
+        # 결과를 DataFrame으로 만들어 CSV 파일로 저장
+        results_df = pd.DataFrame({
+            'filename': all_filenames,
+            'prediction': all_predictions,
+            'confidence': all_confidences
+        })
+        results_df['confidence'] = results_df['confidence'].map('{:.4f}'.format) # 소수점 4자리까지 표시
+        result_csv_path = os.path.join(run_dir_path, f'inference_results_{timestamp}.csv')
+        results_df.to_csv(result_csv_path, index=False, encoding='utf-8-sig')
+        logging.info(f"추론 결과가 '{result_csv_path}'에 저장되었습니다.")
+        final_acc = None # 정확도 없음
+
+    else:
+        # 평가 모드: 기존 evaluate 함수 호출
+        eval_results = evaluate(run_cfg, model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+        
+        # evaluate 함수에서 반환된 순수 forward pass 시간 사용
+        pure_inference_time = eval_results.get('forward_time', 0.0)
+        num_test_samples = len(data_loader.dataset)
+        avg_inference_time_per_sample = (pure_inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
+        
+        logging.info(f"총 Forward Pass 시간: {pure_inference_time:.2f}s (테스트 샘플 {num_test_samples}개)")
+        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms")
+        final_acc = eval_results['accuracy']
+
+        # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
+        if eval_results['labels'] and eval_results['preds']:
+            plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, run_dir_path, timestamp)
 
     # 4. 어텐션 맵 시각화 (설정이 True인 경우)
     if cats_cfg.save_attention:
@@ -518,7 +562,7 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
             attn_save_dir = os.path.join(run_dir_path, f'attention_map_{timestamp}')
             os.makedirs(attn_save_dir, exist_ok=True)
 
-            num_to_save = getattr(cats_cfg, 'num_plot_attention', 1)
+            num_to_save = getattr(cats_cfg, 'num_plot_attention', 10)
             logging.info(f"어텐션 맵 시각화를 시작합니다 (최대 {num_to_save}개 샘플, 저장 위치: '{attn_save_dir}').")
 
             # 시각화를 위해 테스트 로더에서 첫 번째 배치를 가져옴
@@ -536,12 +580,17 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
             # 배치에서 최대 num_plot_attention개의 샘플에 대해 어텐션 맵 저장
             num_samples_to_plot = min(num_to_save, batch_size)
             for i in range(num_samples_to_plot):
-                actual_class = class_names[sample_labels[i].item()]
                 predicted_class = class_names[predicted_indices[i].item()]
                 original_filename = sample_filenames[i]
+                
+                # only_inference 모드에서는 실제 클래스를 모름
+                if only_inference_mode:
+                    actual_class = "Unknown"
+                else:
+                    actual_class = class_names[sample_labels[i].item()]
 
                 plot_and_save_attention_maps(
-                    attention_maps, sample_images, attn_save_dir, model_cfg.img_size,
+                    attention_maps, sample_images, attn_save_dir, model_cfg.img_size, cats_cfg,
                     sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class
                 )
         except Exception as e:
@@ -573,9 +622,53 @@ class CustomImageDataset(Dataset):
         label = int(self.img_labels.loc[idx, 'Defect'])
         return image, label, img_name
 
+class InferenceImageDataset(Dataset):
+    """정답 레이블 없이, 지정된 폴더의 모든 이미지를 로드하는 추론 전용 데이터셋입니다."""
+    def __init__(self, img_dir, transform=None):
+        self.img_dir = img_dir
+        self.transform = transform
+        # 지원하는 이미지 확장자
+        self.image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
+        self.img_files = [f for f in os.listdir(img_dir) if os.path.splitext(f)[1].lower() in self.image_extensions]
+        if not self.img_files:
+            logging.warning(f"'{img_dir}'에서 이미지를 찾을 수 없습니다.")
+
+    def __len__(self):
+        return len(self.img_files)
+
+    def __getitem__(self, idx):
+        img_name = self.img_files[idx]
+        img_path = os.path.join(self.img_dir, img_name)
+        image = Image.open(img_path).convert("RGB")
+        
+        if self.transform:
+            image = self.transform(image)
+        return image, -1, img_name # 레이블은 -1과 같은 placeholder 값으로 반환
+
 def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
     """데이터셋을 로드하고 전처리하여 DataLoader를 생성합니다."""
     img_size = model_cfg.img_size
+
+    # --- 데이터 샘플링 로직 함수 ---
+    def get_subset(dataset, name, sampling_ratios, random_seed):
+        """데이터셋에서 지정된 비율만큼 단순 랜덤 샘플링을 수행합니다."""
+        # sampling_ratios가 딕셔너리인지 확인하고, 해당 데이터셋의 비율을 가져옵니다.
+        ratio = 1.0
+        if isinstance(sampling_ratios, dict):
+            ratio = sampling_ratios.get(name, 1.0)
+        elif isinstance(sampling_ratios, (float, int)): # 이전 버전 호환성
+            ratio = sampling_ratios
+
+        if ratio < 1.0:
+            logging.info(f"'{name}' 데이터셋을 {ratio * 100:.1f}% 비율로 샘플링합니다 (random_seed={random_seed}).")
+            num_total = len(dataset)
+            num_to_sample = int(num_total * ratio)
+            # num_to_sample이 0이 되지 않도록 최소 1개는 샘플링
+            num_to_sample = max(1, num_to_sample)
+            rng = np.random.default_rng(random_seed) # 재현성을 위한 랜덤 생성기
+            indices = rng.choice(num_total, size=num_to_sample, replace=False)
+            return Subset(dataset, indices)
+        return dataset
 
     if model_cfg.in_channels == 1:
         # 흑백 이미지용 변환 (커스텀 트랜스폼)
@@ -612,6 +705,23 @@ def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
 
     try:
         logging.info("데이터 로드를 시작합니다.")
+        
+        # only_inference 모드인 경우, 레이블 없이 이미지만 로드
+        if run_cfg.mode == 'inference' and getattr(run_cfg, 'only_inference', False):
+            logging.info("'only_inference' 모드가 활성화되었습니다. 레이블 없이 추론을 진행합니다.")
+            full_test_dataset = InferenceImageDataset(img_dir=run_cfg.test_img_dir, transform=valid_test_transform)
+            
+            # --- only_inference 모드에서도 샘플링 적용 ---
+            sampling_ratios = getattr(run_cfg, 'random_sampling_ratio', None)
+            test_dataset = get_subset(full_test_dataset, 'test', sampling_ratios, run_cfg.random_seed)
+            
+            test_loader = DataLoader(test_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True)
+            
+            logging.info(f"총 {len(full_test_dataset)}개의 이미지 파일 중 {len(test_dataset)}개를 샘플링하여 추론합니다.")
+            
+            # only_inference 모드에서는 train/valid 로더가 필요 없으므로 None 반환
+            return None, None, test_loader, 2, ['Normal', 'Defect']
+
 
         # 커스텀 데이터셋 사용
         full_train_dataset = CustomImageDataset(csv_file=run_cfg.train_csv, img_dir=run_cfg.train_img_dir, transform=train_transform)
@@ -636,31 +746,11 @@ def prepare_data(run_cfg, train_cfg, model_cfg, data_dir_name):
         num_labels = 2 # 0과 1의 이진 분류
         class_names = ['Normal', 'Defect']
 
-        # --- 데이터 샘플링 로직 ---
+        # --- 훈련/검증/테스트 데이터 샘플링 ---
         sampling_ratios = getattr(run_cfg, 'random_sampling_ratio', None)
-
-        def get_subset(dataset, name):
-            """데이터셋에서 지정된 비율만큼 단순 랜덤 샘플링을 수행합니다."""
-            # sampling_ratios가 딕셔너리인지 확인하고, 해당 데이터셋의 비율을 가져옵니다.
-            ratio = 1.0
-            if isinstance(sampling_ratios, dict):
-                ratio = sampling_ratios.get(name, 1.0)
-            elif isinstance(sampling_ratios, (float, int)): # 이전 버전 호환성
-                ratio = sampling_ratios
-
-            if ratio < 1.0:
-                logging.info(f"'{name}' 데이터셋을 {ratio * 100:.0f}% 비율로 샘플링합니다 (random_seed={run_cfg.random_seed}).")
-                num_total = len(dataset)
-                num_to_sample = int(num_total * ratio)
-                rng = np.random.default_rng(run_cfg.random_seed) # 재현성을 위한 랜덤 생성기
-                indices = rng.choice(num_total, size=num_to_sample, replace=False)
-                return Subset(dataset, indices)
-            else:
-                return dataset
-
-        train_dataset = get_subset(full_train_dataset, 'train')
-        valid_dataset = get_subset(full_valid_dataset, 'valid')
-        test_dataset = get_subset(full_test_dataset, 'test')
+        train_dataset = get_subset(full_train_dataset, 'train', sampling_ratios, run_cfg.random_seed)
+        valid_dataset = get_subset(full_valid_dataset, 'valid', sampling_ratios, run_cfg.random_seed)
+        test_dataset = get_subset(full_test_dataset, 'test', sampling_ratios, run_cfg.random_seed)
 
         # DataLoader 생성
         train_loader = DataLoader(train_dataset, batch_size=train_cfg.batch_size, shuffle=True, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False)
@@ -698,15 +788,15 @@ def main():
     # --- 실행 디렉토리 설정 ---
     if run_cfg.mode == 'train':
         # 훈련 모드: 새로운 실행 디렉토리 생성
-        run_dir_path, timestamp = setup_logging(data_dir_name) # 여기서 run_dir_path와 timestamp가 반환됨
+        run_dir_path, timestamp = setup_logging(run_cfg, data_dir_name) # 여기서 run_dir_path와 timestamp가 반환됨
     elif run_cfg.mode == 'inference':
         # 추론 모드: 지정된 실행 디렉토리 사용
         run_dir_path = getattr(run_cfg, 'run_dir_for_inference', None)
-        if not run_dir_path or not os.path.isdir(run_dir_path):
+        if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
             logging.error("추론 모드에서는 'run.yaml'에 'run_dir_for_inference'를 올바르게 설정해야 합니다.")
             exit()
         # 로깅 설정은 하지만, run_dir_path는 yaml에서 읽은 값을 사용
-        _, timestamp = setup_logging(data_dir_name)
+        _, timestamp = setup_logging(run_cfg, data_dir_name)
     
     # --- 설정 파일 내용 로깅 ---
     config_str = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)

@@ -147,7 +147,7 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_dir, timest
     except Exception as e:
         logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
 
-def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
+def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, cats_cfg, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
     """
     저장된 어텐션 맵을 원본 이미지 위에 히트맵으로 시각화하여 저장합니다.
 
@@ -157,6 +157,7 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
         image_tensor (torch.Tensor): 원본 이미지 텐서. Shape: [B, C, H, W]
         save_dir (str): 시각화 결과를 저장할 '전용' 디렉토리 경로 (e.g., .../attention_map_timestamp/).
         img_size (int): 원본 이미지의 크기.
+        cats_cfg (SimpleNamespace): CATS 모델 설정.
         sample_idx (int): 배치에서 시각화할 샘플의 인덱스.
         original_filename (str, optional): 원본 이미지 파일 이름.
         actual_class (str, optional): 실제 클래스 이름.
