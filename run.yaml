@@ -2,16 +2,16 @@
 # 1. 실행 및 데이터 관련 설정
 # =============================================================================
 run:
-  mode: 'inference' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
+  mode: 'train' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 절대 경로를 지정해야 합니다.
   # 데이터셋 경로 (절대 경로 사용 예시)
-  run_dir_for_inference: 'C:/Users/trust/workspace/Tap/CHOI/cau_cats/log/Sewer-ML/run_20251027_000415_42'
-  train_img_dir: 'D:/Sewer-ML/Train' # 훈련 데이터 이미지 경로
-  valid_img_dir: 'D:/Sewer-ML/Valid'   # 검증 데이터 이미지 경로
-  test_img_dir: 'D:/Sewer-ML/Valid'    # 테스트 데이터로 검증 데이터 이미지 경로를 사용
-  train_csv: 'D:/Sewer-ML/SewerML_Train.csv' # 훈련 데이터 CSV
-  valid_csv: 'D:/Sewer-ML/SewerML_Val.csv'   # 검증 데이터 CSV
-  test_csv: 'D:/Sewer-ML/SewerML_Val.csv'    # 테스트 데이터로 검증 데이터 CSV를 사용
+  run_dir_for_inference: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/run_20251027_000415_42'
+  train_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/train' # 훈련 데이터 이미지 경로
+  valid_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/Valid'   # 검증 데이터 이미지 경로
+  test_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/Valid'    # 테스트 데이터로 검증 데이터 이미지 경로를 사용
+  train_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Train.csv' # 훈련 데이터 CSV
+  valid_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'   # 검증 데이터 CSV
+  test_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'    # 테스트 데이터로 검증 데이터 CSV를 사용
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름.  
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
@@ -70,7 +70,7 @@ model:
     num_heads: 2               # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `num_heads`로 나누어 떨어져야 합니다.
     num_decoder_layers: 2      # CATS 모델 내부의 디코더 레이어 수.
     num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
-    attn_pooling: true         # true: 어텐션 풀링으로 동적 쿼리 생성, false: 기존의 고정 쿼리 방식 사용.
+    attn_pooling: True         # true: 어텐션 풀링으로 동적 쿼리 생성, false: 기존의 고정 쿼리 방식 사용.
     decoder_ff_ratio: 2        # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (decoder_ff_dim = emb_dim * decoder_ff_ratio).
     dropout: 0.1               # CATS 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).
     positional_encoding: True  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
