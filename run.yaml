@@ -7,8 +7,8 @@ run:
   # 데이터셋 경로 (절대 경로 사용 예시)
   run_dir_for_inference: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/run_20251027_000415_42'
   train_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/train' # 훈련 데이터 이미지 경로
-  valid_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/Valid'   # 검증 데이터 이미지 경로
-  test_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/Valid'    # 테스트 데이터로 검증 데이터 이미지 경로를 사용
+  valid_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/valid'   # 검증 데이터 이미지 경로
+  test_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/valid'    # 테스트 데이터로 검증 데이터 이미지 경로를 사용
   train_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Train.csv' # 훈련 데이터 CSV
   valid_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'   # 검증 데이터 CSV
   test_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'    # 테스트 데이터로 검증 데이터 CSV를 사용
