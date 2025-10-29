@@ -2,6 +2,126 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+from torchvision import models
+
+# =============================================================================
+# 1. 이미지 인코더 모델 정의
+# =============================================================================
+class CnnFeatureExtractor(nn.Module):
+    """
+    다양한 CNN 아키텍처의 앞부분을 특징 추출기로 사용하는 범용 클래스입니다.
+    run.yaml의 `cnn_feature_extractor.name` 설정에 따라 모델 구조가 결정됩니다.
+    """
+    def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, in_channels=3, featured_patch_dim=None):
+        super().__init__()
+        self.cnn_feature_extractor_name = cnn_feature_extractor_name
+
+        # CNN 모델 이름에 따라 모델과 잘라낼 레이어, 기본 출력 채널을 설정합니다.
+        if cnn_feature_extractor_name == 'resnet18_layer1':
+            base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = nn.Sequential(*list(base_model.children())[:5]) # layer1까지
+            base_out_channels = 64
+        elif cnn_feature_extractor_name == 'resnet18_layer2':
+            base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = nn.Sequential(*list(base_model.children())[:6]) # layer2까지
+            base_out_channels = 128
+            
+        elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat1':
+            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model.features[:2] # features의 2번째 블록까지
+            base_out_channels = 16
+        elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat3':
+            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model.features[:4] # features의 4번째 블록까지
+            base_out_channels = 24
+        elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat4':
+            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model.features[:5] # features의 5번째 블록까지
+            base_out_channels = 40
+            
+        elif cnn_feature_extractor_name == 'efficientnet_b0_feat2':
+            base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model.features[:3] # features의 3번째 블록까지
+            base_out_channels = 24
+        elif cnn_feature_extractor_name == 'efficientnet_b0_feat3':
+            base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model.features[:4] # features의 4번째 블록까지
+            base_out_channels = 40
+        else:
+            raise ValueError(f"지원하지 않는 CNN 피처 추출기 이름입니다: {cnn_feature_extractor_name}")
+
+        # 최종 출력 채널 수를 `featured_patch_dim`에 맞추기 위한 1x1 컨볼루션 레이어입니다.
+        if featured_patch_dim is not None and featured_patch_dim != base_out_channels:
+            self.conv_1x1 = nn.Conv2d(base_out_channels, featured_patch_dim, kernel_size=1)
+        else:
+            self.conv_1x1 = nn.Identity()
+
+    def _adjust_input_channels(self, base_model, in_channels):
+        """모델의 첫 번째 컨볼루션 레이어의 입력 채널을 조정합니다."""
+        if in_channels == 1:
+            # 첫 번째 conv 레이어 찾기
+            if 'resnet' in self.cnn_feature_extractor_name:
+                first_conv = base_model.conv1
+                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
+                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
+                with torch.no_grad():
+                    new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
+                base_model.conv1 = new_conv
+            elif 'mobilenet' in self.cnn_feature_extractor_name or 'efficientnet' in self.cnn_feature_extractor_name:
+                first_conv = base_model.features[0][0] # nn.Sequential -> Conv2dNormActivation -> Conv2d
+                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
+                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
+                with torch.no_grad():
+                    new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
+                base_model.features[0][0] = new_conv
+        elif in_channels != 3:
+            raise ValueError("in_channels는 1 또는 3만 지원합니다.")
+
+    def forward(self, x):
+        x = self.conv_front(x)
+        
+        x = self.conv_1x1(x) # 최종 채널 수 조정
+        return x
+
+class PatchConvEncoder(nn.Module):
+    """이미지를 패치로 나누고, 각 패치에서 특징을 추출하여 1D 시퀀스로 변환하는 인코더입니다."""
+    def __init__(self, in_channels, img_size, patch_size, featured_patch_dim, cnn_feature_extractor_name):
+        super(PatchConvEncoder, self).__init__()
+        self.patch_size = patch_size
+        self.featured_patch_dim = featured_patch_dim
+        self.num_encoder_patches = (img_size // patch_size) ** 2
+        
+        self.shared_conv = nn.Sequential(
+            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=True, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(start_dim=1) # [B*num_encoder_patches, D, 1, 1] -> [B*num_encoder_patches, D] 형태가 됩니다.
+        )
+        self.norm = nn.LayerNorm(featured_patch_dim)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        patches = x.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size)
+        # .contiguous()를 추가하여 메모리 연속성을 보장한 후 reshape 수행
+        patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous().view(-1, C, self.patch_size, self.patch_size)
+        # patches.shape: [B * num_patches, C, patch_size, patch_size]
+        
+        conv_outs = self.shared_conv(patches)
+        # 각 패치 특징 벡터에 대해 Layer Normalization 적용
+        conv_outs = self.norm(conv_outs)
+        # CATS 모델에 입력하기 위해 [B, num_patches, dim] 형태로 재구성
+        conv_outs = conv_outs.view(B, self.num_encoder_patches, self.featured_patch_dim)
+        return conv_outs
+
+# =============================================================================
+# 2. CATS 디코더 모델 정의
+# =============================================================================
 
 # GEGLU (Gated Enhanced Gated Linear Unit) 액티베이션 함수를 구현한 클래스입니다.
 # 일반적인 ReLU나 GELU와 달리, 입력의 일부를 게이트로 사용하여 동적으로 출력을 조절하는 특징이 있습니다.
@@ -383,3 +503,42 @@ class Model(nn.Module):
         features = self.projection4classifier(z)
         # 결과 features의 형태: [B, num_decoder_patches * featured_patch_dim]
         return features
+
+# =============================================================================
+# 3. 전체 모델 구성
+# =============================================================================
+class Classifier(nn.Module):
+    """CATS 모델의 출력을 받아 최종 클래스 로짓으로 매핑하는 분류기입니다."""
+    def __init__(self, num_decoder_patches, featured_patch_dim, num_labels, dropout):
+        super().__init__()
+        input_dim = num_decoder_patches * featured_patch_dim # 48
+        hidden_dim = (input_dim + num_labels) // 2 # 중간 은닉층 차원 (예: (48+2)//2 = 25)
+
+        self.projection = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_labels)
+        )
+
+    def forward(self, x):
+        # x shape: [B, num_decoder_patches * featured_patch_dim]
+        x = self.projection(x) # -> [B, num_labels]
+        return x
+
+class HybridModel(torch.nn.Module):
+    """인코더와 CATS 분류기를 결합한 최종 하이브리드 모델입니다."""
+    def __init__(self, encoder, decoder, classifier):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.classifier = classifier
+        
+    def forward(self, x):
+        # 1. 인코딩: 2D 이미지 -> 패치 시퀀스
+        x = self.encoder(x)
+        # 2. 크로스-어텐션: 패치 시퀀스 -> 특징 벡터
+        x = self.decoder(x)
+        # 3. 분류: 특징 벡터 -> 클래스 로짓
+        out = self.classifier(x)
+        return out
