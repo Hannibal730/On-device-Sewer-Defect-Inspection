@@ -196,6 +196,12 @@ def train_model():
     model.classifier[1] = nn.Linear(num_ftrs, NUM_CLASSES) # 마지막 레이어를 교체
     model.to(DEVICE)
 
+    # --- 학습 가능한 파라미터 수 계산 및 로깅 ---
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logging.info("="*50)
+    logging.info(f"학습 가능한 총 파라미터 수: {total_params:,} 개")
+    logging.info("="*50)
+
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
