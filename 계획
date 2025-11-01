@@ -363,14 +363,20 @@ F1 Score for 'Normal': 0.9034
 Train Acc: 91.25%
 Test Acc: 91.70%
 F1 Score for 'Normal': 0.9208
+0.32ms
+67.81 MB
 
 
 44차: 43차에서 res_attention 켜기
+Train Acc: 91.25%
+Test Acc: 91.63%
+F1 Score for 'Normal': 0.9202
+0.32ms
+67.81 MB
+따라서 res_attention은 의미가 없다. 앞으로도 끄기.
 
 
-
-
-45차: attn_pooling 끄기도 해야 함
+45차: 43차에서 attn_pooling 끄기
 
 
 
