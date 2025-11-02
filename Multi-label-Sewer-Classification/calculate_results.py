@@ -6,7 +6,27 @@ from metrics import evaluation
 import numpy as np
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import seaborn as sns
+
+
+# =============================================================================
+# Matplotlib 한글 폰트 설정
+# =============================================================================
+try:
+    # 시스템에 설치된 한글 폰트를 찾아서 설정합니다.
+    font_list = ['NanumGothic', 'Malgun Gothic', 'AppleGothic', 'UnDotum', 'Gulim']
+    font_found = False
+    for font_name in font_list:
+        if font_name in [f.name for f in fm.fontManager.ttflist]:
+            plt.rcParams['font.family'] = font_name
+            plt.rcParams['axes.unicode_minus'] = False # 마이너스 부호 깨짐 방지
+            font_found = True
+            break
+    if not font_found:
+        print("경고: 한글 폰트(예: NanumGothic)를 찾을 수 없습니다. 그래프의 한글이 깨질 수 있습니다.")
+except Exception as e:
+    print(f"경고: Matplotlib 폰트 설정 중 오류 발생: {e}")
 
 
 MultiLabelWeightDict = {"RB":1.00,"OB":0.5518,"PF":0.2896,"DE":0.1622,"FS":0.6419,"IS":0.1847,"RO":0.3559,"IN":0.3131,"AF":0.0811,"BE":0.2275,"FO":0.2477,"GR":0.0901,"PH":0.4167,"PB":0.4167,"OS":0.9009,"OP":0.3829,"OK":0.4396}

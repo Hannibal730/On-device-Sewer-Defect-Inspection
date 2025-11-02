@@ -312,7 +312,7 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     # 훈련 시 사용된 모델 경로를 불러옴
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
     if not os.path.exists(model_path) and mode_name != "Final Evaluation":
-        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'config.yaml'의 'run_dir_for_inference' 설정이 올바른지 확인하세요.")
+        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'config.yaml'의 'only_inference_dir' 설정이 올바른지 확인하세요.")
         return
 
     try:
@@ -432,37 +432,42 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
             attn_save_dir = os.path.join(run_dir_path, f'attention_map_{timestamp}')
             os.makedirs(attn_save_dir, exist_ok=True)
 
-            num_to_save = getattr(cats_cfg, 'num_plot_attention', 10)
-            logging.info(f"어텐션 맵 시각화를 시작합니다 (최대 {num_to_save}개 샘플, 저장 위치: '{attn_save_dir}').")
+            num_to_save = min(getattr(cats_cfg, 'num_plot_attention', 10), len(data_loader.dataset))
+            logging.info(f"어텐션 맵 시각화를 시작합니다 ({num_to_save}개 샘플, 저장 위치: '{attn_save_dir}').")
 
-            # 시각화를 위해 테스트 로더에서 첫 번째 배치를 가져옴
-            sample_images, sample_labels, sample_filenames = next(iter(data_loader))
-            sample_images = sample_images.to(device)
-            batch_size = sample_images.size(0)
+            saved_count = 0
+            # 데이터 로더를 순회하며 num_to_save 개수만큼 시각화
+            for sample_images, sample_labels, sample_filenames in data_loader:
+                if saved_count >= num_to_save:
+                    break
 
-            # 모델을 실행하여 어텐션 맵이 저장되도록 함
-            with torch.no_grad():
-                outputs = model(sample_images)
+                sample_images = sample_images.to(device)
+                batch_size = sample_images.size(0)
 
-            _, predicted_indices = torch.max(outputs.data, 1)
-            attention_maps = model.decoder.embedding4decoder.decoder.layers[-1].attn
+                # 모델을 실행하여 어텐션 맵이 저장되도록 함
+                with torch.no_grad():
+                    outputs = model(sample_images)
 
-            # 배치에서 최대 num_plot_attention개의 샘플에 대해 어텐션 맵 저장
-            num_samples_to_plot = min(num_to_save, batch_size)
-            for i in range(num_samples_to_plot):
-                predicted_class = class_names[predicted_indices[i].item()]
-                original_filename = sample_filenames[i]
-                
-                # only_inference 모드에서는 실제 클래스를 모름
-                if only_inference_mode:
-                    actual_class = "Unknown"
-                else:
-                    actual_class = class_names[sample_labels[i].item()]
+                _, predicted_indices = torch.max(outputs.data, 1)
+                attention_maps = model.decoder.embedding4decoder.decoder.layers[-1].attn
 
-                plot_and_save_attention_maps(
-                    attention_maps, sample_images, attn_save_dir, model_cfg.img_size, cats_cfg,
-                    sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class
-                )
+                # 현재 배치에서 저장해야 할 샘플 수만큼 반복
+                for i in range(batch_size):
+                    if saved_count >= num_to_save:
+                        break
+
+                    predicted_class = class_names[predicted_indices[i].item()]
+                    original_filename = sample_filenames[i]
+                    
+                    actual_class = "Unknown" if only_inference_mode else class_names[sample_labels[i].item()]
+
+                    plot_and_save_attention_maps(
+                        attention_maps, sample_images, attn_save_dir, model_cfg.img_size, cats_cfg,
+                        sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class
+                    )
+                    saved_count += 1
+            
+            logging.info(f"어텐션 맵 {saved_count}개 저장 완료.")
         except Exception as e:
             logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
     return final_acc
@@ -493,9 +498,9 @@ def main():
         run_dir_path, timestamp = setup_logging(run_cfg, data_dir_name) # 여기서 run_dir_path와 timestamp가 반환됨
     elif run_cfg.mode == 'inference':
         # 추론 모드: 지정된 실행 디렉토리 사용
-        run_dir_path = getattr(run_cfg, 'run_dir_for_inference', None)
+        run_dir_path = getattr(run_cfg, 'only_inference_dir', None)
         if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
-            logging.error("추론 모드에서는 'config.yaml'에 'run_dir_for_inference'를 올바르게 설정해야 합니다.")
+            logging.error("추론 모드에서는 'config.yaml'에 'only_inference_dir'를 올바르게 설정해야 합니다.")
             exit()
         # 로깅 설정은 하지만, run_dir_path는 yaml에서 읽은 값을 사용
         _, timestamp = setup_logging(run_cfg, data_dir_name)

@@ -1,6 +1,7 @@
 import os
 import logging
 import numpy as np
+import torch
 import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
@@ -56,6 +57,15 @@ class InferenceImageDataset(Dataset):
         if self.transform:
             image = self.transform(image)
         return image, -1, img_name # 레이블은 -1과 같은 placeholder 값으로 반환
+
+class ImageFolderWithPaths(datasets.ImageFolder):
+    """기존 ImageFolder에 파일 경로(파일명)를 함께 반환하는 기능을 추가한 클래스입니다."""
+    def __getitem__(self, index):
+        # 기존 ImageFolder의 __getitem__을 호출하여 이미지와 레이블을 가져옵니다.
+        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
+        # 파일 경로를 가져옵니다.
+        path = self.imgs[index][0]
+        return (*original_tuple, os.path.basename(path))
 
 # =============================================================================
 # 2. 데이터 준비 함수
@@ -129,8 +139,8 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             logging.info(f"'{dataset_cfg.paths['img_folder']}' 경로에서 데이터를 불러와 훈련/테스트셋으로 분할합니다.")
             
             # 훈련용(증강 포함)과 검증용(증강 없음) 데이터셋을 별도로 생성
-            dataset_for_train = datasets.ImageFolder(root=dataset_cfg.paths['img_folder'], transform=train_transform)
-            dataset_for_valid_test = datasets.ImageFolder(root=dataset_cfg.paths['img_folder'], transform=valid_test_transform)
+            dataset_for_train = ImageFolderWithPaths(root=dataset_cfg.paths['img_folder'], transform=train_transform)
+            dataset_for_valid_test = ImageFolderWithPaths(root=dataset_cfg.paths['img_folder'], transform=valid_test_transform)
 
             num_total = len(dataset_for_train)
             train_ratio = getattr(dataset_cfg, 'train_split_ratio', 0.8)
@@ -166,17 +176,9 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
         # --- DataLoader 생성 ---
         # ImageFolder는 (image, label)을 반환하므로, CustomImageDataset과 형식을 맞추기 위해 collate_fn을 사용합니다.
         def collate_fn(batch):
-            # batch: [(image, label), (image, label), ...]
-            # CustomImageDataset의 경우: [(image, label, filename), ...] -> len(batch[0]) == 3
-            # ImageFolder의 경우: [(image, label)] -> len(batch[0]) == 2
-            if len(batch[0]) == 3: # CustomImageDataset
-                return torch.stack([item[0] for item in batch]), torch.tensor([item[1] for item in batch]), [item[2] for item in batch]
-            else: # ImageFolder
-                # ImageFolder는 파일명을 직접 제공하지 않지만, Subset을 통해 원본 데이터셋의 샘플에 접근할 수 있습니다.
-                # 하지만 collate_fn 단계에서 인덱스를 추적하기 복잡하므로, 여기서는 파일명을 빈 값으로 둡니다.
-                # 파일명이 꼭 필요한 기능(예: 추론 결과 저장)이 ImageFolder와 함께 사용될 경우 추가 수정이 필요합니다.
-                # 현재 구조에서는 `only_inference` 모드가 아니면 파일명을 사용하지 않으므로 문제 없습니다.
-                return torch.stack([item[0] for item in batch]), torch.tensor([item[1] for item in batch]), [""] * len(batch)
+            # 모든 데이터셋 클래스가 (image, label, filename) 튜플을 반환하도록 통일되었습니다.
+            images, labels, filenames = zip(*batch)
+            return torch.stack(images, 0), torch.tensor(labels), list(filenames)
 
         train_loader = DataLoader(train_dataset, batch_size=train_cfg.batch_size, shuffle=True, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False, collate_fn=collate_fn)
         valid_loader = DataLoader(valid_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False, collate_fn=collate_fn)

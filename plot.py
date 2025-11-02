@@ -189,8 +189,9 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
         
         # 그래프 전체 제목 설정
         title = 'Attention Maps per Head and Query'
+        filename_info = f'Filename: {original_filename}' if original_filename else ''
         subtitle = f'Actual: {actual_class} / Predicted: {predicted_class}'
-        fig.suptitle(f'{title}\n\n{subtitle}', fontsize=16)
+        fig.suptitle(f'{title}\n\n{filename_info}\n\n{subtitle}', fontsize=16)
 
         # 5. 첫 번째 열에 원본 이미지 표시
         # 각 쿼리 행(row)의 첫 번째 열(column)에 원본 이미지를 그립니다.
