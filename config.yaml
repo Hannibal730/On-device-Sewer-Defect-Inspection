@@ -5,16 +5,34 @@ run:
   mode: 'inference' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
   only_inference: false # true: 정답 레이블 없이 순수 추론만 수행. false: 정답 레이블과 비교하여 성능 평가.
   run_dir_for_inference: '/home/user/workspace/CHOI/cau_cats/log/Sewer-ML/run_20251030_042419_43'   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 경로
-  show_log: true # true: 로그를 콘솔에 출력하고 파일로 저장. false: 모든 로깅 비활성화.
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름. 
+  show_log: true # true: 로그를 콘솔에 출력하고 파일로 저장. false: 모든 로깅 비활성화.
+  
+  # --- 데이터셋 설정 ---
+  dataset:
+    name: 'Sewer-ML' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용)
+    # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
+    type: 'csv' 
+    # 'image_folder' 타입일 때 사용할 훈련 데이터 비율 (나머지는 테스트/검증 데이터가 됨)
+    train_split_ratio: 0.8 
+    # 'image_folder' 타입일 때 데이터 분할에 사용할 랜덤 시드.
+    split_seed: 42
 
-  # 데이터셋 경로
-  train_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/train' # 훈련 데이터 이미지 경로
-  valid_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/valid'   # 검증 데이터 이미지 경로
-  test_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/valid'    # 테스트 데이터로 검증 데이터 이미지 경로를 사용
-  train_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Train.csv' # 훈련 데이터 CSV
-  valid_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'   # 검증 데이터 CSV
-  test_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'    # 테스트 데이터로 검증 데이터 CSV를 사용
+    # 데이터셋 경로 설정
+    paths:
+      # 1. 'csv' 타입 데이터셋 경로
+      train_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/train'
+      valid_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/valid'
+      test_img_dir: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/valid'
+      train_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Train.csv'
+      valid_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'
+      test_csv: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-ML/SewerML_Val.csv'
+
+      # 2. 'image_folder' 타입 데이터셋 경로 (예: Refined_mix, tap_new)
+      #    'image_folder' 타입을 사용할 경우, 아래 root 경로만 수정하면 됩니다.
+      # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP
+      # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW
+      img_folder: 'C:/Users/hannibal/Desktop/cau_cats/Refined_mix'
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
