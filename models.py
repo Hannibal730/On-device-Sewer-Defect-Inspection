@@ -194,10 +194,10 @@ class Embedding4Decoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
         # 일반적인 드롭아웃 레이어를 정의합니다.
 
-        # --- 학습 가능한 쿼리(Learnable Queries) 설정 (Xavier 초기화 적용) ---
-        self.learnable_queries = nn.Parameter(torch.empty(num_decoder_patches, featured_patch_dim))
+        # --- 학습 가능한 쿼리(Learnable Query) 설정 (Xavier 초기화 적용) ---
+        self.learnable_query = nn.Parameter(torch.empty(num_decoder_patches, featured_patch_dim))
         # Xavier 초기화는 훈련 초기 안정성을 높이고 수렴을 돕는 검증된 방법입니다.
-        nn.init.xavier_uniform_(self.learnable_queries)
+        nn.init.xavier_uniform_(self.learnable_query)
         
         # --- 학습 가능한 위치 인코딩 ---
         # 입력 시퀀스의 위치 정보를 제공하기 위해, '학습 가능한 위치 인코딩(Positional Encoding)'을 파라미터로 생성합니다.
@@ -233,25 +233,25 @@ class Embedding4Decoder(nn.Module):
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
         if self.attn_pooling:
             # [신규 방식] 어텐션 풀링을 이용한 파라미터-프리 동적 쿼리 생성
-            # 1. '씨앗' 벡터 준비: 기존의 learnable_queries를 사용합니다.
-            query_seed = self.W_feat2emb(self.learnable_queries)
-            query_seed = query_seed.unsqueeze(0).repeat(bs, 1, 1)
+            # 1. 잠재 쿼리(latent query) 준비: learnable_query를 동적 쿼리 생성을 위한 씨앗(seed)으로 사용합니다.
+            latent_query = self.W_feat2emb(self.learnable_query)
+            latent_query = latent_query.unsqueeze(0).repeat(bs, 1, 1)
             
-            # 2. 어텐션 스코어 계산 (Q=씨앗, K=패치 특징)
-            attn_scores = torch.bmm(query_seed, seq_encoder_patches.transpose(1, 2))
-            attn_weights = F.softmax(attn_scores, dim=-1)
+            # 2. 어텐션 스코어 계산 (Q=잠재 쿼리, K=패치 특징)
+            latent_attn_scores = torch.bmm(latent_query, seq_encoder_patches.transpose(1, 2))
+            latent_attn_weights = F.softmax(latent_attn_scores, dim=-1)
             
             # 3. 가중 평균으로 동적 쿼리 생성 (V=패치 특징)
-            seq_decoder_patches = torch.bmm(attn_weights, seq_encoder_patches)
+            seq_decoder_patches = torch.bmm(latent_attn_weights, seq_encoder_patches)
         else:
             # [기존 방식] 고정된 학습 가능 쿼리 사용
-            # 1. learnable_queries를 임베딩
-            learnable_queries = self.W_feat2emb(self.learnable_queries)
+            # 1. learnable_query를 임베딩
+            learnable_query = self.W_feat2emb(self.learnable_query)
             # 2. 배치 크기만큼 복제하여 모든 샘플에 동일한 쿼리를 적용
-            # learnable_queries: [num_decoder_patches, emb_dim]
+            # learnable_query: [num_decoder_patches, emb_dim]
             # -> [1, num_decoder_patches, emb_dim]
             # -> [bs, num_decoder_patches, emb_dim]
-            seq_decoder_patches = learnable_queries.unsqueeze(0).repeat(bs, 1, 1)
+            seq_decoder_patches = learnable_query.unsqueeze(0).repeat(bs, 1, 1)
 
         # Embedding 클래스는 이제 디코더에 필요한 입력 시퀀스들을 반환합니다.
         # 실제 디코더 호출은 Model 클래스의 forward에서 이루어집니다.
