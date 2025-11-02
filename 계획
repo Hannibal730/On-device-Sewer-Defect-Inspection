@@ -385,8 +385,9 @@ F1 Score for 'Normal': 0.9167
 43차보다 성능이 낮으므로, attn_pooling은 효과적이다.
 
 
+46차: 43차 모델로 tapnew 실험.
 
-
+47차: 43차 모델로 tap 실험.
 
 
 
