@@ -303,7 +303,7 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     # 훈련 시 사용된 모델 경로를 불러옴
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
     if not os.path.exists(model_path) and mode_name != "Final Evaluation":
-        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'run.yaml'의 'run_dir_for_inference' 설정이 올바른지 확인하세요.")
+        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'config.yaml'의 'run_dir_for_inference' 설정이 올바른지 확인하세요.")
         return
 
     try:
@@ -612,7 +612,7 @@ def main():
     """메인 실행 함수"""
     # --- YAML 설정 파일 로드 ---
     parser = argparse.ArgumentParser(description="YAML 설정을 이용한 CATS 기반 이미지 분류기")
-    parser.add_argument('--config', type=str, default='run.yaml', help='설정 파일 경로')
+    parser.add_argument('--config', type=str, default='config.yaml', help='설정 파일 경로')
     args = parser.parse_args()
 
     with open(args.config, 'r', encoding='utf-8') as f:
@@ -635,7 +635,7 @@ def main():
         # 추론 모드: 지정된 실행 디렉토리 사용
         run_dir_path = getattr(run_cfg, 'run_dir_for_inference', None)
         if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
-            logging.error("추론 모드에서는 'run.yaml'에 'run_dir_for_inference'를 올바르게 설정해야 합니다.")
+            logging.error("추론 모드에서는 'config.yaml'에 'run_dir_for_inference'를 올바르게 설정해야 합니다.")
             exit()
         # 로깅 설정은 하지만, run_dir_path는 yaml에서 읽은 값을 사용
         _, timestamp = setup_logging(run_cfg, data_dir_name)
@@ -643,7 +643,7 @@ def main():
     # --- 설정 파일 내용 로깅 ---
     config_str = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
     logging.info("="*50)
-    logging.info("run.yaml:")
+    logging.info("config.yaml:")
     logging.info("\n" + config_str)
     logging.info("="*50)
     

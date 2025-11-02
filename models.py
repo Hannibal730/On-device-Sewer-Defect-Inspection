@@ -10,7 +10,7 @@ from torchvision import models
 class CnnFeatureExtractor(nn.Module):
     """
     다양한 CNN 아키텍처의 앞부분을 특징 추출기로 사용하는 범용 클래스입니다.
-    run.yaml의 `cnn_feature_extractor.name` 설정에 따라 모델 구조가 결정됩니다.
+    config.yaml의 `cnn_feature_extractor.name` 설정에 따라 모델 구조가 결정됩니다.
     """
     def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, in_channels=3, featured_patch_dim=None):
         super().__init__()

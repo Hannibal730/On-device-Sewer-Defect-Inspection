@@ -6,7 +6,6 @@ import seaborn as sns
 import torch
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
-from datetime import datetime
 
 def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timestamp):
     """
