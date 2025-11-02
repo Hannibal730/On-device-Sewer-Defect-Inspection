@@ -137,8 +137,8 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             num_train = int(num_total * train_ratio)
             num_test = num_total - num_train
 
-            # 데이터 분할 시 사용할 시드를 config에서 가져옵니다. 없으면 기존 random_seed를 사용합니다.
-            split_seed = getattr(dataset_cfg, 'split_seed', run_cfg.random_seed)
+            # 데이터 분할 시 사용할 시드를 config에서 가져옵니다. 없으면 기존 random_sampling_seed를 사용합니다.
+            split_seed = getattr(dataset_cfg, 'split_seed', run_cfg.random_sampling_seed)
             logging.info(f"총 {num_total}개 데이터를 훈련용 {num_train}개, 테스트용 {num_test}개로 분할합니다 (split_seed={split_seed}).")
 
             # 재현성을 위해 고정된 시드로 데이터를 분할
@@ -159,9 +159,9 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
 
         # --- 데이터 샘플링 ---
         sampling_ratios = getattr(run_cfg, 'random_sampling_ratio', None)
-        train_dataset = get_subset(full_train_dataset, 'train', sampling_ratios, run_cfg.random_seed)
-        valid_dataset = get_subset(full_valid_dataset, 'valid', sampling_ratios, run_cfg.random_seed)
-        test_dataset = get_subset(full_test_dataset, 'test', sampling_ratios, run_cfg.random_seed)
+        train_dataset = get_subset(full_train_dataset, 'train', sampling_ratios, run_cfg.random_sampling_seed)
+        valid_dataset = get_subset(full_valid_dataset, 'valid', sampling_ratios, run_cfg.random_sampling_seed)
+        test_dataset = get_subset(full_test_dataset, 'test', sampling_ratios, run_cfg.random_sampling_seed)
 
         # --- DataLoader 생성 ---
         # ImageFolder는 (image, label)을 반환하므로, CustomImageDataset과 형식을 맞추기 위해 collate_fn을 사용합니다.
