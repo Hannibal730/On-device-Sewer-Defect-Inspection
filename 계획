@@ -377,14 +377,12 @@ F1 Score for 'Normal': 0.9202
 
 
 45차: 43차에서 attn_pooling 끄기
-
-
-
-
-
-
-
-
+Train Acc: 90.97%
+Test Acc: 91.23%
+F1 Score for 'Normal': 0.9167
+0.32ms
+67.81 MB
+43차보다 성능이 낮으므로, attn_pooling은 효과적이다.
 
 
 
