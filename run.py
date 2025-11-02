@@ -18,6 +18,12 @@ from datetime import datetime
 import time
 from models import Model as CatsDecoder, PatchConvEncoder, Classifier, HybridModel
 import schedulefree
+
+try:
+    from thop import profile
+except ImportError:
+    profile = None
+
 from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps
 
 # =============================================================================
@@ -89,8 +95,8 @@ def log_model_parameters(model):
         pe_params = embedding_module.PE.numel()
     
     query_params = 0 # Learnable Query
-    if hasattr(embedding_module, 'learnable_query') and embedding_module.learnable_query.requires_grad:
-        query_params = embedding_module.learnable_query.numel()
+    if hasattr(embedding_module, 'learnable_queries') and embedding_module.learnable_queries.requires_grad:
+        query_params = embedding_module.learnable_queries.numel()
     
     w_feat2emb_params = count_parameters(embedding_module.W_feat2emb)
 
@@ -197,22 +203,27 @@ def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", 
         logging.warning("테스트 데이터가 없습니다. 평가를 건너뜁니다.")
         return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': [], 'forward_time': 0.0}
 
-
     # desc 내용에 따라 Accuracy 라벨을 동적으로 변경
     if desc.startswith("[Valid]"):
         acc_label = "Val Acc"
-        log_message = f'{desc} | {acc_label}: {accuracy:.2f}% | Precision: {precision:.4f} | Recall: {recall:.4f} | F1: {f1:.4f}'
+        log_message = f'{desc} | {acc_label}: {accuracy:.2f}%'
     else: # [Test] 또는 [Inference]의 경우
         acc_label = "Test Acc"
-        log_message = f'{desc} {acc_label}: {accuracy:.2f}% | Precision: {precision:.4f} | Recall: {recall:.4f} | F1: {f1:.4f}'
+        log_message = f'{desc} {acc_label}: {accuracy:.2f}%'
     logging.info(log_message)
 
-    # 클래스별 F1 점수 로깅
+    # 클래스별 상세 지표 로깅
     if log_class_metrics and class_names:
+        precision_per_class = precision_score(all_labels, all_preds, average=None, zero_division=0)
+        recall_per_class = recall_score(all_labels, all_preds, average=None, zero_division=0)
         f1_per_class = f1_score(all_labels, all_preds, average=None, zero_division=0)
         logging.info("-" * 30)
         for i, class_name in enumerate(class_names):
-            logging.info(f"  - F1 Score for '{class_name}': {f1_per_class[i]:.4f}")
+            log_line = (f"  - Metrics for '{class_name}': "
+                        f"Precision: {precision_per_class[i]:.4f} | "
+                        f"Recall: {recall_per_class[i]:.4f} | "
+                        f"F1: {f1_per_class[i]:.4f}")
+            logging.info(log_line)
         logging.info("-" * 30)
 
     return {
@@ -323,6 +334,25 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     # 최종 가중치를 모델 파라미터에 통합(consolidate)합니다.
     if optimizer and hasattr(optimizer, 'eval'):
         optimizer.eval()
+
+    # --- FLOPS 측정 ---
+    # 모델의 입력 크기를 확인하기 위해 샘플 이미지를 하나 가져옵니다.
+    # test_loader.dataset은 Subset일 수 있으므로 .dataset으로 원본 데이터셋에 접근합니다.
+    try:
+        sample_image, _, _ = data_loader.dataset.dataset[0] if isinstance(data_loader.dataset, Subset) else data_loader.dataset[0]
+        dummy_input = sample_image.unsqueeze(0).to(device)
+
+        if profile:
+            # thop.profile은 MACs를 반환합니다. FLOPS는 보통 MACs * 2 입니다.
+            macs, params = profile(model, inputs=(dummy_input,), verbose=False)
+            # GFLOPS (Giga Floating Point Operations) 단위로 변환
+            gflops = (macs * 2) / 1e9
+            logging.info(f"FLOPS: {gflops:.2f} GFLOPS")
+        else:
+            logging.info("FLOPS: N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
+            logging.info("  - FLOPS를 측정하려면 'pip install thop'을 실행하세요.")
+    except Exception as e:
+        logging.error(f"FLOPS 측정 중 오류 발생: {e}")
 
     
     # 1. GPU 메모리 사용량 측정
