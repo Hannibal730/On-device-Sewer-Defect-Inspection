@@ -91,7 +91,7 @@ class MultiLabelDatasetInference(Dataset):
         self.loadAnnotations()
 
     def loadAnnotations(self):
-        gtPath = os.path.join(self.annRoot, "{}13.csv".format(self.split))
+        gtPath = os.path.join(self.annRoot, "SewerML_{}.csv".format(self.split))
         gt = pd.read_csv(gtPath, sep=",", encoding="utf-8", usecols = ["Filename"])
         #print("the gtpath is {}".format(gtPath))
         self.imgPaths = gt["Filename"].values
