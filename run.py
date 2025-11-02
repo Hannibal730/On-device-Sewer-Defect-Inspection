@@ -336,18 +336,19 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     # --- FLOPS 측정 ---
     # 모델의 입력 크기를 확인하기 위해 샘플 이미지를 하나 가져옵니다.
     # test_loader.dataset은 Subset일 수 있으므로 .dataset으로 원본 데이터셋에 접근합니다.
+    gflops_per_sample = 0.0 # 샘플 당 연산량 (FLOPs)
     try:
         sample_image, _, _ = data_loader.dataset.dataset[0] if isinstance(data_loader.dataset, Subset) else data_loader.dataset[0]
         dummy_input = sample_image.unsqueeze(0).to(device)
 
         if profile:
-            # thop.profile은 MACs를 반환합니다. FLOPS는 보통 MACs * 2 입니다.
+            # thop.profile은 MACs를 반환합니다. FLOPs는 보통 MACs * 2 입니다.
             macs, params = profile(model, inputs=(dummy_input,), verbose=False)
             # GFLOPS (Giga Floating Point Operations) 단위로 변환
-            gflops = (macs * 2) / 1e9
-            logging.info(f"FLOPS: {gflops:.2f} GFLOPS")
+            gflops_per_sample = (macs * 2) / 1e9
+            logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
         else:
-            logging.info("FLOPS: N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
+            logging.info("연산량 (FLOPs): N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
             logging.info("  - FLOPS를 측정하려면 'pip install thop'을 실행하세요.")
     except Exception as e:
         logging.error(f"FLOPS 측정 중 오류 발생: {e}")
@@ -417,8 +418,15 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
         num_test_samples = len(data_loader.dataset)
         avg_inference_time_per_sample = (pure_inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
         
+        # 성능(FLOPS) 계산: 총 연산량 / 총 시간
+        total_gflops = gflops_per_sample * num_test_samples
+        # pure_inference_time이 0인 경우를 대비하여 1e-9와 같은 작은 값을 더해 0으로 나누는 오류를 방지합니다.
+        hardware_gflops = total_gflops / (pure_inference_time + 1e-9)
+
         logging.info(f"총 Forward Pass 시간: {pure_inference_time:.2f}s (테스트 샘플 {num_test_samples}개)")
         logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms")
+        if gflops_per_sample > 0:
+            logging.info(f"성능 (FLOPS): {hardware_gflops:.2f} GFLOPS (초당 Giga 연산)")
         final_acc = eval_results['accuracy']
 
         # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
