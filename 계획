@@ -397,10 +397,17 @@ Test Acc: 86.73%
 F1 Score for 'Normal': 0.8711
 
 
+48차 진행 중: baseline.py의 resnet18로 Sewer-ML 학습
+Sewer-ML/run_resnet18_20251103_105208
 
 
+49차 예정: baseline.py의 efficientnet_b0로 Sewer-ML 학습
 
 
+50차 예정: baseline.py의 mobilenet_v2로 Sewer-ML 학습
+
+
+51차 예정: baseline.py의 mobilenet_v3_small로 Sewer-ML 학습
 
 
 
@@ -423,4 +430,15 @@ pth File size: 0.16MB
 총 Forward Pass 시간: 41.28s (테스트 샘플 130046개)
 샘플 당 평균 Forward Pass 시간: 0.32ms
 
-파라미터 감소율 99.676%
+
+resnet18
+pth File size: 44.6MB
+총 파라미터: 11,177,538 개
+
+efficientnet_b0
+
+
+mobilenet_v2
+
+
+mobilenet_v3_small
