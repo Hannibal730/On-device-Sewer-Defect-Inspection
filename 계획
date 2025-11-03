@@ -386,8 +386,15 @@ F1 Score for 'Normal': 0.9167
 
 
 46차: 43차 모델로 tapnew 실험.
+Train Acc: 89.06%
+Test Acc: 87.32%
+F1 Score for 'Normal': 0.8782
+
 
 47차: 43차 모델로 tap 실험.
+Train Acc: 88.54%
+Test Acc: 86.73%
+F1 Score for 'Normal': 0.8711
 
 
 
@@ -396,21 +403,4 @@ F1 Score for 'Normal': 0.9167
 
 
 
-드롭아웃비율 0.2?
-샘플 원본 사이즈에 따라 img_size랑 patch_size 동적 변환...  패치 개수만 동일하게끔!!
--> 이건 학습 시간과 추론 시간에 영향을 줄 것 같다...
 
-
-21차 (레이어 1개당 4,296개 x 2개 레이어)
-emb_dim=24, num_heads=2, decoder_ff_ratio=2
-Cross-Attention: (24 * 24 * 3) + (24 * 24) (Q,K,V + Output Proj) ≈ 2,304개
-FFN: (24 * 48) + (24 * 24) (Linear1 + Linear2) ≈ 1,728개
-LayerNorm: 24*2 + 24*2 (두 개의 LayerNorm) = 96개
-레이어 1개당 약 4,296개 -> 4,296 * 2개 레이어 = 8,592개
-
-23차 (레이어 1개당 23,664개 x 4개 레이어)
-emb_dim=48, num_heads=4, decoder_ff_ratio=4
-Cross-Attention: (48 * 48 * 3) + (48 * 48) ≈ 9,216개
-FFN: (48 * 192) + (96 * 48) ≈ 13,824개
-LayerNorm: 48*2 + 48*2 = 192개
-레이어 1개당 약 23,664개 -> 23,664 * 4개 레이어 = 94,656개
