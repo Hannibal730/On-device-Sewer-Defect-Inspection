@@ -417,16 +417,9 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
         pure_inference_time = eval_results.get('forward_time', 0.0)
         num_test_samples = len(data_loader.dataset)
         avg_inference_time_per_sample = (pure_inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
-        
-        # 성능(FLOPS) 계산: 총 연산량 / 총 시간
-        total_gflops = gflops_per_sample * num_test_samples
-        # pure_inference_time이 0인 경우를 대비하여 1e-9와 같은 작은 값을 더해 0으로 나누는 오류를 방지합니다.
-        hardware_gflops = total_gflops / (pure_inference_time + 1e-9)
 
         logging.info(f"총 Forward Pass 시간: {pure_inference_time:.2f}s (테스트 샘플 {num_test_samples}개)")
         logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms")
-        if gflops_per_sample > 0:
-            logging.info(f"성능 (FLOPS): {hardware_gflops:.2f} GFLOPS (초당 Giga 연산)")
         final_acc = eval_results['accuracy']
 
         # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)

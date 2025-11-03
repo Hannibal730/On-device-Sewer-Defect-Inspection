@@ -231,16 +231,17 @@ def run_inference(args):
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
 
-    # 1-2. FLOPS 측정
+    # 1-2. FLOPs (연산량) 측정
+    gflops_per_sample = 0.0
     if profile:
         # thop.profile은 MACs를 반환합니다. FLOPS는 보통 MACs * 2 입니다.
         macs, params = profile(model, inputs=(dummy_input,), verbose=False)
         # GFLOPS (Giga Floating Point Operations) 단위로 변환
-        gflops = (macs * 2) / 1e9
-        logging.info(f"FLOPS: {gflops:.2f} GFLOPS")
+        gflops_per_sample = (macs * 2) / 1e9
+        logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
     else:
-        logging.info("FLOPS: N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
-        logging.info("  - FLOPS를 측정하려면 'pip install thop'을 실행하세요.")
+        logging.info("연산량 (FLOPs): N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
+        logging.info("  - FLOPs를 측정하려면 'pip install thop'을 실행하세요.")
 
 
     # 2. 추론 및 성능 평가
