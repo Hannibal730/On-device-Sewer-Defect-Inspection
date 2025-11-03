@@ -213,11 +213,25 @@ def run_inference(args):
 
     model = model.to(device)
 
-    # 1. GPU 메모리 사용량 측정
     # 모델의 입력 크기를 확인하기 위해 샘플 이미지를 하나 가져옵니다.
     sample_image, _ = dataset[0]
     dummy_input = sample_image.unsqueeze(0).to(device)
-    
+
+    # 1-2. FLOPs (연산량) 측정
+    gflops_per_sample = 0.0
+    if profile:
+        # thop.profile은 MACs를 반환합니다. FLOPS는 보통 MACs * 2 입니다.
+        macs, params = profile(model, inputs=(dummy_input,), verbose=False)
+        gmacs = macs / 1e9
+        logging.info(f"연산량 (MACs): {gmacs:.2f} GMACs per sample")
+        # GFLOPS (Giga Floating Point Operations) 단위로 변환
+        gflops_per_sample = (macs * 2) / 1e9
+        logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
+    else:
+        logging.info("연산량 (FLOPs): N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
+        logging.info("  - FLOPs를 측정하려면 'pip install thop'을 실행하세요.")
+
+    # 1. GPU 메모리 사용량 측정
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
@@ -230,19 +244,6 @@ def run_inference(args):
         logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
-
-    # 1-2. FLOPs (연산량) 측정
-    gflops_per_sample = 0.0
-    if profile:
-        # thop.profile은 MACs를 반환합니다. FLOPS는 보통 MACs * 2 입니다.
-        macs, params = profile(model, inputs=(dummy_input,), verbose=False)
-        # GFLOPS (Giga Floating Point Operations) 단위로 변환
-        gflops_per_sample = (macs * 2) / 1e9
-        logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
-    else:
-        logging.info("연산량 (FLOPs): N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
-        logging.info("  - FLOPs를 측정하려면 'pip install thop'을 실행하세요.")
-
 
     # 2. 추론 및 성능 평가
     logging.info(f"{split} 데이터셋에 대한 추론을 시작합니다...")

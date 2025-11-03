@@ -404,3 +404,23 @@ F1 Score for 'Normal': 0.8711
 
 
 
+xie2019
+pth File size: 34.9MB
+총 파라미터: 9,159,681 개
+연산량 (MACs): 1.43 GMACs per sample
+연산량 (FLOPs): 2.87 GFLOPs per sample
+샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 65.77 MB
+총 Forward Pass 시간: 17.81s (테스트 샘플 130046개)
+샘플 당 평균 Forward Pass 시간: 0.14ms
+
+
+my model (43차)
+pth File size: 0.16MB
+총 파라미터: 29,691 개
+연산량 (MACs): 0.42 GMACs per sample
+연산량 (FLOPs): 0.84 GFLOPs per sample
+샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 61.07 MB
+총 Forward Pass 시간: 41.28s (테스트 샘플 130046개)
+샘플 당 평균 Forward Pass 시간: 0.32ms
+
+파라미터 감소율 99.676%

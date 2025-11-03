@@ -344,6 +344,8 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
         if profile:
             # thop.profile은 MACs를 반환합니다. FLOPs는 보통 MACs * 2 입니다.
             macs, params = profile(model, inputs=(dummy_input,), verbose=False)
+            gmacs = macs / 1e9
+            logging.info(f"연산량 (MACs): {gmacs:.2f} GMACs per sample")
             # GFLOPS (Giga Floating Point Operations) 단위로 변환
             gflops_per_sample = (macs * 2) / 1e9
             logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
