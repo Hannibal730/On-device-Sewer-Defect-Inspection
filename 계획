@@ -398,7 +398,6 @@ F1 Score for 'Normal': 0.8711
 
 
 48차 진행 중: baseline.py의 resnet18로 Sewer-ML 학습
-Sewer-ML/run_resnet18_20251103_105208
 
 
 49차 예정: baseline.py의 efficientnet_b0로 Sewer-ML 학습
@@ -432,13 +431,13 @@ pth File size: 0.16MB
 
 
 resnet18
-pth File size: 44.6MB
 총 파라미터: 11,177,538 개
 
 efficientnet_b0
-
+총 파라미터: 4,010,110 개
 
 mobilenet_v2
-
+총 파라미터: 2,226,434 개
 
 mobilenet_v3_small
+총 파라미터: 1,519,906 개
