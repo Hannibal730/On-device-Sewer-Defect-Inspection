@@ -233,7 +233,7 @@ class Embedding4Decoder(nn.Module):
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
         if self.attn_pooling:
             # [신규 방식] 어텐션 풀링을 이용한 파라미터-프리 동적 쿼리 생성
-            # 1. 잠재 쿼리(latent query) 준비: learnable_queries를 동적 쿼리 생성을 위한 씨앗(seed)으로 사용합니다.
+            # 1. 잠재 쿼리(latent query) 준비: learnable_queries를 동적 쿼리 생성을 위한 잠재적인 쿼리로 사용합니다.
             latent_query = self.W_feat2emb(self.learnable_queries)
             latent_query = latent_query.unsqueeze(0).repeat(bs, 1, 1)
             
