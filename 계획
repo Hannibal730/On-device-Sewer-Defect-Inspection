@@ -391,10 +391,8 @@ Test Acc: 87.32%
 F1 Score for 'Normal': 0.8782
 
 
-47차: 43차 모델로 tap 실험.
-Train Acc: 88.54%
-Test Acc: 86.73%
-F1 Score for 'Normal': 0.8711
+47차 예정: 43차 모델로 tap 실험.
+
 
 
 48차 진행 중: baseline.py의 resnet18로 Sewer-ML 학습

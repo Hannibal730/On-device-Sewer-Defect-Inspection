@@ -10,8 +10,8 @@ run:
   
   # --- 데이터셋 설정 ---
   dataset:
-    name: 'Sewer-ML' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
-    type: 'csv' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
+    name: 'Sewer-TAP' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
+    type: 'image_folder' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
     train_split_ratio: 0.8 # 'image_folder' 타입일 때 사용할 훈련 데이터 비율 (나머지는 테스트/검증 데이터가 됨)
     split_seed: 42 # 'image_folder' 타입일 때 데이터 분할에 사용할 랜덤 시드.
 
@@ -28,7 +28,7 @@ run:
       # 2. 'image_folder' 타입 데이터셋 경로
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW
-      img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW'
+      img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP'
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
