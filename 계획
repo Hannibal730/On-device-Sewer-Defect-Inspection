@@ -403,15 +403,15 @@ Test Acc: 91.75%
 F1 Score for 'Normal': 0.9212
 
 
-
-49차 진행 중: baseline.py의 efficientnet_b0로 Sewer-ML 학습
-
-
-
-
-50차 예정: baseline.py의 mobilenet_v4로 Sewer-ML 학습
+49차: baseline.py의 efficientnet_b0로 Sewer-ML 학습
+Train Acc: 99.23%
+Test Acc: 93.35%
+총 파라미터: 4,010,110 개
+F1 Score for 'Normal': 0.9363
 
 
+50차 진행 중: baseline.py의 mobilenet_v4로 Sewer-ML 학습
+총 파라미터: 2,495,586 개
 
 
 
@@ -431,24 +431,19 @@ pth File size: 34.9MB
 총 파라미터: 9,159,681 개
 연산량 (MACs): 1.43 GMACs per sample
 연산량 (FLOPs): 2.87 GFLOPs per sample
+샘플 당 평균 Forward Pass 시간: 0.2ms (100회 반복)
 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 65.77 MB
-총 Forward Pass 시간: 17.81s (테스트 샘플 130046개)
-샘플 당 평균 Forward Pass 시간: 0.14ms
 
- 샘플 당 평균 Forward Pass 시간: 0.2ms (100회 반복)
 
 my model (43차)
 pth File size: 0.16MB
 총 파라미터: 29,691 개
 연산량 (MACs): 0.42 GMACs per sample
 연산량 (FLOPs): 0.84 GFLOPs per sample
+샘플 당 평균 Forward Pass 시간: 0.69ms (100회 반복)
 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 61.07 MB
-총 Forward Pass 시간: 41.28s (테스트 샘플 130046개)
-샘플 당 평균 Forward Pass 시간: 0.32ms
 
- 샘플 당 평균 Forward Pass 시간: 0.69ms (100회 반복)
-
-480 리사이즈, 480 패치
+480 리사이즈, 480 패치 버전
 샘플 당 최대 GPU 메모리 사용량: 58.43 MB
 샘플 당 평균 Forward Pass 시간: 0.66ms (100회 반복)
 
@@ -458,18 +453,21 @@ resnet18 (48차)
 총 파라미터: 11,177,538 개
 연산량 (MACs): 8.37 GMACs per sample
 연산량 (FLOPs): 16.75 GFLOPs per sample
-샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 218.74 MB
-총 Forward Pass 시간: 51.38s (테스트 샘플 130046개)
-샘플 당 평균 Forward Pass 시간: 0.40ms
+샘플 당 평균 Forward Pass 시간: 0.84ms (100회 반복)
+샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 219.19 MB
 
 
 efficientnet_b0 (49차)
 총 파라미터: 4,010,110 개
+연산량 (MACs): 1.90 GMACs per sample
+연산량 (FLOPs): 3.80 GFLOPs per sample
+샘플 당 평균 Forward Pass 시간: 1.55ms (100회 반복)
+샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 126.40 MB
 
 
-mobilenet_v2
-총 파라미터: 2,226,434 개
-
-
-mobilenet_v3_small
-총 파라미터: 1,519,906 개
+mobilenet_v4 (50차)
+총 파라미터: 2,495,586 개
+연산량 (MACs): 0.84 GMACs per sample
+연산량 (FLOPs): 1.69 GFLOPs per sample
+샘플 당 평균 Forward Pass 시간: 1.05ms (100회 반복)
+샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 72.07 MB
