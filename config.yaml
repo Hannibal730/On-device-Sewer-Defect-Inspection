@@ -11,7 +11,7 @@ run:
   # --- 데이터셋 설정 ---
   dataset:
     name: 'Sewer-ML' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
-    type: 'csv'# type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
+    type: 'csv' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
     train_split_ratio: 0.8 # 'image_folder' 타입일 때 사용할 훈련 데이터 비율 (나머지는 테스트/검증 데이터가 됨)
     split_seed: 42 # 'image_folder' 타입일 때 데이터 분할에 사용할 랜덤 시드.
 
@@ -64,9 +64,9 @@ training:
 # =============================================================================
 model:
   # --- 이미지 및 인코더 설정 ---
-  img_size: 480                # 모델에 입력하기 전 이미지의 리사이즈 크기 (정사각형).
+  img_size: 224                # 모델에 입력하기 전 이미지의 리사이즈 크기 (정사각형).
   in_channels: 3               # 입력 이미지의 채널 수. 옵션: 1 (흑백), 3 (컬러).
-  patch_size: 120              # 이미지를 나눌 정사각형 패치의 크기. `img_size`는 `patch_size`로 나누어 떨어져야 합니다.
+  patch_size: 56              # 이미지를 나눌 정사각형 패치의 크기. `img_size`는 `patch_size`로 나누어 떨어져야 합니다.
   cnn_feature_extractor:
     # 이미지 패치에서 특징을 추출할 CNN 모델을 선택합니다.
     # 사용 가능한 옵션:

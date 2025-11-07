@@ -98,9 +98,8 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
     if model_cfg.in_channels == 1:
         normalize = transforms.Normalize(mean=[0.5], std=[0.5])
         train_transform = transforms.Compose([
-            transforms.RandomAffine(degrees=10, translate=(0.05, 0.05), scale=(0.95, 1.05)),
             transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
-            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomHorizontalFlip(),
             transforms.Grayscale(num_output_channels=1),
             transforms.ToTensor(),
             normalize
@@ -111,9 +110,11 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             transforms.ToTensor(),
             normalize
         ])
-    else: # model_cfg.in_channels == 3:
+    elif model_cfg.in_channels == 3:
         normalize = transforms.Normalize(mean=[0.523, 0.453, 0.345], std=[0.210, 0.199, 0.154])
         train_transform = transforms.Compose([
+            # Sewer-ML 원본 논문은 Resize 대신에 RandomResizedCrop 을 사용했다.
+            # transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)), 
             transforms.Resize((img_size, img_size)),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),

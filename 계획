@@ -434,6 +434,13 @@ pth File size: 34.9MB
 샘플 당 평균 Forward Pass 시간: 0.2ms (100회 반복)
 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 65.77 MB
 
+-> 224해상도를 480으로 수정
+'./inference_results/inference_xie2019_binary_val_20251107_153449.log'
+2025-11-07 15:34:49,957 - INFO - 연산량 (MACs): 6.56 GMACs per sample
+2025-11-07 15:34:49,957 - INFO - 연산량 (FLOPs): 13.11 GFLOPs per sample
+2025-11-07 15:34:50,025 - INFO - 샘플 당 평균 Forward Pass 시간: 0.57ms (100회 반복)
+2025-11-07 15:34:50,026 - INFO - 샘플 당 최대 GPU 메모리 사용량: 144.14 MB
+
 
 my model (43차)
 pth File size: 0.16MB
@@ -443,7 +450,7 @@ pth File size: 0.16MB
 샘플 당 평균 Forward Pass 시간: 0.69ms (100회 반복)
 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 61.07 MB
 
-480 리사이즈, 480 패치 버전
+-> 480 리사이즈, 480 패치 버전
 샘플 당 최대 GPU 메모리 사용량: 58.43 MB
 샘플 당 평균 Forward Pass 시간: 0.66ms (100회 반복)
 
@@ -471,3 +478,52 @@ mobilenet_v4 (50차)
 연산량 (FLOPs): 1.69 GFLOPs per sample
 샘플 당 평균 Forward Pass 시간: 1.05ms (100회 반복)
 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 72.07 MB
+
+
+
+
+
+
+43모델로 지금 224 (56*4) 버전을 테스트 중이다.
+이거의 성능이 xie 2019 (91.08)을 넘으면, 224 (56*4) 버전의 데이터 로더로 베이스라인들을 다시 학습시켜봐야 한ㅁ.
+그리고 xie2019도 inference.py에서 171줄의 변수값을 224로 재설정 필요.
+
+
+성능은 말고, 속도 지표만으로 480 vs 224 비교표도 만들 수 있을 듯.
+
+480 버전의 표는 xie2019 (91.08)... 로 비교하는 것도 좀 애매한 건가?
+
+
+
+
+* Forward Pass 계산 시, Our Model은 패칭 방식 때문에 배치 크기가 증가하긴 하지만, 교수님 말씀처럼 어차피 병렬처리되므로 배제할 이슈라고 판단했습니다.
+(실제로 패치 개수를 기존의 16개 대신에 1개로 변경해본 결과, Forward Pass 시간 변화는 미미했습니다.)
+
+
+* xie 모델과 Our Model의 인풋 리사이즈가 달랐습니다.
+Sewer-ML 논문의 xie2019 (F1_normal: 91.08)인 인풋은 (3,224,224)
+Our Model의 (F1_normal: 92.08)은 인풋은 (3,480,480)
+
+그래서 Sewer-ML 논문의 인풋 사이즈를 Our Model 사이즈로 리사이즈하자, Sewer-ML의 Forward Pass 시간이 크게 증가했습니다.
+이 방식을 사용하면 Our Model의 Forward Pass 시간이 xie보다 낮아집니다.
+하지만 이 방식을 채택하면 아래의 문제가 있습니다.
+Forward Pass 시간 비교 때는 인풋 사이즈가 같은 환경이고, F1_normal 비교 때는 인풋 사이즈가 다릅니다.
+따라서 지표 선택에 유리하도록 환경을 바꾸는 것이라서 문제가 있다고 판단했습니다.
+
+
+
+51차: sewer-ml 224짜리 하이브리드
+log/Sewer-TAPNEW/run_20251107_185824
+
+52차: sewer-tap 224짜리 하이브리드
+log/Sewer-TAP/run_20251107_185616
+
+53차: sewer-tapnew 224짜리 하이브리드
+log/Sewer-TAPNEW/run_20251107_185824
+
+
+
+
+
+
+일단 학습을 시킨 뒤에, 1애퐄짜리 학습으로 Forward pass 시간 재측정하기로.
