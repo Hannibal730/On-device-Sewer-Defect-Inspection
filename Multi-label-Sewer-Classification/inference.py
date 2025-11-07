@@ -35,7 +35,6 @@ def evaluate(dataloader, model, device):
 
     all_sigmoid_predictions = None
     all_img_paths = []
-    total_forward_time = 0.0
     sigmoid = nn.Sigmoid()
 
     num_batches = len(dataloader)
@@ -47,23 +46,7 @@ def evaluate(dataloader, model, device):
 
             images = images.to(device)
 
-            # --- 순수 forward pass 시간 측정 ---
-            if device.type == 'cuda':
-                start_event = torch.cuda.Event(enable_timing=True)
-                end_event = torch.cuda.Event(enable_timing=True)
-                
-                start_event.record()
-                output = model(images)
-                end_event.record()
-
-                torch.cuda.synchronize()
-                total_forward_time += start_event.elapsed_time(end_event) / 1000.0
-            else:
-                start_time = time.time()
-                output = model(images)
-                end_time = time.time()
-                total_forward_time += (end_time - start_time)
-
+            output = model(images)
             sigmoid_output = sigmoid(output).detach().cpu().numpy()
 
             if all_sigmoid_predictions is None:
@@ -73,7 +56,7 @@ def evaluate(dataloader, model, device):
 
             all_img_paths.extend(list(img_paths))
             
-    return all_sigmoid_predictions, all_img_paths, total_forward_time
+    return all_sigmoid_predictions, all_img_paths
 
 
 def load_model(model_path, best_weights=False):
@@ -230,30 +213,48 @@ def run_inference(args):
     else:
         logging.info("연산량 (FLOPs): N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
         logging.info("  - FLOPs를 측정하려면 'pip install thop'을 실행하세요.")
-
-    # 1. GPU 메모리 사용량 측정
+    
+    # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
+    avg_inference_time_per_sample = 0.0
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
         
+        # 시간 측정을 위한 예열(warm-up)
         with torch.no_grad():
-            _ = model(dummy_input)
+            for _ in range(10):
+                _ = model(dummy_input)
+
+        # 실제 시간 측정
+        num_iterations = 100
+        total_time = 0.0
+        with torch.no_grad():
+            for _ in range(num_iterations):
+                start_event = torch.cuda.Event(enable_timing=True)
+                end_event = torch.cuda.Event(enable_timing=True)
+                start_event.record()
+                _ = model(dummy_input)
+                end_event.record()
+                torch.cuda.synchronize()
+                total_time += start_event.elapsed_time(end_event) # ms
+        
+        avg_inference_time_per_sample = total_time / num_iterations
             
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
-        logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
+        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
+        logging.info(f"샘플 당 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
-        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
+        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량 및 정확한 추론 시간을 측정하지 않습니다.")
+        start_time = time.time()
+        _ = model(dummy_input)
+        end_time = time.time()
+        avg_inference_time_per_sample = (end_time - start_time) * 1000 # ms
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (1회 측정)")
 
     # 2. 추론 및 성능 평가
     logging.info(f"{split} 데이터셋에 대한 추론을 시작합니다...")
-    sigmoid_predictions, val_imgPaths, total_forward_time = evaluate(dataloader, model, device)
-
-    num_test_samples = len(dataloader.dataset)
-    avg_inference_time_per_sample = (total_forward_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
-
-    logging.info(f"총 Forward Pass 시간: {total_forward_time:.2f}s (테스트 샘플 {num_test_samples}개)")
-    logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms")
+    sigmoid_predictions, val_imgPaths = evaluate(dataloader, model, device)
 
     sigmoid_dict = {}
     sigmoid_dict["Filename"] = val_imgPaths

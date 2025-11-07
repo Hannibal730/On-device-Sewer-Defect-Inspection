@@ -25,6 +25,12 @@
 본 연구는 하수관 점검 로봇 및 스마트 시티 인프라 관리 시스템과 같은 On-device에 적용 가능한 실시간, 저전력 하수관 결함 탐지 기술로써의 활용 가능성을 제시합니다. This study presents the potential of our work as a real-time, low-power sewer defect detection technology applicable to On-device systems, such as sewer inspection robots and smart city infrastructure management systems.
 
 
+----시작
+
+Urban sewer infrastructure is aging, making routine inspection and maintenance increasingly critical. However, existing deep learning–based defect detectors typically depend on high-end servers or cloud back ends, limiting real-time, automated operation on edge platforms such as sewer-inspection robots. We introduce LC-Transformer (Low-Cost Transformer), a lightweight hybrid architecture for on-device sewer defect diagnosis. In the encoder, a compact CNN shares its weights across image patches, maximizing parameter efficiency; in the decoder, a cross-attention mechanism substantially reduces computation. To further enhance decoding, we employ attention pooling to derive dynamic queries—adapted to the input features—from a small set of learnable seed queries. On a sewer-inspection dataset, LC-Transformer matches or surpasses specialized sewer models and prior lightweight baselines while using significantly fewer parameters and compute. These results highlight LC-Transformer’s potential as a real-time, low-power solution deployable on inspection robots and smart-city infrastructure management systems.
+
+----끝
+
 
 
 1. 서론 (Introduction)
@@ -67,6 +73,27 @@ Section 2 introduces related work, and Section 3 details the proposed LC-Transfo
 4장에서는 실험 설정 및 결과를 분석하며, 마지막 5장에서 결론을 맺습니다.
 Section 4 analyzes the experimental setup and results, and finally, Section 5 concludes the paper.
 
+
+---- 시작
+
+Introduction
+
+Urban sewer networks are critical infrastructure for public sanitation and environmental protection. However, many systems are aging rapidly, leading to defects such as cracks, intrusions, and collapses that can trigger road sinkholes and environmental pollution. Periodic internal inspections with CCTV robots are therefore essential, yet manual review of large video corpora is time-consuming, costly, and susceptible to inconsistency due to subjective judgments.
+
+Deep learning–based automated defect detection has gained traction as a remedy. Early studies centered on high-capacity CNNs (e.g., VGG, ResNet) to maximize detection accuracy, but their heavy computational and memory demands make them reliant on high-end GPU servers or cloud resources, hindering deployment on edge devices such as fielded sewer-inspection robots.
+
+We introduce LC-Transformer (Low-Cost Transformer), a lightweight hybrid architecture tailored for resource-constrained edge environments that combines the local feature efficiency of CNNs with the information-sharing benefits of Transformer-style attention. The design is built on two key ideas:
+
+1. Parameter-efficient hybrid encoder–decoder. Images are partitioned into patches that share a single lightweight CNN patch-encoder, substantially reducing the parameter count. To further improve parameter and compute efficiency, the decoder omits self-attention and uses only cross-attention to aggregate patch features and produce the final prediction.
+
+2. Dynamic query generation via attention pooling. Instead of fixed queries, a small set of learnable latent queries is adapted to each input through attention pooling, yielding input-conditioned dynamic queries. This focuses computation on the most informative content in each image while introducing no additional parameters beyond the latent queries, thereby lowering decoder complexity.
+
+Experiments on the public Sewer-ML dataset and a private sewer-video dataset demonstrate that LC-Transformer matches or surpasses the classification performance of existing lightweight models while delivering superior on-device metrics, including fewer parameters, lower FLOPs, faster inference, and reduced memory usage.
+
+The remainder of the paper is organized as follows. Section 2 reviews related work. Section 3 details the LC-Transformer architecture. Section 4 presents the experimental setup and results. Section 5 concludes.
+
+
+----- 끝
 
 
 
@@ -139,6 +166,14 @@ FFN은 두 개의 선형 레이어와 GEGLU 활성화 함수로 구성된다. $$
 먼저 Projection4Classifier $\Phi_{proj}$를 통해 차원이 변환되고 Flatten된다. $$ \text{Features} = \text{Flatten}(\text{Projection}(Z)) \in \mathbb{R}^{N_q \times D_{feat}} $$
 
 이후 간단한 MLP 분류기를 통과하여 최종 클래스 로짓을 출력한다. $$ \text{Logits} = \text{MLP}(\text{Features}) \in \mathbb{R}^{N_{cls}} $$
+
+
+
+----시작
+
+
+
+-----끝
 
 
 

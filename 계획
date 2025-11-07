@@ -391,15 +391,17 @@ Test Acc: 87.32%
 F1 Score for 'Normal': 0.8782
 
 
-47차 예정: 43차 모델로 tap 실험.
-
+47차: 43차 모델로 tap 실험.
+Train Acc: 97.28%
+Test Acc: 97.83%
+F1 Score for 'Normal': 0.9783
 
 
 48차: baseline.py의 resnet18로 Sewer-ML 학습
 Train Acc: 99.97%
 Test Acc: 91.75%
 F1 Score for 'Normal': 0.9212
-샘플 당 평균 Forward Pass 시간: 0.40ms
+
 
 
 49차 진행 중: baseline.py의 efficientnet_b0로 Sewer-ML 학습
@@ -407,10 +409,11 @@ F1 Score for 'Normal': 0.9212
 
 
 
-50차 예정: baseline.py의 mobilenet_v2로 Sewer-ML 학습
+50차 예정: baseline.py의 mobilenet_v4로 Sewer-ML 학습
 
 
-51차 예정: baseline.py의 mobilenet_v3_small로 Sewer-ML 학습
+
+
 
 
 
@@ -432,6 +435,7 @@ pth File size: 34.9MB
 총 Forward Pass 시간: 17.81s (테스트 샘플 130046개)
 샘플 당 평균 Forward Pass 시간: 0.14ms
 
+ 샘플 당 평균 Forward Pass 시간: 0.2ms (100회 반복)
 
 my model (43차)
 pth File size: 0.16MB
@@ -441,6 +445,12 @@ pth File size: 0.16MB
 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 61.07 MB
 총 Forward Pass 시간: 41.28s (테스트 샘플 130046개)
 샘플 당 평균 Forward Pass 시간: 0.32ms
+
+ 샘플 당 평균 Forward Pass 시간: 0.69ms (100회 반복)
+
+480 리사이즈, 480 패치
+샘플 당 최대 GPU 메모리 사용량: 58.43 MB
+샘플 당 평균 Forward Pass 시간: 0.66ms (100회 반복)
 
 
 resnet18 (48차)

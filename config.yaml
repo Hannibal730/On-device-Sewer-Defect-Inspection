@@ -2,16 +2,16 @@
 # 1. 실행 및 데이터 관련 설정 (run.py, baseline.py 공용)
 # =============================================================================
 run:
-  mode: 'train' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
+  mode: 'inference' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
   only_inference: false # true: 정답 레이블 없이 순수 추론만 수행. false: 정답 레이블과 비교하여 성능 평가.
-  only_inference_dir: '/home/user/workspace/CHOI/cau_cats/log/Sewer-ML/run_20251030_042419_43'   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 경로
+  only_inference_dir: '/home/user/workspace/CHOI/cau_cats/best_model_43'   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 경로
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름. 
   show_log: true # true: 로그를 콘솔에 출력하고 파일로 저장. false: 모든 로깅 비활성화.
   
   # --- 데이터셋 설정 ---
   dataset:
-    name: 'Sewer-TAP' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
-    type: 'image_folder' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
+    name: 'Sewer-ML' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
+    type: 'csv'# type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
     train_split_ratio: 0.8 # 'image_folder' 타입일 때 사용할 훈련 데이터 비율 (나머지는 테스트/검증 데이터가 됨)
     split_seed: 42 # 'image_folder' 타입일 때 데이터 분할에 사용할 랜덤 시드.
 

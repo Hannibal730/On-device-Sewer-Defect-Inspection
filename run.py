@@ -152,7 +152,6 @@ def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", 
     total = 0
     all_preds = []
     all_labels = []
-    total_forward_time = 0.0
     
     show_log = getattr(run_cfg, 'show_log', True)
     progress_bar = tqdm(data_loader, desc=desc, leave=False, disable=not show_log)
@@ -160,25 +159,7 @@ def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", 
         for images, labels, _ in progress_bar: # 파일명은 사용하지 않으므로 _로 받음
             images, labels = images.to(device), labels.to(device)
 
-            # --- 순수 forward pass 시간 측정 ---
-            if device.type == 'cuda':
-                # GPU 시간 측정을 위한 이벤트 생성
-                start_event = torch.cuda.Event(enable_timing=True)
-                end_event = torch.cuda.Event(enable_timing=True)
-                
-                start_event.record() # 시작 시간 기록
-                outputs = model(images) # [B, num_labels]
-                end_event.record() # 종료 시간 기록
-
-                torch.cuda.synchronize() # GPU 연산이 끝날 때까지 대기
-                
-                # 밀리초(ms) 단위의 시간을 초 단위로 변환하여 누적
-                total_forward_time += start_event.elapsed_time(end_event) / 1000.0
-            else: # CPU의 경우 time.time() 사용
-                start_time = time.time()
-                outputs = model(images)
-                end_time = time.time()
-                total_forward_time += (end_time - start_time)
+            outputs = model(images) # [B, num_labels]
 
             _, predicted = torch.max(outputs.data, 1)
 
@@ -199,7 +180,7 @@ def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", 
 
     if total == 0:
         logging.warning("테스트 데이터가 없습니다. 평가를 건너뜁니다.")
-        return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': [], 'forward_time': 0.0}
+        return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': []}
 
     # desc 내용에 따라 Accuracy 라벨을 동적으로 변경
     if desc.startswith("[Valid]"):
@@ -229,8 +210,7 @@ def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", 
         'f1_macro': f1, # 평균 F1 점수
         'f1_per_class': f1_per_class if log_class_metrics and class_names else None, # 클래스별 F1 점수
         'labels': all_labels,
-        'preds': all_preds,
-        'forward_time': total_forward_time
+        'preds': all_preds
     }
 
 def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names):
@@ -355,22 +335,45 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     except Exception as e:
         logging.error(f"FLOPS 측정 중 오류 발생: {e}")
 
-    
-    # 1. GPU 메모리 사용량 측정
-    dummy_input = torch.randn(1, model_cfg.in_channels, model_cfg.img_size, model_cfg.img_size).to(device)
-    
+    # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
+    # FLOPs 측정에 사용된 더미 입력을 재사용합니다.
+    avg_inference_time_per_sample = 0.0
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
         
+        # 시간 측정을 위한 예열(warm-up)
         with torch.no_grad():
-            output = model(dummy_input)
+            for _ in range(10):
+                _ = model(dummy_input)
+
+        # 실제 시간 측정
+        num_iterations = 100
+        total_time = 0.0
+        with torch.no_grad():
+            for _ in range(num_iterations):
+                start_event = torch.cuda.Event(enable_timing=True)
+                end_event = torch.cuda.Event(enable_timing=True)
+                start_event.record()
+                _ = model(dummy_input)
+                end_event.record()
+                torch.cuda.synchronize()
+                total_time += start_event.elapsed_time(end_event) # ms
+        
+        avg_inference_time_per_sample = total_time / num_iterations
             
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
-        logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
+        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
+        logging.info(f"샘플 당 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
-        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량을 측정하지 않습니다.")
+        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량 및 정확한 추론 시간을 측정하지 않습니다.")
+        # CPU 환경에서는 간단히 한 번만 측정
+        start_time = time.time()
+        _ = model(dummy_input)
+        end_time = time.time()
+        avg_inference_time_per_sample = (end_time - start_time) * 1000 # ms
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (1회 측정)")
 
     # 2. 테스트셋 성능 평가
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
@@ -414,14 +417,6 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     else:
         # 평가 모드: 기존 evaluate 함수 호출
         eval_results = evaluate(run_cfg, model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
-        
-        # evaluate 함수에서 반환된 순수 forward pass 시간 사용
-        pure_inference_time = eval_results.get('forward_time', 0.0)
-        num_test_samples = len(data_loader.dataset)
-        avg_inference_time_per_sample = (pure_inference_time / num_test_samples) * 1000 if num_test_samples > 0 else 0
-
-        logging.info(f"총 Forward Pass 시간: {pure_inference_time:.2f}s (테스트 샘플 {num_test_samples}개)")
-        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms")
         final_acc = eval_results['accuracy']
 
         # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
