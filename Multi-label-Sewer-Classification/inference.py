@@ -216,6 +216,7 @@ def run_inference(args):
     
     # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
     avg_inference_time_per_sample = 0.0
+    logging.info("GPU 캐시를 비우고, 샘플 당 Forward Pass 시간 및 최대 GPU 메모리 사용량 측정을 시작합니다...")
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
@@ -243,7 +244,7 @@ def run_inference(args):
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
         logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
-        logging.info(f"샘플 당 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
+        logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량 및 정확한 추론 시간을 측정하지 않습니다.")
         start_time = time.time()

@@ -338,6 +338,7 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
     # FLOPs 측정에 사용된 더미 입력을 재사용합니다.
     avg_inference_time_per_sample = 0.0
+    logging.info("GPU 캐시를 비우고, 샘플 당 Forward Pass 시간 및 최대 GPU 메모리 사용량 측정을 시작합니다...")
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
@@ -385,7 +386,7 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
         logging.info(f"  - Encoder: {total_times['encoder'] / num_iterations:.2f}ms")
         logging.info(f"  - Decoder: {total_times['decoder'] / num_iterations:.2f}ms")
         logging.info(f"  - Classifier: {total_times['classifier'] / num_iterations:.2f}ms")
-        logging.info(f"샘플 당 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
+        logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량 및 정확한 추론 시간을 측정하지 않습니다.")
         # CPU 환경에서는 간단히 한 번만 측정
