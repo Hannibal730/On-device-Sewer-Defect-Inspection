@@ -513,7 +513,16 @@ Forward Pass 시간 비교 때는 인풋 사이즈가 같은 환경이고, F1_no
 
 
 51차: sewer-ml 224짜리 하이브리드
-log/Sewer-TAPNEW/run_20251107_185824
+log/Sewer-TAPNEW/run_20251107_185824_51
+2025-11-08 10:19:38,897 - INFO - 연산량 (MACs): 0.09 GMACs per sample
+2025-11-08 10:19:38,897 - INFO - 연산량 (FLOPs): 0.18 GFLOPs per sample
+2025-11-08 10:19:38,985 - INFO - 샘플 당 평균 Forward Pass 시간: 0.72ms (100회 반복)
+2025-11-08 10:19:38,985 - INFO -   - Encoder: 0.36ms
+2025-11-08 10:19:38,985 - INFO -   - Decoder: 0.33ms
+2025-11-08 10:19:38,985 - INFO -   - Classifier: 0.03ms
+2025-11-08 10:19:38,985 - INFO - 샘플 당 최대 GPU 메모리 사용량: 27.91 MB
+
+
 
 52차: sewer-tap 224짜리 하이브리드
 log/Sewer-TAP/run_20251107_185616

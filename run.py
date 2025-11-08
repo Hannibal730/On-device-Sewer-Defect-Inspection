@@ -348,23 +348,43 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
                 _ = model(dummy_input)
 
         # 실제 시간 측정
+        # 구간별 시간 측정을 위한 이벤트 생성
+        start_event = torch.cuda.Event(enable_timing=True)
+        encoder_end_event = torch.cuda.Event(enable_timing=True)
+        decoder_end_event = torch.cuda.Event(enable_timing=True)
+        classifier_end_event = torch.cuda.Event(enable_timing=True)
+
         num_iterations = 100
-        total_time = 0.0
+        total_times = {'encoder': 0.0, 'decoder': 0.0, 'classifier': 0.0, 'total': 0.0}
+
         with torch.no_grad():
             for _ in range(num_iterations):
-                start_event = torch.cuda.Event(enable_timing=True)
-                end_event = torch.cuda.Event(enable_timing=True)
                 start_event.record()
-                _ = model(dummy_input)
-                end_event.record()
-                torch.cuda.synchronize()
-                total_time += start_event.elapsed_time(end_event) # ms
+                # 1. Encoder 구간
+                encoded_features = model.encoder(dummy_input)
+                encoder_end_event.record()
+                # 2. Decoder 구간
+                decoded_features = model.decoder(encoded_features)
+                decoder_end_event.record()
+                # 3. Classifier 구간
+                _ = model.classifier(decoded_features)
+                classifier_end_event.record()
+
+                # 모든 이벤트가 기록된 후 동기화
+                torch.cuda.synchronize() 
+                total_times['encoder'] += start_event.elapsed_time(encoder_end_event)
+                total_times['decoder'] += encoder_end_event.elapsed_time(decoder_end_event)
+                total_times['classifier'] += decoder_end_event.elapsed_time(classifier_end_event)
+                total_times['total'] += start_event.elapsed_time(classifier_end_event)
         
-        avg_inference_time_per_sample = total_time / num_iterations
+        avg_inference_time_per_sample = total_times['total'] / num_iterations
             
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
         logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
+        logging.info(f"  - Encoder: {total_times['encoder'] / num_iterations:.2f}ms")
+        logging.info(f"  - Decoder: {total_times['decoder'] / num_iterations:.2f}ms")
+        logging.info(f"  - Classifier: {total_times['classifier'] / num_iterations:.2f}ms")
         logging.info(f"샘플 당 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량 및 정확한 추론 시간을 측정하지 않습니다.")
