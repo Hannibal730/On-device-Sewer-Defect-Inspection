@@ -85,6 +85,11 @@ def calculateResults(args):
             if item[1] != ".csv":  # if os.path.splitext(scoreFile)[-1] != ".csv":
                 continue
             
+            # --- 수정: outputName 정의를 사용하기 전으로 이동 ---
+            # scoreFile 이름에서 '_<split>_sigmoid.csv' 부분을 제거하여 outputName을 생성합니다.
+            # 예: 'xie2019_binary_val_sigmoid.csv' -> 'xie2019_binary'
+            suffix_to_remove = f"_{split.lower()}_sigmoid.csv"
+            outputName = scoreFile.replace(suffix_to_remove, "")
 
             scoresDf = pd.read_csv(os.path.join(subdir, scoreFile), sep=",")
             scoresDf = scoresDf.sort_values(by=["Filename"]).reset_index(drop=True)
@@ -101,6 +106,17 @@ def calculateResults(args):
             current_targetsDf = targetsDf.sort_values(by=["Filename"]).reset_index(drop=True)
             targets = current_targetsDf[Labels].values
             scores = scoresDf[Labels].values
+
+            # --- 정확도(Accuracy) 계산 및 로깅 추가 ---
+            # 예측 확률(scores)을 0.5 임계값을 기준으로 0 또는 1로 변환
+            predictions = (scores >= 0.5).astype(int)
+            
+            # 샘플별로 모든 레이블이 일치하는지 확인
+            correct_predictions = (predictions == targets).all(axis=1).sum()
+            total_samples = targets.shape[0]
+            accuracy = (correct_predictions / total_samples) * 100 if total_samples > 0 else 0
+            
+            print(f"\n[{outputName}] Test Accuracy: {accuracy:.2f}% ({correct_predictions}/{total_samples})")
             
             # --- 혼동 행렬 생성 및 저장 (이진 분류의 경우) ---
             if "binary" in item[0]:
@@ -117,11 +133,6 @@ def calculateResults(args):
                 plot_and_save_confusion_matrix(ground_truth, predictions, binary_class_names, cm_save_path)
 
             new, main, auxillary = evaluation(scores, targets, LabelWeights)
-
-            # scoreFile 이름에서 '_<split>_sigmoid.csv' 부분을 제거하여 outputName을 생성합니다.
-            # 예: 'xie2019_binary_val_sigmoid.csv' -> 'xie2019_binary'
-            suffix_to_remove = f"_{split.lower()}_sigmoid.csv"
-            outputName = scoreFile.replace(suffix_to_remove, "")
 
             with open(os.path.join(outputPath,'{}.json'.format(outputName)), 'w') as fp:
                 json.dump({"Labels": Labels, "LabelWeights": LabelWeights, "New": new, "Main": main, "Auxillary": auxillary}, fp)
