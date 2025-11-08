@@ -525,41 +525,25 @@ log/Sewer-TAPNEW/run_20251107_185824_51
 
 
 52차: sewer-tap 224짜리 하이브리드
-log/Sewer-TAP/run_20251107_185616
+
 
 53차: sewer-tapnew 224짜리 하이브리드
-log/Sewer-TAPNEW/run_20251107_185824
 
 
+앞으로 224짜리 하이브리드는 고정.
 
-xie2019
-2025-11-08 10:21:17,831 - INFO - 연산량 (MACs): 6.56 GMACs per sample
-2025-11-08 10:21:17,831 - INFO - 연산량 (FLOPs): 13.11 GFLOPs per sample
-2025-11-08 10:21:17,899 - INFO - 샘플 당 평균 Forward Pass 시간: 0.57ms (100회 반복)
-2025-11-08 10:21:17,899 - INFO - 샘플 당 최대 GPU 메모리 사용량: 144.14 MB
+54차: resnet18, sewer-tap
 
+55차: efficientnet_b0, sewer-tap
 
+56차: mobilener_v4, sewer-tap
 
-mobilenet_v4
-2025-11-08 10:20:59,360 - INFO - 연산량 (MACs): 0.18 GMACs per sample
-2025-11-08 10:20:59,360 - INFO - 연산량 (FLOPs): 0.37 GFLOPs per sample
-2025-11-08 10:20:59,484 - INFO - 샘플 당 평균 Forward Pass 시간: 1.08ms (100회 반복)
-2025-11-08 10:20:59,484 - INFO - 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 60.28 MB
+57차: resnet18, sewer-tapnew
 
+58차: efficientnet_b0, sewer-tapnew
 
-resnet18
-2025-11-08 10:28:03,625 - INFO - 연산량 (MACs): 1.82 GMACs per sample
-2025-11-08 10:28:03,625 - INFO - 연산량 (FLOPs): 3.65 GFLOPs per sample
-2025-11-08 10:28:03,703 - INFO - 샘플 당 평균 Forward Pass 시간: 0.66ms (100회 반복)
-2025-11-08 10:28:03,703 - INFO - 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 203.42 MB
+59차: mobilener_v4, sewer-tapnew
+
+60차: 51차에서 어블레이션 테스트로 3, 224, 224, 패치 사이즈 56 -> 3, 480, 480, 패치사이즈 120
 
 
-efficientnet_b0
-2025-11-08 10:28:32,881 - INFO - 연산량 (MACs): 0.41 GMACs per sample
-2025-11-08 10:28:32,881 - INFO - 연산량 (FLOPs): 0.83 GFLOPs per sample
-2025-11-08 10:28:33,072 - INFO - 샘플 당 평균 Forward Pass 시간: 1.58ms (100회 반복)
-2025-11-08 10:28:33,072 - INFO - 샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: 89.51 MB
-
-
-
-일단 학습을 시킨 뒤에, 1애퐄짜리 학습으로 Forward pass 시간 재측정하기로.
