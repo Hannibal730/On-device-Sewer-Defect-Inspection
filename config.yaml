@@ -4,7 +4,7 @@
 run:
   mode: 'train' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
   only_inference: false # true: 정답 레이블 없이 순수 추론만 수행. false: 정답 레이블과 비교하여 성능 평가.
-  only_inference_dir: '/home/user/workspace/CHOI/cau_cats/best_model_43'   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 경로
+  only_inference_dir: 'log/Sewer-ML/run_20251108_124343'   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 경로
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름. 
   show_log: true # true: 로그를 콘솔에 출력하고 파일로 저장. false: 모든 로깅 비활성화.
   
@@ -28,7 +28,7 @@ run:
       # 2. 'image_folder' 타입 데이터셋 경로
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW
-      img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP'
+      img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW'
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
@@ -36,7 +36,7 @@ run:
     valid: 1.0
     test: 1.0
   random_sampling_seed: 42 # 데이터 샘플링 시 사용할 랜덤 시드. 재현성을 위해 고정합니다.
-  num_workers: 8 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용. (~24)
+  num_workers: 16 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용. (~24)
 
 # =============================================================================
 # 2. 훈련 하이퍼파라미터 (run.py, baseline.py 공용)
@@ -105,4 +105,4 @@ model:
 baseline:
   # 사용할 baseline 모델의 이름을 지정합니다.
   # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4'
-  model_name: 'mobilenet_v4'
+  model_name: 'resnet18'
