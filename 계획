@@ -525,25 +525,40 @@ log/Sewer-TAPNEW/run_20251107_185824_51
 
 
 52차: sewer-tap 224짜리 하이브리드
-
+run_20251108_120255_52
 
 53차: sewer-tapnew 224짜리 하이브리드
-
+run_20251108_121006_53
 
 앞으로 224짜리 하이브리드는 고정.
 
 54차: resnet18, sewer-tap
+run_resnet18_20251108_122247_54
 
 55차: efficientnet_b0, sewer-tap
+run_efficientnet_b0_20251108_122449_55
 
 56차: mobilener_v4, sewer-tap
+run_mobilenet_v4_20251108_122605_56
 
 57차: resnet18, sewer-tapnew
+run_resnet18_20251108_122924_57
 
 58차: efficientnet_b0, sewer-tapnew
+run_efficientnet_b0_20251108_123359_58
 
 59차: mobilener_v4, sewer-tapnew
+run_mobilenet_v4_20251108_123828
 
-60차: 51차에서 어블레이션 테스트로 3, 224, 224, 패치 사이즈 56 -> 3, 480, 480, 패치사이즈 120
+60차: resnet18, sewer-ml
+run_resnet18_20251108_125319
 
+61차: efficientnet_b0, sewer-ml
+run_efficientnet_b0_20251108_135948
+
+62차: mobilenet_v4, sewer-ml
+run_mobilenet_v4_20251108_163343
+
+63차: 51차를 재실험. 하이브리드모델, sewer-ml
+log/Sewer-ML/run_20251109_162437
 
