@@ -3,6 +3,7 @@
 # =============================================================================
 run:
   mode: 'train' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
+  cuda: true # true: CUDA 사용 시도. false: CPU만 사용. CUDA를 사용할 수 없는 경우 자동으로 CPU로 전환됩니다.
   only_inference: false # true: 정답 레이블 없이 순수 추론만 수행. false: 정답 레이블과 비교하여 성능 평가.
   only_inference_dir: 'log/Sewer-ML/run_20251108_124343'   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 경로
   model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름. 

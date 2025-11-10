@@ -339,7 +339,7 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
     # FLOPs 측정에 사용된 더미 입력을 재사용합니다.
     avg_inference_time_per_sample = 0.0
     logging.info("GPU 캐시를 비우고, 샘플 당 Forward Pass 시간 및 최대 GPU 메모리 사용량 측정을 시작합니다...")
-    if torch.cuda.is_available():
+    if device.type == 'cuda' and torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
         
@@ -388,13 +388,25 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
         logging.info(f"  - Classifier: {total_times['classifier'] / num_iterations:.2f}ms")
         logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
-        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량 및 정확한 추론 시간을 측정하지 않습니다.")
-        # CPU 환경에서는 간단히 한 번만 측정
-        start_time = time.time()
-        _ = model(dummy_input)
-        end_time = time.time()
-        avg_inference_time_per_sample = (end_time - start_time) * 1000 # ms
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (1회 측정)")
+        logging.info("CUDA를 사용할 수 없어 CPU 추론 시간을 측정합니다.")
+        
+        # CPU 시간 측정을 위한 예열(warm-up)
+        with torch.no_grad():
+            for _ in range(10):
+                _ = model(dummy_input)
+
+        # 실제 시간 측정
+        num_iterations = 100
+        total_time = 0.0
+        with torch.no_grad():
+            for _ in range(num_iterations):
+                start_time = time.time()
+                _ = model(dummy_input)
+                end_time = time.time()
+                total_time += (end_time - start_time) * 1000 # ms
+
+        avg_inference_time_per_sample = total_time / num_iterations
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
 
     # 2. 테스트셋 성능 평가
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
@@ -532,11 +544,15 @@ def main():
     logging.info("="*50)
     
     # --- 공통 파라미터 설정 ---
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    use_cuda_if_available = getattr(run_cfg, 'cuda', True)
+    device = torch.device("cuda" if use_cuda_if_available and torch.cuda.is_available() else "cpu")
+
     if device.type == 'cuda':
         logging.info(f"CUDA 사용 가능. GPU 사용을 시작합니다. (Device: {torch.cuda.get_device_name(0)})")
     else:
-        logging.info("CUDA 사용 불가능. CPU 사용을 시작합니다.")
+        if use_cuda_if_available:
+            logging.warning("config.yaml에서 CUDA 사용이 활성화되었지만, 사용 가능한 CUDA 장치를 찾을 수 없습니다. CPU를 사용합니다.")
+        logging.info("CPU 사용을 시작합니다.")
 
     # --- 데이터 준비 ---
     train_loader, valid_loader, test_loader, num_labels, class_names = prepare_data(run_cfg, train_cfg, model_cfg)

@@ -192,10 +192,17 @@ def run_inference(args):
     elif training_mode == "binaryrelevance":
         labelNames = [br_defect]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    use_cuda = not args.get("no_cuda", False) and torch.cuda.is_available()
+    device = torch.device("cuda" if use_cuda else "cpu")
 
     model = model.to(device)
 
+    if device.type == 'cuda':
+        logging.info(f"CUDA 사용 가능. GPU 사용을 시작합니다. (Device: {torch.cuda.get_device_name(0)})")
+    else:
+        if not args.get("no_cuda", False) and not torch.cuda.is_available():
+            logging.warning("사용 가능한 CUDA 장치를 찾을 수 없습니다. CPU를 사용합니다.")
+        logging.info("CPU 사용을 시작합니다.")
     # 모델의 입력 크기를 확인하기 위해 샘플 이미지를 하나 가져옵니다.
     sample_image, _ = dataset[0]
     dummy_input = sample_image.unsqueeze(0).to(device)
@@ -217,7 +224,7 @@ def run_inference(args):
     # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
     avg_inference_time_per_sample = 0.0
     logging.info("GPU 캐시를 비우고, 샘플 당 Forward Pass 시간 및 최대 GPU 메모리 사용량 측정을 시작합니다...")
-    if torch.cuda.is_available():
+    if device.type == 'cuda' and torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
         
@@ -246,12 +253,25 @@ def run_inference(args):
         logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
         logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
-        logging.info("CUDA를 사용할 수 없어 GPU 메모리 사용량 및 정확한 추론 시간을 측정하지 않습니다.")
-        start_time = time.time()
-        _ = model(dummy_input)
-        end_time = time.time()
-        avg_inference_time_per_sample = (end_time - start_time) * 1000 # ms
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (1회 측정)")
+        logging.info("CUDA를 사용할 수 없어 CPU 추론 시간을 측정합니다.")
+        
+        # CPU 시간 측정을 위한 예열(warm-up)
+        with torch.no_grad():
+            for _ in range(10):
+                _ = model(dummy_input)
+
+        # 실제 시간 측정
+        num_iterations = 100
+        total_time = 0.0
+        with torch.no_grad():
+            for _ in range(num_iterations):
+                start_time = time.time()
+                _ = model(dummy_input)
+                end_time = time.time()
+                total_time += (end_time - start_time) * 1000 # ms
+
+        avg_inference_time_per_sample = total_time / num_iterations
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
 
     # 2. 추론 및 성능 평가
     logging.info(f"{split} 데이터셋에 대한 추론을 시작합니다...")
@@ -275,6 +295,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=64, help="Size of the batch per GPU")
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument("--model_path", type=str, default="/home/user/workspace/CHOI/Multi-label-Sewer-Classification/pretrained_models/xie2019_binary-binary-version_1.pth")
+    parser.add_argument("--no-cuda", action="store_true", help="CUDA를 사용하지 않고 CPU로 강제 실행합니다.")
     parser.add_argument("--best_weights", action="store_true", help="If true 'model_path' leads to a specific weight file. If False it leads to the output folder of lightning_trainer where the last.ckpt file is used to read the best model weights.")
     parser.add_argument("--results_output", type=str, default = "./inference_results")
     parser.add_argument("--split", type=str, default = "Val", choices=["Train", "Val", "Test"])
