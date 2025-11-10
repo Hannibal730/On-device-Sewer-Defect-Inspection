@@ -98,7 +98,7 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
     if model_cfg.in_channels == 1:
         normalize = transforms.Normalize(mean=[0.5], std=[0.5])
         train_transform = transforms.Compose([
-            transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
+            transforms.Resize((img_size, img_size)),
             transforms.RandomHorizontalFlip(),
             transforms.Grayscale(num_output_channels=1),
             transforms.ToTensor(),
@@ -111,10 +111,9 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             normalize
         ])
     elif model_cfg.in_channels == 3:
+        # Sewer-ML의 lightning_trainer.py에서 사용하는 전처리 가져오기
         normalize = transforms.Normalize(mean=[0.523, 0.453, 0.345], std=[0.210, 0.199, 0.154])
         train_transform = transforms.Compose([
-            # Sewer-ML 원본 논문은 Resize 대신에 RandomResizedCrop 을 사용했다.
-            # transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)), 
             transforms.Resize((img_size, img_size)),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),

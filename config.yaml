@@ -43,7 +43,7 @@ run:
 # 2. 훈련 하이퍼파라미터 (run.py, baseline.py 공용)
 # =============================================================================
 training:
-  epochs: 60                 
+  epochs: 90                    # Sewer-ML이 90에포크 사용
   batch_size: 64                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   lr: 0.001                     # 옵티마이저의 학습률.
   schedulefree: false           # true: schedule-free 옵티마이저 사용. false: 표준 AdamW 옵티마이저 사용.

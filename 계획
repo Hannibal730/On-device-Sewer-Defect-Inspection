@@ -548,17 +548,17 @@ run_resnet18_20251108_122924_57
 run_efficientnet_b0_20251108_123359_58
 
 59차: mobilener_v4, sewer-tapnew
-run_mobilenet_v4_20251108_123828
+run_mobilenet_v4_20251108_123828_59
 
 60차: resnet18, sewer-ml
-run_resnet18_20251108_125319
+run_resnet18_20251108_125319_60
 
 61차: efficientnet_b0, sewer-ml
-run_efficientnet_b0_20251108_135948
+run_efficientnet_b0_20251108_135948_61
 
 62차: mobilenet_v4, sewer-ml
-run_mobilenet_v4_20251108_163343
+run_mobilenet_v4_20251108_163343_62
 
 63차: 51차를 재실험. 하이브리드모델, sewer-ml
-log/Sewer-ML/run_20251109_162437
+log/Sewer-ML/run_20251109_162437_63
 
