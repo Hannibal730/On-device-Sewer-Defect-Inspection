@@ -136,44 +136,6 @@ class GEGLU(nn.Module):
         # 이 게이팅 메커니즘은 gate가 x에서 어떤 요소를 증폭하거나 줄일지 스스로 판단합니다.
         # 덕분에 모델이 더 복잡한 패턴을 학습하도록 돕습니다. 수학식은 Output = x * GELU(gate) 입니다.
 
-# Query-Adaptive Masking (QAM)을 구현한 클래스입니다.
-# 학습 중에 입력 텐서의 일부를 동적으로 마스킹(0으로 만듦)하여 레귤러라이제이션(regularization) 효과를 줍니다.
-# 특히, 각 위치의 마스킹 확률을 매번 [start_prob, end_prob] 범위 내에서 무작위로 샘플링하여 적용합니다.
-class QueryAdaptiveMasking(nn.Module):
-    # QAM 클래스의 생성자입니다. 마스킹을 적용할 차원과 확률 범위를 설정합니다.
-    def __init__(self, dim=1, start_prob =0.1, end_prob =0.5):
-        super().__init__()
-        # `nn.Module`의 생성자를 호출하여 PyTorch 모델로서의 기본 기능을 초기화합니다.
-        self.dim = dim
-        # 마스킹 목표 차원을 저장합니다. `dim=1`은 텐서의 두 번째 차원 N_T를 의미합니다.
-        self.start_prob = start_prob
-        # 마스킹 확률의 시작 값을 저장합니다. 이 값은 지정된 차원의 첫 번째 요소에 적용됩니다.
-        self.end_prob = end_prob
-        # 마스킹 확률의 끝 값을 저장합니다. 이 값은 지정된 차원의 마지막 요소에 적용됩니다.
-    # QAM의 순전파 로직을 정의합니다.
-    def forward(self, x):
-        if not self.training:
-            # 모델이 평가 모드(`model.eval()`)일 때는 마스킹을 적용하지 않습니다.
-            return x
-            # 입력을 그대로 반환하여 예측 시에는 일관된 결과를 얻도록 합니다.
-        # 모델이 학습 모드(`model.train()`)일 때만 마스킹을 적용합니다.
-        else:
-            size = x.shape[self.dim]
-            # 마스킹을 적용할 차원의 크기(예: 디코더 쿼리 패치 수)를 가져옵니다.
-
-            # 각 위치에 적용될 마스킹 확률을 [start_prob, end_prob] 범위 내에서 무작위로 샘플링합니다.
-            rand_probs = torch.rand(size, device=x.device) # [0, 1) 범위의 랜덤 값 생성
-            dropout_prob = self.start_prob + (self.end_prob - self.start_prob) * rand_probs # 선형 보간
-            
-            # `.view`를 통해 확률 텐서의 모양을 입력 텐서 `x`와 브로드캐스팅이 가능하도록 조정합니다.
-            dropout_prob = dropout_prob.view([-1 if i == self.dim else 1 for i in range(x.dim())])
-
-            mask = torch.bernoulli(1 - dropout_prob).expand_as(x)
-            # `1 - dropout_prob` 확률(p)에 따라 1(성공) 또는 0(실패)의 값을 갖는 베르누이 분포로부터 마스크를 생성합니다. 즉, 각 요소는 1-p의 확률로 1이 되고 p의 확률로 0이 됩니다.
-            # 이 마스크는 입력 `x`와 동일한 크기로 확장됩니다.
-            return x*mask
-            # 생성된 마스크를 입력 텐서 `x`에 요소별로 곱하여 특정 요소들을 0으로 만듭니다(마스킹). 수학식은 x_out = x * mask 입니다.
-
 # 이미지 분류 모델의 디코더 백본(backbone)을 정의하는 클래스입니다.
 # 입력 패치와 학습 가능한 쿼리(learnable queries)를 임베딩하고 트랜스포머 디코더를 통해 예측을 수행하는 클래스입니다.
 # 디코더에 입력할 seq_encoder_patches와 seq_decoder_patches를 생성합니다. 이후 디코더에 입력되어 특징 벡터를 생성하고, 오차 계산 및 역전파를 통해 훈련됩니다.
@@ -181,7 +143,7 @@ class QueryAdaptiveMasking(nn.Module):
 class Embedding4Decoder(nn.Module): 
     # 클래스의 생성자입니다.
     def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, attn_pooling=False, num_decoder_layers=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5,
-                 decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True, **kwargs):
+                 decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True):
              
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
@@ -211,8 +173,8 @@ class Embedding4Decoder(nn.Module):
         else:
             self.PE = None
         # --- 디코더 ---
-        self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout, 
-                               qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, res_attention=res_attention, num_decoder_layers=num_decoder_layers, save_attention=save_attention)
+        self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
+                               res_attention=res_attention, num_decoder_layers=num_decoder_layers, save_attention=save_attention)
         
     # 순전파 로직을 정의합니다.
     def forward(self, x) -> Tensor:
@@ -232,19 +194,19 @@ class Embedding4Decoder(nn.Module):
         
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
         if self.attn_pooling:
-            # [신규 방식] 어텐션 풀링을 이용한 파라미터-프리 동적 쿼리 생성
+            # 어텐션 풀링을 이용한 파라미터-프리 동적 쿼리 생성
             # 1. 잠재 쿼리(latent query) 준비: learnable_queries를 동적 쿼리 생성을 위한 잠재적인 쿼리로 사용합니다.
-            latent_query = self.W_feat2emb(self.learnable_queries)
-            latent_query = latent_query.unsqueeze(0).repeat(bs, 1, 1)
+            latent_queries = self.W_feat2emb(self.learnable_queries)
+            latent_queries = latent_queries.unsqueeze(0).repeat(bs, 1, 1)
             
             # 2. 어텐션 스코어 계산 (Q=잠재 쿼리, K=패치 특징)
-            latent_attn_scores = torch.bmm(latent_query, seq_encoder_patches.transpose(1, 2))
+            latent_attn_scores = torch.bmm(latent_queries, seq_encoder_patches.transpose(1, 2))
             latent_attn_weights = F.softmax(latent_attn_scores, dim=-1)
             
             # 3. 가중 평균으로 동적 쿼리 생성 (V=패치 특징)
             seq_decoder_patches = torch.bmm(latent_attn_weights, seq_encoder_patches)
         else:
-            # [기존 방식] 고정된 학습 가능 쿼리 사용
+            # 고정된 학습 가능 쿼리 사용
             # 1. learnable_queries를 임베딩
             learnable_queries = self.W_feat2emb(self.learnable_queries)
             # 2. 배치 크기만큼 복제하여 모든 샘플에 동일한 쿼리를 적용
@@ -282,13 +244,12 @@ class Projection4Classifier(nn.Module):
 # 여러 개의 디코더 레이어로 구성된 트랜스포머 디코더 클래스입니다.
 class Decoder(nn.Module):
     # 디코더의 생성자입니다.
-    def __init__(self, num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=None, attn_dropout=0., dropout=0., qam_prob_start = 0.1, qam_prob_end =0.5, 
-                        res_attention=False, num_decoder_layers=1, save_attention=False):
+    def __init__(self, num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=None, attn_dropout=0., dropout=0.,
+                 res_attention=False, num_decoder_layers=1, save_attention=False):
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
         
-        self.layers = nn.ModuleList([DecoderLayer(num_encoder_patches, emb_dim, num_decoder_patches, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, qam_prob_start=qam_prob_start,
-                                                      qam_prob_end=qam_prob_end, attn_dropout=attn_dropout, dropout=dropout,
+        self.layers = nn.ModuleList([DecoderLayer(num_encoder_patches, emb_dim, num_decoder_patches, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
                                                       res_attention=res_attention, save_attention=save_attention) for i in range(num_decoder_layers)])
         # `num_decoder_layers` 개수만큼의 `DecoderLayer`를 `nn.ModuleList`로 묶어 관리합니다.
         
@@ -313,8 +274,8 @@ class Decoder(nn.Module):
 # 크로스-어텐션(Cross-Attention)과 피드포워드 네트워크(Feed-Forward Network)로 구성됩니다.
 class DecoderLayer(nn.Module):
     # 디코더 레이어의 생성자입니다.
-    def __init__(self, num_encoder_patches, emb_dim, num_decoder_patches, num_heads, decoder_ff_dim=256, save_attention=False, qam_prob_start = 0.1, qam_prob_end =0.5, 
-                 attn_dropout=0, dropout=0., bias=True, res_attention=False, **kwargs):
+    def __init__(self, num_encoder_patches, emb_dim, num_decoder_patches, num_heads, decoder_ff_dim=256, save_attention=False,
+                 attn_dropout=0, dropout=0., bias=True, res_attention=False):
         super().__init__()
         # `nn.Module`의 생성자를 호출합니다.
         assert not emb_dim%num_heads, f"emb_dim ({emb_dim}) must be divisible by num_heads ({num_heads})"
@@ -324,8 +285,8 @@ class DecoderLayer(nn.Module):
         self.res_attention = res_attention
         # 잔차 어텐션 사용 여부를 저장합니다.
         self.cross_attn = _MultiheadAttention(emb_dim, num_heads, attn_dropout=attn_dropout, proj_dropout=dropout, res_attention=res_attention, qkv_bias=True)
-        # 멀티헤드 크로스-어텐션 모듈을 초기화한다.
-        self.dropout_attn = QueryAdaptiveMasking(dim=1, start_prob=qam_prob_start, end_prob=qam_prob_end)
+        # 멀티헤드 크로스-어텐션 모듈을 초기화합니다.
+        self.dropout_attn = nn.Dropout(dropout)
         # 어텐션 출력에 적용할 Query-Adaptive Masking 레이어를 정의합니다.
         self.norm_attn = nn.LayerNorm(emb_dim)
         # 어텐션 블록의 잔차 연결(add) 후 적용될 레이어 정규화(Layer Normalization)를 정의합니다.
@@ -335,8 +296,8 @@ class DecoderLayer(nn.Module):
         self.ffn = nn.Sequential(nn.Linear(emb_dim, decoder_ff_dim, bias=bias), # 1. emb_dim -> decoder_ff_dim 확장
                                 GEGLU(),                             # 2. GEGLU 활성화 함수 (이 활성함수를 거친 직후 차원이 절반이 됨))
                                 nn.Dropout(dropout),                 # 3. 드롭아웃
-                                nn.Linear(decoder_ff_dim//2, emb_dim, bias=bias)) # 4. decoder_ff_dim/2 -> emb_dim 축소 
-        self.dropout_ffn = QueryAdaptiveMasking(dim=1, start_prob=qam_prob_start, end_prob=qam_prob_end)
+                                nn.Linear(decoder_ff_dim//2, emb_dim, bias=bias)) # 4. decoder_ff_dim/2 -> emb_dim 축소
+        self.dropout_ffn = nn.Dropout(dropout)
         # FFN 출력에 적용할 Query-Adaptive Masking 레이어를 정의합니다.
         self.norm_ffn = nn.LayerNorm(emb_dim)
         # FFN 블록의 잔차 연결(add) 후 적용될 레이어 정규화를 정의합니다.
@@ -476,8 +437,6 @@ class Model(nn.Module):
         attn_dropout = dropout           # 어텐션 드롭아웃도 동일한 비율 사용
         positional_encoding = args.positional_encoding # 위치 인코딩 사용 여부
         save_attention = args.save_attention     # 어텐션 가중치 저장 여부
-        qam_prob_start = getattr(args, 'qam_prob_start', 0.0) # QAM 시작 확률
-        qam_prob_end = getattr(args, 'qam_prob_end', 0.0)     # QAM 끝 확률
         res_attention = getattr(args, 'res_attention', False) # res_attention 사용 여부
 
         # FFN의 내부 차원을 계산합니다.
@@ -486,8 +445,8 @@ class Model(nn.Module):
         # --- 백본 모델(임베딩 및 디코더) 초기화 --- 
         self.embedding4decoder = Embedding4Decoder(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, attn_pooling=attn_pooling,
                                 num_decoder_layers=num_decoder_layers, emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, positional_encoding=positional_encoding,
-                                attn_dropout=attn_dropout, dropout=dropout, qam_prob_start=qam_prob_start, qam_prob_end=qam_prob_end, 
-                                res_attention=res_attention, save_attention=save_attention, **kwargs)
+                                attn_dropout=attn_dropout, dropout=dropout,
+                                res_attention=res_attention, save_attention=save_attention)
 
         # 백본의 출력을 최종 분류기가 사용할 특징 벡터로 변환하는 헤드를 생성합니다.
         self.projection4classifier = Projection4Classifier(emb_dim, self.featured_patch_dim)

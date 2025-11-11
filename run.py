@@ -574,8 +574,6 @@ def main():
         'positional_encoding': cats_cfg.positional_encoding, # positional_encoding
         'res_attention': cats_cfg.res_attention, # res_attention
         'save_attention': cats_cfg.save_attention, # save_attention
-        'qam_prob_start': cats_cfg.qam_prob_start, # qam_prob_start
-        'qam_prob_end': cats_cfg.qam_prob_end, # qam_prob_end
     }
     cats_args = SimpleNamespace(**cats_params)
 
