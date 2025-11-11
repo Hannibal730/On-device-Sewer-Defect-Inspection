@@ -115,12 +115,12 @@ class PatchConvEncoder(nn.Module):
         conv_outs = self.shared_conv(patches)
         # 각 패치 특징 벡터에 대해 Layer Normalization 적용
         conv_outs = self.norm(conv_outs)
-        # CATS 모델에 입력하기 위해 [B, num_patches, dim] 형태로 재구성
+        # 디코더 모델에 입력하기 위해 [B, num_patches, dim] 형태로 재구성
         conv_outs = conv_outs.view(B, self.num_encoder_patches, self.featured_patch_dim)
         return conv_outs
 
 # =============================================================================
-# 2. CATS 디코더 모델 정의
+# 2. 디코더 모델 정의
 # =============================================================================
 
 # GEGLU (Gated Enhanced Gated Linear Unit) 액티베이션 함수를 구현한 클래스입니다.
@@ -467,7 +467,7 @@ class Model(nn.Module):
 # 3. 전체 모델 구성
 # =============================================================================
 class Classifier(nn.Module):
-    """CATS 모델의 출력을 받아 최종 클래스 로짓으로 매핑하는 분류기입니다."""
+    """디코더 백본의 출력을 받아 최종 클래스 로짓으로 매핑하는 분류기입니다."""
     def __init__(self, num_decoder_patches, featured_patch_dim, num_labels, dropout):
         super().__init__()
         input_dim = num_decoder_patches * featured_patch_dim # 48
@@ -486,7 +486,7 @@ class Classifier(nn.Module):
         return x
 
 class HybridModel(torch.nn.Module):
-    """인코더와 CATS 분류기를 결합한 최종 하이브리드 모델입니다."""
+    """인코더, 디코더, 분류기를 결합한 최종 하이브리드 모델입니다."""
     def __init__(self, encoder, decoder, classifier):
         super().__init__()
         self.encoder = encoder

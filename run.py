@@ -12,8 +12,8 @@ import argparse
 import yaml
 import logging
 from datetime import datetime
-import time
-from models import Model as CatsDecoder, PatchConvEncoder, Classifier, HybridModel
+import time 
+from models import Model as DecoderBackbone, PatchConvEncoder, Classifier, HybridModel
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
 import schedulefree
 
@@ -78,15 +78,15 @@ def log_model_parameters(model):
     encoder_norm_params = count_parameters(model.encoder.norm)
     encoder_total_params = conv_front_params + conv_1x1_params + encoder_norm_params
 
-
-    # CatsDecoder (models.py의 Model 클래스)의 구성 요소
+    # 2. Decoder (DecoderBackbone) 내부를 세분화하여 파라미터 계산
+    # DecoderBackbone (models.py의 Model 클래스)의 구성 요소
     # - Embedding4Decoder (W_feat2emb, learnable_queries, PE)
     # - Embedding4Decoder 내부의 Decoder (트랜스포머 레이어들)
     # - Projection4Classifier
 
     # Embedding4Decoder의 파라미터를 세분화하여 계산
     embedding_module = model.decoder.embedding4decoder
-    
+
     # PE와 learnable_queries는 nn.Parameter이므로 .numel()로 직접 개수 계산
     pe_params = 0 # Positional Encoding
     if hasattr(embedding_module, 'PE') and embedding_module.PE is not None and embedding_module.PE.requires_grad:
@@ -101,15 +101,15 @@ def log_model_parameters(model):
     # Embedding4Decoder의 자체 파라미터 총합 (내부 Decoder 제외)
     embedding4decoder_total_params = w_feat2emb_params + query_params + pe_params
 
-    cats_decoder_layers_params = count_parameters(model.decoder.embedding4decoder.decoder)
-    cats_decoder_projection4classifier_params = count_parameters(model.decoder.projection4classifier)
-    cats_decoder_total_params = embedding4decoder_total_params + cats_decoder_layers_params + cats_decoder_projection4classifier_params
+    decoder_layers_params = count_parameters(model.decoder.embedding4decoder.decoder)
+    decoder_projection4classifier_params = count_parameters(model.decoder.projection4classifier)
+    decoder_total_params = embedding4decoder_total_params + decoder_layers_params + decoder_projection4classifier_params
 
-    # 3. Classifier (Linear Head) 내부를 세분화하여 파라미터 계산
+    # 3. Classifier (Projection MLP) 내부를 세분화하여 파라미터 계산
     classifier_projection_params = count_parameters(model.classifier.projection)
     classifier_total_params = classifier_projection_params
 
-    total_params = encoder_total_params + cats_decoder_total_params + classifier_total_params
+    total_params = encoder_total_params + decoder_total_params + classifier_total_params
 
     logging.info("="*50)
     logging.info("모델 파라미터 수:")
@@ -117,12 +117,12 @@ def log_model_parameters(model):
     logging.info(f"    - conv_front (CNN Backbone):  {conv_front_params:,} 개")
     logging.info(f"    - 1x1_conv (Channel Proj):    {conv_1x1_params:,} 개")
     logging.info(f"    - norm (LayerNorm):           {encoder_norm_params:,} 개")
-    logging.info(f"  - Decoder (CatsDecoder):        {cats_decoder_total_params:,} 개")
+    logging.info(f"  - Decoder (Transformer-based):  {decoder_total_params:,} 개")
     logging.info(f"    - Embedding Layer (W_feat2emb): {w_feat2emb_params:,} 개")
-    logging.info(f"    - Learnable Query:              {query_params:,} 개")
-    logging.info(f"    - Positional Encoding:             {pe_params:,} 개")
-    logging.info(f"    - Decoder Layers (Cross-Attention): {cats_decoder_layers_params:,} 개")
-    logging.info(f"    - Projection4Classifier:      {cats_decoder_projection4classifier_params:,} 개")
+    logging.info(f"    - Learnable Queries:            {query_params:,} 개")
+    logging.info(f"    - Positional Encoding:          {pe_params:,} 개")
+    logging.info(f"    - Decoder Layers (Cross-Attention): {decoder_layers_params:,} 개")
+    logging.info(f"    - Projection4Classifier:      {decoder_projection4classifier_params:,} 개")
     logging.info(f"  - Classifier (Projection MLP):  {classifier_total_params:,} 개")
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
@@ -285,7 +285,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         if scheduler:
             scheduler.step()
 
-def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
+def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
@@ -457,16 +457,16 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
             plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, run_dir_path, timestamp)
 
     # 4. 어텐션 맵 시각화 (설정이 True인 경우)
-    if cats_cfg.save_attention:
+    if model_cfg.save_attention:
         try:
             # 1. 어텐션 맵을 저장할 전용 폴더 생성
             attn_save_dir = os.path.join(run_dir_path, f'attention_map_{timestamp}')
             os.makedirs(attn_save_dir, exist_ok=True)
 
-            num_to_save = min(getattr(cats_cfg, 'num_plot_attention', 10), len(data_loader.dataset))
+            num_to_save = min(getattr(decoder_cfg, 'num_plot_attention', 10), len(data_loader.dataset))
             logging.info(f"어텐션 맵 시각화를 시작합니다 ({num_to_save}개 샘플, 저장 위치: '{attn_save_dir}').")
 
-            saved_count = 0
+            saved_count = 0 # 어텐션 맵을 저장할 전용 폴더 생성
             # 데이터 로더를 순회하며 num_to_save 개수만큼 시각화
             for sample_images, sample_labels, sample_filenames in data_loader:
                 if saved_count >= num_to_save:
@@ -493,7 +493,7 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
                     actual_class = "Unknown" if only_inference_mode else class_names[sample_labels[i].item()]
 
                     plot_and_save_attention_maps(
-                        attention_maps, sample_images, attn_save_dir, model_cfg.img_size, cats_cfg,
+                        attention_maps, sample_images, attn_save_dir, model_cfg.img_size, model_cfg,
                         sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class
                     )
                     saved_count += 1
@@ -505,8 +505,8 @@ def inference(run_cfg, model_cfg, cats_cfg, model, optimizer, data_loader, devic
 
 def main():
     """메인 실행 함수"""
-    # --- YAML 설정 파일 로드 ---
-    parser = argparse.ArgumentParser(description="YAML 설정을 이용한 CATS 기반 이미지 분류기")
+    # --- YAML 설정 파일 로드 --- #
+    parser = argparse.ArgumentParser(description="YAML 설정을 이용한 이미지 분류기")
     parser.add_argument('--config', type=str, default='config.yaml', help='설정 파일 경로')
     args = parser.parse_args()
 
@@ -517,7 +517,6 @@ def main():
     run_cfg = SimpleNamespace(**config['run'])
     train_cfg = SimpleNamespace(**config['training'])
     model_cfg = SimpleNamespace(**config['model'])
-    cats_cfg = SimpleNamespace(**model_cfg.cats)
     # dataset_cfg도 SimpleNamespace로 변환
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
     
@@ -560,29 +559,29 @@ def main():
     # --- 모델 구성 ---
     num_encoder_patches = (model_cfg.img_size // model_cfg.patch_size) ** 2 # 16
     
-    cats_params = {
+    decoder_params = {
         'num_encoder_patches': num_encoder_patches,
-        'num_labels': num_labels, 
-        'num_decoder_layers': cats_cfg.num_decoder_layers,
-        'num_decoder_patches': cats_cfg.num_decoder_patches, # YAML에서 읽은 값 전달
-        'featured_patch_dim': cats_cfg.featured_patch_dim,
-        'attn_pooling': getattr(cats_cfg, 'attn_pooling', False), # 어텐션 풀링 사용 여부
-        'emb_dim': cats_cfg.emb_dim, 
-        'num_heads': cats_cfg.num_heads, 
-        'decoder_ff_ratio': cats_cfg.decoder_ff_ratio,
-        'dropout': cats_cfg.dropout, # dropout
-        'positional_encoding': cats_cfg.positional_encoding, # positional_encoding
-        'res_attention': cats_cfg.res_attention, # res_attention
-        'save_attention': cats_cfg.save_attention, # save_attention
+        'num_labels': num_labels,
+        'num_decoder_layers': model_cfg.num_decoder_layers,
+        'num_decoder_patches': model_cfg.num_decoder_patches,
+        'featured_patch_dim': model_cfg.featured_patch_dim,
+        'attn_pooling': getattr(model_cfg, 'attn_pooling', False),
+        'emb_dim': model_cfg.emb_dim,
+        'num_heads': model_cfg.num_heads,
+        'decoder_ff_ratio': model_cfg.decoder_ff_ratio,
+        'dropout': model_cfg.dropout,
+        'positional_encoding': model_cfg.positional_encoding,
+        'res_attention': model_cfg.res_attention,
+        'save_attention': model_cfg.save_attention,
     }
-    cats_args = SimpleNamespace(**cats_params)
+    decoder_args = SimpleNamespace(**decoder_params)
 
     encoder = PatchConvEncoder(in_channels=model_cfg.in_channels, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, 
-                               featured_patch_dim=cats_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'])
-    decoder = CatsDecoder(args=cats_args) # models.py의 Model 클래스
+                               featured_patch_dim=model_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'])
+    decoder = DecoderBackbone(args=decoder_args) # models.py의 Model 클래스
     
-    classifier = Classifier(num_decoder_patches=cats_cfg.num_decoder_patches, 
-                            featured_patch_dim=cats_cfg.featured_patch_dim, num_labels=num_labels, dropout=cats_cfg.dropout)
+    classifier = Classifier(num_decoder_patches=model_cfg.num_decoder_patches,
+                            featured_patch_dim=model_cfg.featured_patch_dim, num_labels=num_labels, dropout=model_cfg.dropout)
     model = HybridModel(encoder, decoder, classifier).to(device)
 
     # 모델 생성 후 파라미터 수 로깅
@@ -623,7 +622,7 @@ def main():
 
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, cats_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
+        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
 
         # --- 그래프 생성 ---
         # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함
@@ -636,7 +635,7 @@ def main():
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
         optimizer, scheduler = None, None # 추론 시에는 옵티마이저/스케줄러가 필요 없음
-        inference(run_cfg, model_cfg, cats_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
+        inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
 
 # =============================================================================
 # 5. 메인 실행 블록
