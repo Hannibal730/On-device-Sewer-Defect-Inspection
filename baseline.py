@@ -408,7 +408,7 @@ def main():
         if final_acc is not None:
             plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
             plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
-            plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp)
+            plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp, class_names)
             plot_and_save_loss_graph(log_file_path, run_dir_path, timestamp)
             plot_and_save_lr_graph(log_file_path, run_dir_path, timestamp)
             plot_and_save_compiled_graph(run_dir_path, timestamp)

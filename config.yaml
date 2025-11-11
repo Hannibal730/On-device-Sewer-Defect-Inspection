@@ -29,6 +29,7 @@ run:
       # 2. 'image_folder' 타입 데이터셋 경로
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW
+      # img_folder: '/home/cau/workspace/data/Sewer/Sewer-TAPNEW'
       img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW'
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.

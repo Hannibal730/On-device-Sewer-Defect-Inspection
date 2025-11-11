@@ -163,7 +163,7 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_dir, timest
     except Exception as e:
         logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
 
-def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
+def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp, class_names):
     """
     로그 파일에서 'Normal' 클래스의 F1 점수를 추출하여 그래프를 그리고,
     지정된 디렉토리에 이미지 파일로 저장합니다.
@@ -172,6 +172,7 @@ def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
         log_file_path (str): 분석할 로그 파일의 전체 경로.
         save_dir (str): 그래프 이미지를 저장할 디렉토리 경로.
         timestamp (str): 파일 이름에 추가할 타임스탬프.
+        class_names (list of str): 데이터셋의 클래스 이름 리스트.
     """
     epochs = []
     f1_scores = []
@@ -180,9 +181,20 @@ def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
     graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
     os.makedirs(graph_dir, exist_ok=True)
 
+    # 'normal' 클래스 이름 찾기 (대소문자 구분 없이)
+    normal_class_name = None
+    for name in class_names:
+        if name.lower() == 'normal':
+            normal_class_name = name
+            break
+
+    if normal_class_name is None:
+        logging.warning("클래스 이름 목록에서 'normal' 클래스를 찾을 수 없어 F1 (Normal) 그래프를 생성하지 않습니다.")
+        return
+
     # 에포크와 F1 점수 추출을 위한 정규 표현식
     epoch_pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\]")
-    f1_pattern = re.compile(r"\[Metrics for 'Normal'\] .* F1: ([\d\.]+)")
+    f1_pattern = re.compile(rf"\[Metrics for '{re.escape(normal_class_name)}'\] .* F1: ([\d\.]+)")
 
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:
@@ -199,12 +211,12 @@ def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
                     current_epoch = None # 한 에포크에 한 번만 기록
 
         if not epochs:
-            logging.warning("로그 파일에서 유효한 F1 (Normal) 데이터를 찾을 수 없어 그래프를 생성하지 않습니다.")
+            logging.warning(f"로그 파일에서 유효한 F1 ({normal_class_name}) 데이터를 찾을 수 없어 그래프를 생성하지 않습니다.")
             return
 
         plt.figure(figsize=(12, 8))
-        plt.plot(epochs, f1_scores, marker='.', linestyle='-', color='g', label='F1 Score (Normal)')
-        plt.title('F1 Score (Normal) per Epoch')
+        plt.plot(epochs, f1_scores, marker='.', linestyle='-', color='g', label=f'F1 Score ({normal_class_name})')
+        plt.title(f'F1 Score ({normal_class_name}) per Epoch')
         plt.xlabel('Epoch')
         plt.ylabel('F1 Score')
         plt.ylim(0, 1.0)
@@ -217,9 +229,9 @@ def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
         plt.savefig(png_save_path)
         plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"F1 (Normal) 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
+        logging.info(f"F1 ({normal_class_name}) 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
     except Exception as e:
-        logging.error(f"F1 (Normal) 그래프 생성 중 오류 발생: {e}")
+        logging.error(f"F1 ({normal_class_name}) 그래프 생성 중 오류 발생: {e}")
 
 def plot_and_save_loss_graph(log_file_path, save_dir, timestamp):
     """

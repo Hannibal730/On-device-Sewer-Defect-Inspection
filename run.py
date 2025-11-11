@@ -247,10 +247,24 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         # --- 최고 성능 모델 저장 기준 선택 ---
         current_f1 = 0.0
         if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
-            current_f1 = eval_results['f1_per_class'][0] # 'Normal' 클래스는 인덱스 0
+            try:
+                normal_idx = [i for i, name in enumerate(class_names) if name.lower() == 'normal'][0]
+                current_f1 = eval_results['f1_per_class'][normal_idx]
+            except IndexError:
+                logging.warning("best_model_criterion이 'F1_Normal'로 설정되었으나, 'normal' 클래스를 찾을 수 없습니다. 대신 F1_macro를 사용합니다.")
+                current_f1 = eval_results['f1_macro']
         elif best_model_criterion == 'F1_Defect' and eval_results['f1_per_class'] is not None:
-            current_f1 = eval_results['f1_per_class'][1] # 'Defect' 클래스는 인덱스 1
-        else: # 'F1_average' 또는 그 외
+            try:
+                # 'normal'이 아닌 다른 클래스를 'defect'로 간주합니다.
+                # 이 로직은 이진 분류(normal vs. one defect class)에 적합합니다.
+                defect_idx = [i for i, name in enumerate(class_names) if name.lower() != 'normal'][0]
+                current_f1 = eval_results['f1_per_class'][defect_idx]
+            except IndexError:
+                logging.warning("best_model_criterion이 'F1_Defect'로 설정되었으나, 'defect' 또는 'abnormal' 클래스를 찾을 수 없습니다. 대신 F1_macro를 사용합니다.")
+                current_f1 = eval_results['f1_macro']
+        elif eval_results['f1_per_class'] is not None: # 'F1_average' 또는 그 외
+            current_f1 = eval_results['f1_macro']
+        else: # Fallback if f1_per_class is None
             current_f1 = eval_results['f1_macro']
         
         # 최고 성능 모델 저장
@@ -588,7 +602,7 @@ def main():
         if final_acc is not None:
             plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
             plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
-            plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp)
+            plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp, class_names)
             plot_and_save_loss_graph(log_file_path, run_dir_path, timestamp)
             plot_and_save_lr_graph(log_file_path, run_dir_path, timestamp)
             plot_and_save_compiled_graph(run_dir_path, timestamp)
