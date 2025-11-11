@@ -42,7 +42,7 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timesta
             return
 
         plt.figure(figsize=(12, 8))
-        plt.plot(epochs, accuracies, marker='o', linestyle='-', color='b')
+        plt.plot(epochs, accuracies, marker='.', linestyle='-', color='b')
         plt.title(f'Validation Accuracy per Epoch (Final Test Acc: {final_acc:.2f}%)')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy (%)')
@@ -50,10 +50,13 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timesta
         plt.yticks(range(0, 101, 10)) # Y축 눈금을 10 단위로 설정
         plt.grid(True)
 
-        save_path = os.path.join(graph_dir, 'val_acc.png')
-        plt.savefig(save_path)
+        png_save_path = os.path.join(graph_dir, 'val_acc.png')
+        pdf_save_path = os.path.join(graph_dir, 'val_acc.pdf')
+        plt.tight_layout()
+        plt.savefig(png_save_path)
+        plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"Val Acc 그래프 저장 완료: '{save_path}'")
+        logging.info(f"Val Acc 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
 
     except FileNotFoundError:
         logging.error(f"로그 파일 '{log_file_path}'를 찾을 수 없습니다.")
@@ -102,8 +105,8 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc, t
         
         # Train Accuracy (빨간색 점선)와 Valid Accuracy (파란색 실선) 플로팅
         if train_epochs:
-            plt.plot(train_epochs, train_accuracies, marker='^', linestyle='--', color='r', label='Train Accuracy')
-        plt.plot(val_epochs, val_accuracies, marker='o', linestyle='-', color='b', label='Validation Accuracy')
+            plt.plot(train_epochs, train_accuracies, marker='.', linestyle='--', color='r', label='Train Accuracy')
+        plt.plot(val_epochs, val_accuracies, marker='.', linestyle='-', color='b', label='Validation Accuracy')
         
         plt.title(f'Train & Validation Accuracy per Epoch (Final Test Acc: {final_acc:.2f}%)')
         plt.xlabel('Epoch')
@@ -113,10 +116,13 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc, t
         plt.grid(True)
         plt.legend() # 범례 표시
 
-        save_path = os.path.join(graph_dir, 'train_val_acc.png')
-        plt.savefig(save_path)
+        png_save_path = os.path.join(graph_dir, 'train_val_acc.png')
+        pdf_save_path = os.path.join(graph_dir, 'train_val_acc.pdf')
+        plt.tight_layout()
+        plt.savefig(png_save_path)
+        plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"Train/Val Acc 그래프 저장 완료: '{save_path}'")
+        logging.info(f"Train/Val Acc 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
 
     except FileNotFoundError:
         logging.error(f"로그 파일 '{log_file_path}'를 찾을 수 없습니다.")
@@ -147,10 +153,13 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_dir, timest
         plt.ylabel('Actual', fontsize=15)
         plt.xlabel('Predicted', fontsize=15)
         
-        save_path = os.path.join(save_dir, f'confusion_matrix_{timestamp}.png')
-        plt.savefig(save_path)
+        png_save_path = os.path.join(save_dir, f'confusion_matrix_{timestamp}.png')
+        pdf_save_path = os.path.join(save_dir, f'confusion_matrix_{timestamp}.pdf')
+        plt.tight_layout()
+        plt.savefig(png_save_path)
+        plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"혼동 행렬 저장 완료. '{save_path}'")
+        logging.info(f"혼동 행렬 저장 완료. '{png_save_path}' and '{pdf_save_path}'")
     except Exception as e:
         logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
 
@@ -194,7 +203,7 @@ def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
             return
 
         plt.figure(figsize=(12, 8))
-        plt.plot(epochs, f1_scores, marker='s', linestyle='-', color='g', label='F1 Score (Normal)')
+        plt.plot(epochs, f1_scores, marker='.', linestyle='-', color='g', label='F1 Score (Normal)')
         plt.title('F1 Score (Normal) per Epoch')
         plt.xlabel('Epoch')
         plt.ylabel('F1 Score')
@@ -202,10 +211,13 @@ def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
         plt.grid(True)
         plt.legend()
 
-        save_path = os.path.join(graph_dir, 'F1_normal.png')
-        plt.savefig(save_path)
+        png_save_path = os.path.join(graph_dir, 'F1_normal.png')
+        pdf_save_path = os.path.join(graph_dir, 'F1_normal.pdf')
+        plt.tight_layout()
+        plt.savefig(png_save_path)
+        plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"F1 (Normal) 그래프 저장 완료: '{save_path}'")
+        logging.info(f"F1 (Normal) 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
     except Exception as e:
         logging.error(f"F1 (Normal) 그래프 생성 중 오류 발생: {e}")
 
@@ -241,17 +253,20 @@ def plot_and_save_loss_graph(log_file_path, save_dir, timestamp):
             return
 
         plt.figure(figsize=(12, 8))
-        plt.plot(epochs, losses, marker='o', linestyle='-', color='purple', label='Training Loss')
+        plt.plot(epochs, losses, marker='.', linestyle='-', color='purple', label='Training Loss')
         plt.title('Training Loss per Epoch')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.grid(True)
         plt.legend()
 
-        save_path = os.path.join(graph_dir, 'loss.png')
-        plt.savefig(save_path)
+        png_save_path = os.path.join(graph_dir, 'loss.png')
+        pdf_save_path = os.path.join(graph_dir, 'loss.png'.replace('.png', '.pdf'))
+        plt.tight_layout()
+        plt.savefig(png_save_path)
+        plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"Loss 그래프 저장 완료: '{save_path}'")
+        logging.info(f"Loss 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
 
     except Exception as e:
         logging.error(f"Loss 그래프 생성 중 오류 발생: {e}")
@@ -295,13 +310,73 @@ def plot_and_save_lr_graph(log_file_path, save_dir, timestamp):
         plt.grid(True)
         plt.legend()
 
-        save_path = os.path.join(graph_dir, 'learning_rate.png')
-        plt.savefig(save_path)
+        png_save_path = os.path.join(graph_dir, 'learning_rate.png')
+        pdf_save_path = os.path.join(graph_dir, 'learning_rate.pdf')
+        plt.tight_layout()
+        plt.savefig(png_save_path)
+        plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"Learning Rate 그래프 저장 완료: '{save_path}'")
+        logging.info(f"Learning Rate 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
 
     except Exception as e:
         logging.error(f"Learning Rate 그래프 생성 중 오류 발생: {e}")
+
+def plot_and_save_compiled_graph(save_dir, timestamp):
+    """
+    생성된 4개의 주요 그래프(Train/Val Acc, F1 Normal, Loss, LR)를
+    하나의 2x2 이미지로 합쳐 'compile.png'로 저장합니다.
+
+    Args:
+        save_dir (str): 개별 그래프가 저장된 부모 디렉토리 경로.
+        timestamp (str): 파일 경로 구성에 사용될 타임스탬프.
+    """
+    graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
+    
+    # 합칠 그래프 파일들의 경로 정의
+    graph_paths = {
+        'acc': os.path.join(graph_dir, 'train_val_acc.png'),
+        'f1': os.path.join(graph_dir, 'F1_normal.png'),
+        'loss': os.path.join(graph_dir, 'loss.png'),
+        'lr': os.path.join(graph_dir, 'learning_rate.png')
+    }
+
+    # 모든 그래프 파일이 존재하는지 확인
+    missing_files = [name for name, path in graph_paths.items() if not os.path.exists(path)]
+    if missing_files:
+        logging.warning(f"다음 그래프 파일이 없어 종합 그래프를 생성할 수 없습니다: {', '.join(missing_files)}")
+        return
+
+    try:
+        # 2x2 서브플롯 생성
+        fig, axes = plt.subplots(2, 2, figsize=(25, 20))
+        fig.suptitle(f'Training Summary ({timestamp})', fontsize=24)
+
+        # 각 위치에 그래프 이미지 로드 및 표시
+        axes[0, 0].imshow(plt.imread(graph_paths['acc']))
+        axes[0, 0].set_title('Train/Validation Accuracy', fontsize=18)
+
+        axes[0, 1].imshow(plt.imread(graph_paths['f1']))
+        axes[0, 1].set_title('F1 Score (Normal)', fontsize=18)
+
+        axes[1, 0].imshow(plt.imread(graph_paths['loss']))
+        axes[1, 0].set_title('Training Loss', fontsize=18)
+
+        axes[1, 1].imshow(plt.imread(graph_paths['lr']))
+        axes[1, 1].set_title('Learning Rate', fontsize=18)
+
+        # 모든 축의 눈금 및 테두리 제거
+        for ax in axes.flat:
+            ax.axis('off')
+
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        compile_png_path = os.path.join(graph_dir, 'compile.png')
+        compile_pdf_path = os.path.join(graph_dir, 'compile.pdf')
+        plt.savefig(compile_png_path)
+        plt.savefig(compile_pdf_path, bbox_inches='tight')
+        plt.close()
+        logging.info(f"종합 그래프 저장 완료: '{compile_png_path}' and '{compile_pdf_path}'")
+    except Exception as e:
+        logging.error(f"종합 그래프 생성 중 오류 발생: {e}")
 
 def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, model_cfg, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
     """

@@ -22,7 +22,7 @@ try:
 except ImportError:
     profile = None
 
-from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph
+from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph, plot_and_save_compiled_graph
 
 # =============================================================================
 # 1. 로깅 설정
@@ -591,6 +591,7 @@ def main():
             plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp)
             plot_and_save_loss_graph(log_file_path, run_dir_path, timestamp)
             plot_and_save_lr_graph(log_file_path, run_dir_path, timestamp)
+            plot_and_save_compiled_graph(run_dir_path, timestamp)
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
