@@ -45,6 +45,7 @@ run:
 training:
   epochs: 90                    # Sewer-ML이 90에포크 사용
   batch_size: 64                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
+  pre_trained: true             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   lr: 0.001                     # 옵티마이저의 학습률.
   schedulefree: false           # true: schedule-free 옵티마이저 사용. false: 표준 AdamW 옵티마이저 사용.
 

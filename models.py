@@ -92,14 +92,14 @@ class CnnFeatureExtractor(nn.Module):
 
 class PatchConvEncoder(nn.Module):
     """이미지를 패치로 나누고, 각 패치에서 특징을 추출하여 1D 시퀀스로 변환하는 인코더입니다."""
-    def __init__(self, in_channels, img_size, patch_size, featured_patch_dim, cnn_feature_extractor_name):
+    def __init__(self, in_channels, img_size, patch_size, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True):
         super(PatchConvEncoder, self).__init__()
         self.patch_size = patch_size
         self.featured_patch_dim = featured_patch_dim
         self.num_encoder_patches = (img_size // patch_size) ** 2
         
         self.shared_conv = nn.Sequential(
-            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=True, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
+            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=pre_trained, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(start_dim=1) # [B*num_encoder_patches, D, 1, 1] -> [B*num_encoder_patches, D] 형태가 됩니다.
         )

@@ -56,7 +56,7 @@ def setup_logging(run_cfg, data_dir_name, baseline_model_name):
     logging.info(f"로그 파일이 '{log_filename}'에 저장됩니다.")
     return run_dir_path, timestamp
 
-def create_baseline_model(model_name, num_labels, pretrained=True):
+def create_baseline_model(model_name, num_labels, pretrained):
     """지정된 이름의 torchvision 모델을 생성하고 마지막 레이어를 수정합니다."""
     logging.info(f"Baseline 모델 '{model_name}'을(를) 생성합니다 (사전 훈련 가중치: {'사용' if pretrained else '미사용'}).")
     
@@ -370,7 +370,7 @@ def main():
     train_loader, valid_loader, test_loader, num_labels, class_names = prepare_data(run_cfg, train_cfg, model_cfg)
 
     # --- Baseline 모델 생성 ---
-    model = create_baseline_model(baseline_model_name, num_labels, pretrained=True).to(device)
+    model = create_baseline_model(baseline_model_name, num_labels, pretrained=train_cfg.pre_trained).to(device)
     log_model_parameters(model)
     
     # --- 옵티마이저 및 스케줄러 설정 ---
