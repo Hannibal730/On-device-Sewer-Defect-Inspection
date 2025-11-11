@@ -21,6 +21,10 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timesta
     epochs = []
     accuracies = []
 
+    # 그래프를 저장할 전용 폴더 생성
+    graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
+    os.makedirs(graph_dir, exist_ok=True)
+
     # 정규 표현식을 사용하여 로그 라인에서 에포크와 정확도 추출
     # 예: [Valid] [1/30] | Val Acc: 85.00% ...
     pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\] \| Val Acc: ([\d\.]+)%")
@@ -46,10 +50,10 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timesta
         plt.yticks(range(0, 101, 10)) # Y축 눈금을 10 단위로 설정
         plt.grid(True)
 
-        save_path = os.path.join(save_dir, f'val_acc_graph_{timestamp}.png')
+        save_path = os.path.join(graph_dir, 'val_acc.png')
         plt.savefig(save_path)
         plt.close()
-        logging.info(f"Val Acc 그래프 저장 완료. '{save_path}'")
+        logging.info(f"Val Acc 그래프 저장 완료: '{save_path}'")
 
     except FileNotFoundError:
         logging.error(f"로그 파일 '{log_file_path}'를 찾을 수 없습니다.")
@@ -69,6 +73,10 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc, t
     """
     train_epochs, train_accuracies = [], []
     val_epochs, val_accuracies = [], []
+
+    # 그래프를 저장할 전용 폴더 생성
+    graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
+    os.makedirs(graph_dir, exist_ok=True)
 
     # Train 및 Valid 정확도 추출을 위한 정규 표현식
     train_pattern = re.compile(r"\[Train\] \[(\d+)/\d+\] \| .* Train Acc: ([\d\.]+)%")
@@ -105,10 +113,10 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc, t
         plt.grid(True)
         plt.legend() # 범례 표시
 
-        save_path = os.path.join(save_dir, f'train_val_acc_graph_{timestamp}.png')
+        save_path = os.path.join(graph_dir, 'train_val_acc.png')
         plt.savefig(save_path)
         plt.close()
-        logging.info(f"Train/Val Acc 그래프 저장 완료. '{save_path}'")
+        logging.info(f"Train/Val Acc 그래프 저장 완료: '{save_path}'")
 
     except FileNotFoundError:
         logging.error(f"로그 파일 '{log_file_path}'를 찾을 수 없습니다.")
@@ -145,6 +153,155 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_dir, timest
         logging.info(f"혼동 행렬 저장 완료. '{save_path}'")
     except Exception as e:
         logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
+
+def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp):
+    """
+    로그 파일에서 'Normal' 클래스의 F1 점수를 추출하여 그래프를 그리고,
+    지정된 디렉토리에 이미지 파일로 저장합니다.
+
+    Args:
+        log_file_path (str): 분석할 로그 파일의 전체 경로.
+        save_dir (str): 그래프 이미지를 저장할 디렉토리 경로.
+        timestamp (str): 파일 이름에 추가할 타임스탬프.
+    """
+    epochs = []
+    f1_scores = []
+
+    # 그래프를 저장할 전용 폴더 생성
+    graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
+    os.makedirs(graph_dir, exist_ok=True)
+
+    # 에포크와 F1 점수 추출을 위한 정규 표현식
+    epoch_pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\]")
+    f1_pattern = re.compile(r"\[Metrics for 'Normal'\] .* F1: ([\d\.]+)")
+
+    try:
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            current_epoch = None
+            for line in f:
+                epoch_match = epoch_pattern.search(line)
+                if epoch_match:
+                    current_epoch = int(epoch_match.group(1))
+                
+                f1_match = f1_pattern.search(line)
+                if f1_match and current_epoch is not None:
+                    epochs.append(current_epoch)
+                    f1_scores.append(float(f1_match.group(1)))
+                    current_epoch = None # 한 에포크에 한 번만 기록
+
+        if not epochs:
+            logging.warning("로그 파일에서 유효한 F1 (Normal) 데이터를 찾을 수 없어 그래프를 생성하지 않습니다.")
+            return
+
+        plt.figure(figsize=(12, 8))
+        plt.plot(epochs, f1_scores, marker='s', linestyle='-', color='g', label='F1 Score (Normal)')
+        plt.title('F1 Score (Normal) per Epoch')
+        plt.xlabel('Epoch')
+        plt.ylabel('F1 Score')
+        plt.ylim(0, 1.0)
+        plt.grid(True)
+        plt.legend()
+
+        save_path = os.path.join(graph_dir, 'F1_normal.png')
+        plt.savefig(save_path)
+        plt.close()
+        logging.info(f"F1 (Normal) 그래프 저장 완료: '{save_path}'")
+    except Exception as e:
+        logging.error(f"F1 (Normal) 그래프 생성 중 오류 발생: {e}")
+
+def plot_and_save_loss_graph(log_file_path, save_dir, timestamp):
+    """
+    로그 파일에서 에포크별 [Train] Loss를 추출하여 그래프를 그리고,
+    지정된 디렉토리에 이미지 파일로 저장합니다.
+
+    Args:
+        log_file_path (str): 분석할 로그 파일의 전체 경로.
+        save_dir (str): 그래프 이미지를 저장할 디렉토리 경로.
+        timestamp (str): 파일 이름에 추가할 타임스탬프.
+    """
+    epochs = []
+    losses = []
+
+    graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
+    os.makedirs(graph_dir, exist_ok=True)
+
+    # [Train] [에포크/총에포크] | Loss: 값 | ... 형식의 로그를 찾습니다.
+    pattern = re.compile(r"\[Train\] \[(\d+)/\d+\] \| Loss: ([\d\.]+)")
+
+    try:
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                match = pattern.search(line)
+                if match:
+                    epochs.append(int(match.group(1)))
+                    losses.append(float(match.group(2)))
+
+        if not epochs:
+            logging.warning("로그 파일에서 유효한 [Train] Loss 데이터를 찾을 수 없어 Loss 그래프를 생성하지 않습니다.")
+            return
+
+        plt.figure(figsize=(12, 8))
+        plt.plot(epochs, losses, marker='o', linestyle='-', color='purple', label='Training Loss')
+        plt.title('Training Loss per Epoch')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.grid(True)
+        plt.legend()
+
+        save_path = os.path.join(graph_dir, 'loss.png')
+        plt.savefig(save_path)
+        plt.close()
+        logging.info(f"Loss 그래프 저장 완료: '{save_path}'")
+
+    except Exception as e:
+        logging.error(f"Loss 그래프 생성 중 오류 발생: {e}")
+
+def plot_and_save_lr_graph(log_file_path, save_dir, timestamp):
+    """
+    로그 파일에서 에포크별 Learning Rate를 추출하여 그래프를 그리고,
+    지정된 디렉토리에 이미지 파일로 저장합니다.
+
+    Args:
+        log_file_path (str): 분석할 로그 파일의 전체 경로.
+        save_dir (str): 그래프 이미지를 저장할 디렉토리 경로.
+        timestamp (str): 파일 이름에 추가할 타임스탬프.
+    """
+    epochs = []
+    learning_rates = []
+
+    graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
+    os.makedirs(graph_dir, exist_ok=True)
+
+    # [LR] [에포크/총에포크] | Learning Rate: 값 형식의 로그를 찾습니다.
+    pattern = re.compile(r"\[LR\] \[(\d+)/\d+\] \| Learning Rate: ([\d\.e\-\+]+)")
+
+    try:
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                match = pattern.search(line)
+                if match:
+                    epochs.append(int(match.group(1)))
+                    learning_rates.append(float(match.group(2)))
+
+        if not epochs:
+            logging.warning("로그 파일에서 유효한 Learning Rate 데이터를 찾을 수 없어 LR 그래프를 생성하지 않습니다.")
+            return
+
+        plt.figure(figsize=(12, 8))
+        plt.plot(epochs, learning_rates, marker='.', linestyle='-', color='black', label='Learning Rate')
+        plt.title('Learning Rate per Epoch')
+        plt.xlabel('Epoch')
+        plt.ylabel('Learning Rate')
+        plt.grid(True)
+        plt.legend()
+
+        save_path = os.path.join(graph_dir, 'learning_rate.png')
+        plt.savefig(save_path)
+        plt.close()
+        logging.info(f"Learning Rate 그래프 저장 완료: '{save_path}'")
+
+    except Exception as e:
+        logging.error(f"Learning Rate 그래프 생성 중 오류 발생: {e}")
 
 def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, model_cfg, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
     """

@@ -22,7 +22,7 @@ try:
 except ImportError:
     profile = None
 
-from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps
+from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph
 
 # =============================================================================
 # 1. 로깅 설정
@@ -230,7 +230,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             correct += (predicted == labels).sum().item()
             
             # tqdm 프로그레스 바에 현재 loss 표시
-            step_lr = optimizer.param_groups[0]['lr']
+            step_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
             progress_bar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{step_lr:.6f}")
 
         train_acc = 100 * correct / total
@@ -240,6 +240,10 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         # 클래스별 F1 점수를 계산하고 로깅하도록 옵션 전달
         eval_results = evaluate(run_cfg, model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
         
+        # 에포크 종료 시 Learning Rate 로깅
+        current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
+        logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
+
         # --- 최고 성능 모델 저장 기준 선택 ---
         current_f1 = 0.0
         if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
@@ -584,6 +588,9 @@ def main():
         if final_acc is not None:
             plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
             plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
+            plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp)
+            plot_and_save_loss_graph(log_file_path, run_dir_path, timestamp)
+            plot_and_save_lr_graph(log_file_path, run_dir_path, timestamp)
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가

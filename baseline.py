@@ -16,14 +16,13 @@ import logging
 from datetime import datetime
 import time
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
-import schedulefree
 
 try:
     from thop import profile
 except ImportError:
     profile = None
 
-from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix
+from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph
 
 # =============================================================================
 # 1. 로깅 및 모델 설정
@@ -38,7 +37,7 @@ def setup_logging(run_cfg, data_dir_name, baseline_model_name):
         return '.', timestamp
 
     # 각 실행을 위한 고유한 디렉토리 생성 (baseline 모델 이름 포함)
-    run_dir_name = f"run_{baseline_model_name}_{timestamp}"
+    run_dir_name = f"baseline_{baseline_model_name}_{timestamp}"
     run_dir_path = os.path.join("log", data_dir_name, run_dir_name)
     os.makedirs(run_dir_path, exist_ok=True)
     
@@ -130,14 +129,12 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
         precision_per_class = precision_score(all_labels, all_preds, average=None, zero_division=0)
         recall_per_class = recall_score(all_labels, all_preds, average=None, zero_division=0)
         f1_per_class = f1_score(all_labels, all_preds, average=None, zero_division=0)
-        logging.info("-" * 30)
         for i, class_name in enumerate(class_names):
-            log_line = (f"  - Metrics for '{class_name}': "
+            log_line = (f"[Metrics for '{class_name}'] | "
                         f"Precision: {precision_per_class[i]:.4f} | "
                         f"Recall: {recall_per_class[i]:.4f} | "
                         f"F1: {f1_per_class[i]:.4f}")
             logging.info(log_line)
-        logging.info("-" * 30)
 
     return {
         'accuracy': accuracy,
@@ -165,7 +162,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         correct = 0
         total = 0
         
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False, disable=not getattr(run_cfg, 'show_log', True))
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False, disable=False)
         for images, labels, _ in progress_bar:
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             optimizer.zero_grad()
@@ -179,7 +176,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
             
-            step_lr = optimizer.param_groups[0]['lr']
+            step_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
             progress_bar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{step_lr:.6f}")
 
         train_acc = 100 * correct / total
@@ -187,6 +184,10 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         
         eval_results = evaluate(run_cfg, model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
         
+        # 에포크 종료 시 Learning Rate 로깅
+        current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
+        logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
+
         current_f1 = 0.0
         if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
             current_f1 = eval_results['f1_per_class'][0]
@@ -407,6 +408,9 @@ def main():
         if final_acc is not None:
             plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
             plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
+            plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp)
+            plot_and_save_loss_graph(log_file_path, run_dir_path, timestamp)
+            plot_and_save_lr_graph(log_file_path, run_dir_path, timestamp)
 
     elif run_cfg.mode == 'inference':
         inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
