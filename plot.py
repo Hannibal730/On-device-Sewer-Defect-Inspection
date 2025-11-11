@@ -146,17 +146,17 @@ def plot_and_save_confusion_matrix(y_true, y_pred, class_names, save_dir, timest
     except Exception as e:
         logging.error(f"혼동 행렬 생성 중 오류 발생: {e}")
 
-def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, cats_cfg, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
+def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, model_cfg, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
     """
-    저장된 어텐션 맵을 원본 이미지 위에 히트맵으로 시각화하여 저장합니다.
-
+    어텐션 맵을 다양한 형식으로 시각화하고, 원본 이미지 이름에 해당하는 폴더 내에
+    'compile', 'original', 'head_N' 형태로 분리하여 저장합니다.
     Args:
         attention_maps (torch.Tensor): 모델에서 추출한 어텐션 가중치 텐서.
             Shape: [B, num_heads, num_queries, num_keys]
         image_tensor (torch.Tensor): 원본 이미지 텐서. Shape: [B, C, H, W]
         save_dir (str): 시각화 결과를 저장할 '전용' 디렉토리 경로 (e.g., .../attention_map_timestamp/).
         img_size (int): 원본 이미지의 크기.
-        cats_cfg (SimpleNamespace): CATS 모델 설정.
+        model_cfg (SimpleNamespace): 모델 설정.
         sample_idx (int): 배치에서 시각화할 샘플의 인덱스.
         original_filename (str, optional): 원본 이미지 파일 이름.
         actual_class (str, optional): 실제 클래스 이름.
@@ -164,6 +164,16 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
     """
     try:
         # 1. 시각화를 위해 배치에서 해당 인덱스(sample_idx)의 데이터만 선택
+        if original_filename:
+            base_name, _ = os.path.splitext(original_filename)
+            # 원본 파일명으로 폴더 생성
+            output_folder = os.path.join(save_dir, base_name)
+            os.makedirs(output_folder, exist_ok=True)
+        else:
+            # 파일명이 없는 경우를 대비한 폴백
+            output_folder = save_dir
+            base_name = f"attention_map_{sample_idx}"
+
         attention_maps = attention_maps[sample_idx].detach().cpu() # [num_heads, num_queries, num_keys]
         image = image_tensor[sample_idx].detach().cpu()         # [C, H, W]
 
@@ -182,12 +192,19 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
             logging.error("어텐션 맵의 패치 수가 제곱수가 아니므로 2D로 변환할 수 없습니다.")
             return
 
-        # 4. Matplotlib으로 시각화 준비
-        # 각 헤드와 쿼리에 대한 서브플롯 생성
-        # 원본 이미지를 위한 열을 추가하여 (num_heads + 1) 열로 설정하고, 가로로 나열합니다.
+        # 4. 원본 이미지 저장 (_original.png)
+        plt.figure(figsize=(8, 8))
+        plt.imshow(image)
+        plt.axis('off') # 제목(title)을 제거합니다.
+        original_save_path = os.path.join(output_folder, f"{base_name}_original.png")
+        plt.savefig(original_save_path, bbox_inches='tight')
+        plt.close()
+
+        # 5. 컴파일된 전체 어텐션 맵 저장 (_compile.png)
+        # 원본 이미지를 위한 열을 추가하여 (num_heads + 1) 열로 설정
         fig, axes = plt.subplots(num_queries, num_heads + 1, figsize=((num_heads + 1) * 5, num_queries * 5), squeeze=False)
         
-        # 그래프 전체 제목 설정
+        # 전체 그래프 제목 설정
         title = 'Attention Maps per Head and Query'
         filename_info = f'Filename: {original_filename}' if original_filename else ''
         subtitle = f'Actual: {actual_class} / Predicted: {predicted_class}'
@@ -203,7 +220,7 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
                 ax_orig.set_title('Original Image')
             ax_orig.axis('off')
 
-        # 6. 두 번째 열부터 각 헤드와 쿼리에 대해 반복하며 히트맵 생성
+        # 두 번째 열부터 각 헤드와 쿼리에 대해 반복하며 히트맵 생성
         for head in range(num_heads):
             for query_patch in range(num_queries):
                 # 올바른 위치: [해당 쿼리 행, 원본 이미지 열 다음부터]
@@ -226,17 +243,29 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.93]) # suptitle 공간 확보를 위해 rect 조정
         
-        # 원본 파일명을 기반으로 저장 파일명 생성
-        if original_filename:
-            # 원본 파일명에서 확장자를 제거하고, 새로운 .png 확장자를 붙입니다.
-            base_name, _ = os.path.splitext(original_filename)
-            output_filename = f"{base_name}.png"
-        else:
-            output_filename = f"attention_map_{sample_idx}.png"
-        save_path = os.path.join(save_dir, output_filename)
-        
-        plt.savefig(save_path)
+        compile_save_path = os.path.join(output_folder, f"{base_name}_compile.png")
+        plt.savefig(compile_save_path)
         plt.close()
+
+        # 6. 헤드별 어텐션 맵 저장 (_headN.png)
+        for head in range(num_heads):
+            # 해당 헤드의 모든 쿼리에 대한 어텐션 맵을 평균냅니다.
+            head_attn_map = attention_maps[head].mean(dim=0) # [num_patches]
+            
+            # 1D -> 2D 그리드로 변환 및 업샘플링
+            attn_map_2d = head_attn_map.view(1, 1, grid_size, grid_size)
+            upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+            upscaled_map = upscaled_map.squeeze().numpy()
+
+            # 시각화
+            plt.figure(figsize=(8, 8))
+            plt.imshow(image, extent=(0, img_size, 0, img_size))
+            plt.imshow(upscaled_map, cmap='jet', alpha=0.3, extent=(0, img_size, 0, img_size))
+            plt.axis('off')
+            # plt.title(f'Attention Map - Head {head+1}') # 제목(title)을 제거합니다.
+            head_save_path = os.path.join(output_folder, f"{base_name}_head{head+1}.png")
+            plt.savefig(head_save_path, bbox_inches='tight')
+            plt.close()
 
     except Exception as e:
         logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")

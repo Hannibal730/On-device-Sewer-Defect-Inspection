@@ -196,14 +196,14 @@ def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", 
         precision_per_class = precision_score(all_labels, all_preds, average=None, zero_division=0)
         recall_per_class = recall_score(all_labels, all_preds, average=None, zero_division=0)
         f1_per_class = f1_score(all_labels, all_preds, average=None, zero_division=0)
-        logging.info("-" * 30)
+        # logging.info("-" * 30)
         for i, class_name in enumerate(class_names):
-            log_line = (f"  - Metrics for '{class_name}': "
+            log_line = (f"[Metrics for '{class_name}'] | "
                         f"Precision: {precision_per_class[i]:.4f} | "
                         f"Recall: {recall_per_class[i]:.4f} | "
                         f"F1: {f1_per_class[i]:.4f}")
             logging.info(log_line)
-        logging.info("-" * 30)
+        # logging.info("-" * 30)
 
     return {
         'accuracy': accuracy,
@@ -409,6 +409,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
         logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
 
     # 2. 테스트셋 성능 평가
+    logging.info("="*50)
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
     
     only_inference_mode = getattr(run_cfg, 'only_inference', False)
@@ -463,7 +464,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
             attn_save_dir = os.path.join(run_dir_path, f'attention_map_{timestamp}')
             os.makedirs(attn_save_dir, exist_ok=True)
 
-            num_to_save = min(getattr(decoder_cfg, 'num_plot_attention', 10), len(data_loader.dataset))
+            num_to_save = min(getattr(model_cfg, 'num_plot_attention', 10), len(data_loader.dataset))
             logging.info(f"어텐션 맵 시각화를 시작합니다 ({num_to_save}개 샘플, 저장 위치: '{attn_save_dir}').")
 
             saved_count = 0 # 어텐션 맵을 저장할 전용 폴더 생성
