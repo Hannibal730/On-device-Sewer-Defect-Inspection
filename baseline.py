@@ -331,7 +331,7 @@ def main():
         config = yaml.safe_load(f)
 
     run_cfg = SimpleNamespace(**config['run'])
-    train_cfg = SimpleNamespace(**config['training'])
+    train_cfg = SimpleNamespace(**config['training_baseline'])
     model_cfg = SimpleNamespace(**config['model'])
     baseline_cfg = SimpleNamespace(**config.get('baseline', {})) # baseline 섹션 로드
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
@@ -376,24 +376,23 @@ def main():
     # --- 옵티마이저 및 스케줄러 설정 ---
     optimizer, scheduler = None, None
     if run_cfg.mode == 'train':
-        if getattr(train_cfg, 'schedulefree', False):
-            logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
-            optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
+        if getattr(train_cfg, 'optimizer', 'adamw').lower() == 'sgd':
+            logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={train_cfg.momentum}, weight_decay={train_cfg.weight_decay})")
+            optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=train_cfg.momentum, weight_decay=train_cfg.weight_decay)
         else:
-            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
-            use_cosine_lr = getattr(train_cfg, 'CosineAnnealingLR', False)
-            use_cosine_warm_restarts = getattr(train_cfg, 'CosineAnnealingWarmRestarts', False)
+            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={train_cfg.weight_decay})")
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=getattr(train_cfg, 'weight_decay', 0.0))
 
-            if use_cosine_lr:
-                logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingLR 스케줄러를 사용합니다. (T_max={train_cfg.epochs})")
-                scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
-            elif use_cosine_warm_restarts:
-                T_0 = getattr(train_cfg, 'T_0', 10)
-                T_mult = getattr(train_cfg, 'T_mult', 1)
-                logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingWarmRestarts 스케줄러를 사용합니다. (T_0={T_0}, T_mult={T_mult})")
-                scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=T_0, T_mult=T_mult)
-            else:
-                logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
+        if getattr(train_cfg, 'scheduler', 'none').lower() == 'multisteplr':
+            milestones = getattr(train_cfg, 'milestones', [30, 60, 80])
+            gamma = getattr(train_cfg, 'gamma', 0.1)
+            logging.info(f"스케줄러: MultiStepLR (milestones={milestones}, gamma={gamma})")
+            scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
+        elif getattr(train_cfg, 'scheduler', 'none').lower() == 'cosineannealinglr':
+            logging.info(f"스케줄러: CosineAnnealingLR (T_max={train_cfg.epochs})")
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
+        else:
+            logging.info("스케줄러를 사용하지 않습니다.")
         logging.info("="*50)
 
     # --- 모드에 따라 실행 ---

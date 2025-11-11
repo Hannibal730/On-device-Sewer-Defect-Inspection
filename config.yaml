@@ -40,29 +40,35 @@ run:
   num_workers: 16 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용. (~24)
 
 # =============================================================================
-# 2. 훈련 하이퍼파라미터 (run.py, baseline.py 공용)
+# 2. 훈련 하이퍼파라미터 (run.py 전용)
 # =============================================================================
-training:
-  epochs: 90                    # Sewer-ML이 90에포크 사용
+training_run:
+  epochs: 90                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
   batch_size: 64                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
-  pre_trained: true             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
+  pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   lr: 0.001                     # 옵티마이저의 학습률.
-  schedulefree: false           # true: schedule-free 옵티마이저 사용. false: 표준 AdamW 옵티마이저 사용.
-
-  # schedulefree가 false일 때 사용할 스케줄러 옵션들. 하나만 true로 설정해야 합니다.
-  CosineAnnealingLR: true           # 기본 코사인 어닐링 스케줄러 사용 여부.
-  CosineAnnealingWarmRestarts: false  # 재시작을 포함한 코사인 어닐링 스케줄러 사용 여부.
-  T_0: 10                           # CosineAnnealingWarmRestarts의 첫 번째 재시작 주기 (에포크 단위).
-  T_mult: 2                         # CosineAnnealingWarmRestarts의 주기 증가 배수. (T_mult = 2가 가장 인기 있는 전략)
-
-  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
-  # F1_Normal: 'Normal' 클래스의 F1 점수가 가장 높을 때 모델을 저장합니다.
-  # F1_Defect: 'Defect' 클래스의 F1 점수가 가장 높을 때 모델을 저장합니다.
-  # F1_average: 두 클래스의 평균 F1 점수가 가장 높을 때 모델을 저장합니다.
-  best_model_criterion: 'F1_Normal' 
+  # 사용할 학습률 스케줄러를 설정합니다.
+  scheduler: 'CosineAnnealingLR' # 옵션: 'CosineAnnealingLR' (코사인 어닐링), 'none' (사용 안 함)
+  best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 # =============================================================================
-# 3. 모델 아키텍처 파라미터 (run.py 전용)
+# 3. 훈련 하이퍼파라미터 (baseline.py 전용)
+# =============================================================================
+training_baseline:
+  epochs: 90                    # 훈련할 총 에포크 수.
+  batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
+  pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
+  optimizer: 'sgd'              # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
+  lr: 0.1                       # 옵티마이저의 학습률.
+  momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
+  weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
+  scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'CosineAnnealingLR', 'none'
+  milestones: [30, 60, 80]      # MultiStepLR 스케줄러에서 학습률을 감소시킬 에포크 지점.
+  gamma: 0.1                    # MultiStepLR 스케줄러에서 학습률에 곱할 값.
+  best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
+
+# =============================================================================
+# 4. 모델 아키텍처 파라미터 (run.py 전용)
 # =============================================================================
 model:
   # --- 이미지 및 인코더 설정 ---
@@ -98,7 +104,7 @@ model:
   num_plot_attention: 1     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
 
 # =============================================================================
-# 4. Baseline 모델 설정 (baseline.py 전용)
+# 5. Baseline 모델 설정 (baseline.py 전용)
 # =============================================================================
 baseline:
   # 사용할 baseline 모델의 이름을 지정합니다.

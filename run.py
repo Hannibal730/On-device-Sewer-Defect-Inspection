@@ -127,26 +127,9 @@ def log_model_parameters(model):
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
 
-def _get_model_weights_norm(model):
-    """모델의 모든 학습 가능한 파라미터에 대한 L2 Norm을 계산합니다."""
-    total_norm = 0.0
-    for p in model.parameters():
-        if p.requires_grad:
-            param_norm = p.detach().norm(2)
-            total_norm += param_norm.item() ** 2
-    return total_norm ** 0.5
-
-def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False):
+def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
     model.eval()
-
-    use_schedulefree = optimizer and hasattr(optimizer, 'eval')
-    if use_schedulefree:
-        norm_before = _get_model_weights_norm(model)
-
-    # schedulefree 옵티마이저를 위해 optimizer도 eval 모드로 설정
-    if optimizer and hasattr(optimizer, 'eval'):
-        optimizer.eval()
 
     correct = 0
     total = 0
@@ -173,10 +156,6 @@ def evaluate(run_cfg, model, optimizer, data_loader, device, desc="Evaluating", 
     precision = precision_score(all_labels, all_preds, average='macro', zero_division=0)
     recall = recall_score(all_labels, all_preds, average='macro', zero_division=0)
     f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
-    
-    if use_schedulefree:
-        norm_after = _get_model_weights_norm(model)
-        logging.info(f'[Schedule-Free] 가중치 업데이트의 안정화. 가중치의 L2 Norm: {norm_before:.4f} -> {norm_after:.4f}')
 
     if total == 0:
         logging.warning("테스트 데이터가 없습니다. 평가를 건너뜁니다.")
@@ -229,9 +208,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         logging.info("-" * 50)
 
         model.train()
-        # schedulefree 옵티마이저를 위해 optimizer도 train 모드로 설정
-        if optimizer and hasattr(optimizer, 'train'):
-            optimizer.train()
 
         running_loss = 0.0
         correct = 0
@@ -262,7 +238,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         
         # --- 평가 단계 ---
         # 클래스별 F1 점수를 계산하고 로깅하도록 옵션 전달
-        eval_results = evaluate(run_cfg, model, optimizer, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
+        eval_results = evaluate(run_cfg, model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
         
         # --- 최고 성능 모델 저장 기준 선택 ---
         current_f1 = 0.0
@@ -285,7 +261,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         if scheduler:
             scheduler.step()
 
-def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
+def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
@@ -303,15 +279,6 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
         return
 
     model.eval()
-
-    use_schedulefree = optimizer and hasattr(optimizer, 'eval')
-    if use_schedulefree:
-        norm_before = _get_model_weights_norm(model)
-
-    # schedulefree 옵티마이저를 위해 optimizer도 eval 모드로 설정
-    # 최종 가중치를 모델 파라미터에 통합(consolidate)합니다.
-    if optimizer and hasattr(optimizer, 'eval'):
-        optimizer.eval()
 
     # --- FLOPS 측정 ---
     # 모델의 입력 크기를 확인하기 위해 샘플 이미지를 하나 가져옵니다.
@@ -450,7 +417,7 @@ def inference(run_cfg, model_cfg, model, optimizer, data_loader, device, run_dir
 
     else:
         # 평가 모드: 기존 evaluate 함수 호출
-        eval_results = evaluate(run_cfg, model, optimizer, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+        eval_results = evaluate(run_cfg, model, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
         final_acc = eval_results['accuracy']
 
         # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
@@ -516,7 +483,7 @@ def main():
 
     # SimpleNamespace를 사용하여 딕셔너리처럼 접근 가능하게 변환
     run_cfg = SimpleNamespace(**config['run'])
-    train_cfg = SimpleNamespace(**config['training'])
+    train_cfg = SimpleNamespace(**config['training_run'])
     model_cfg = SimpleNamespace(**config['model'])
     # dataset_cfg도 SimpleNamespace로 변환
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
@@ -591,31 +558,15 @@ def main():
     
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
-        # --- 옵티마이저 및 스케줄러 설정 (훈련 모드에서만) ---
-        if getattr(train_cfg, 'schedulefree', False):
-            logging.info("Schedule-Free 옵티마이저 (AdamWScheduleFree)를 사용합니다.")
-            optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=train_cfg.lr)
-            scheduler = None # schedulefree는 스케줄러가 필요 없음
-        else:
-            # 표준 AdamW 옵티마이저 사용
-            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
-            scheduler = None # 기본값은 스케줄러 없음
-            
-            # YAML 설정에 따라 스케줄러를 선택합니다.
-            use_cosine_lr = getattr(train_cfg, 'CosineAnnealingLR', False)
-            use_cosine_warm_restarts = getattr(train_cfg, 'CosineAnnealingWarmRestarts', False)
+        optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
+        scheduler = None
 
-            if use_cosine_lr:
-                logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingLR 스케줄러를 사용합니다. (T_max={train_cfg.epochs})")
-                scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
-            elif use_cosine_warm_restarts:
-                T_0 = getattr(train_cfg, 'T_0', 10)
-                T_mult = getattr(train_cfg, 'T_mult', 1)
-                logging.info(f"표준 옵티마이저 (AdamW)와 CosineAnnealingWarmRestarts 스케줄러를 사용합니다. (T_0={T_0}, T_mult={T_mult})")
-                scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=T_0, T_mult=T_mult)
-            
-            if scheduler is None:
-                logging.info("표준 옵티마이저 (AdamW)를 사용합니다. (스케줄러 없음)")
+        scheduler_name = getattr(train_cfg, 'scheduler', 'none').lower()
+        if scheduler_name == 'cosineannealinglr':
+            logging.info(f"옵티마이저: AdamW, 스케줄러: CosineAnnealingLR (T_max={train_cfg.epochs})")
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
+        else:
+            logging.info("옵티마이저: AdamW (스케줄러 없음)")
 
         logging.info("="*50)
 
@@ -624,7 +575,7 @@ def main():
 
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
+        final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
 
         # --- 그래프 생성 ---
         # 로그 파일 이름은 setup_logging에서 생성된 패턴을 기반으로 함
@@ -636,8 +587,7 @@ def main():
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
-        optimizer, scheduler = None, None # 추론 시에는 옵티마이저/스케줄러가 필요 없음
-        inference(run_cfg, model_cfg, model, optimizer, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
+        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
 
 # =============================================================================
 # 5. 메인 실행 블록
