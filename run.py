@@ -579,10 +579,15 @@ def main():
         optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
         scheduler = None
 
+        # scheduler_params가 없으면 빈 객체로 초기화
+        scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
+
         scheduler_name = getattr(train_cfg, 'scheduler', 'none').lower()
         if scheduler_name == 'cosineannealinglr':
-            logging.info(f"옵티마이저: AdamW, 스케줄러: CosineAnnealingLR (T_max={train_cfg.epochs})")
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
+            T_max = getattr(scheduler_params, 'T_max', train_cfg.epochs)
+            eta_min = getattr(scheduler_params, 'eta_min', 0.0)
+            logging.info(f"옵티마이저: AdamW, 스케줄러: CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
         else:
             logging.info("옵티마이저: AdamW (스케줄러 없음)")
 

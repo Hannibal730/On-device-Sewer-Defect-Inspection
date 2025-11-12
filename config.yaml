@@ -49,7 +49,11 @@ training_run:
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   lr: 0.001                     # 옵티마이저의 학습률.
   # 사용할 학습률 스케줄러를 설정합니다.
-  scheduler: 'CosineAnnealingLR' # 옵션: 'CosineAnnealingLR' (코사인 어닐링), 'none' (사용 안 함)
+  scheduler: 'cosineannealinglr' # 옵션: 'multisteplr', 'cosineannealinglr', 'none'
+  scheduler_params:
+    # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
+    T_max: 90
+    eta_min: 0.0
   best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 # =============================================================================
@@ -63,7 +67,11 @@ training_baseline:
   lr: 0.1                       # 옵티마이저의 학습률.
   momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
   weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
-  scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'CosineAnnealingLR', 'none'
+  scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'cosineannealinglr', 'none'
+  scheduler_params:
+    # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
+    # T_max: 90
+    # eta_min: 0.0
   milestones: [30, 60, 80]      # MultiStepLR 스케줄러에서 학습률을 감소시킬 에포크 지점.
   gamma: 0.1                    # MultiStepLR 스케줄러에서 학습률에 곱할 값.
   best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.

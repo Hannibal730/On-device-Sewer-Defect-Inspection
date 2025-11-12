@@ -384,14 +384,19 @@ def main():
             logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={train_cfg.weight_decay})")
             optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=getattr(train_cfg, 'weight_decay', 0.0))
 
+        # scheduler_params가 없으면 빈 객체로 초기화
+        scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
+
         if getattr(train_cfg, 'scheduler', 'none').lower() == 'multisteplr':
             milestones = getattr(train_cfg, 'milestones', [30, 60, 80])
             gamma = getattr(train_cfg, 'gamma', 0.1)
             logging.info(f"스케줄러: MultiStepLR (milestones={milestones}, gamma={gamma})")
             scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
         elif getattr(train_cfg, 'scheduler', 'none').lower() == 'cosineannealinglr':
-            logging.info(f"스케줄러: CosineAnnealingLR (T_max={train_cfg.epochs})")
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_cfg.epochs)
+            T_max = getattr(scheduler_params, 'T_max', train_cfg.epochs)
+            eta_min = getattr(scheduler_params, 'eta_min', 0.0)
+            logging.info(f"스케줄러: CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
         else:
             logging.info("스케줄러를 사용하지 않습니다.")
         logging.info("="*50)
