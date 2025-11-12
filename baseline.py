@@ -1,6 +1,7 @@
 import os
 from tqdm import tqdm
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Subset
@@ -14,6 +15,7 @@ import argparse
 import yaml
 import logging
 from datetime import datetime
+import random
 import time
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
 
@@ -377,6 +379,16 @@ def main():
     baseline_cfg = SimpleNamespace(**config.get('baseline', {})) # baseline 섹션 로드
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
     
+    # --- 전역 시드 고정 ---
+    global_seed = getattr(run_cfg, 'global_seed', None)
+    if global_seed is not None:
+        random.seed(global_seed)
+        os.environ['PYTHONHASHSEED'] = str(global_seed)
+        np.random.seed(global_seed)
+        torch.manual_seed(global_seed)
+        torch.cuda.manual_seed(global_seed)
+        logging.info(f"전역 랜덤 시드를 {global_seed}로 고정합니다.")
+
     # Baseline 모델 이름 확인
     baseline_model_name = getattr(baseline_cfg, 'model_name', 'resnet18')
 

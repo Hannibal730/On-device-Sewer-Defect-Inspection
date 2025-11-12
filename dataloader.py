@@ -147,12 +147,12 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             num_train = int(num_total * train_ratio)
             num_test = num_total - num_train
 
-            # 데이터 분할 시 사용할 시드를 config에서 가져옵니다. 없으면 기존 random_sampling_seed를 사용합니다.
-            split_seed = getattr(dataset_cfg, 'split_seed', run_cfg.random_sampling_seed)
-            logging.info(f"총 {num_total}개 데이터를 훈련용 {num_train}개, 테스트용 {num_test}개로 분할합니다 (split_seed={split_seed}).")
+            # 데이터 분할 시 global_seed를 사용합니다.
+            global_seed = getattr(run_cfg, 'global_seed', 42) # global_seed가 없으면 기본값 42 사용
+            logging.info(f"총 {num_total}개 데이터를 훈련용 {num_train}개, 테스트용 {num_test}개로 분할합니다 (split_seed={global_seed}).")
 
             # 재현성을 위해 고정된 시드로 데이터를 분할
-            generator = torch.Generator().manual_seed(split_seed)
+            generator = torch.Generator().manual_seed(global_seed)
             train_indices, test_indices = random_split(range(num_total), [num_train, num_test], generator=generator)
 
             # 동일한 인덱스를 사용하여 각기 다른 transform을 가진 데이터셋의 Subset을 생성
@@ -169,9 +169,10 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
 
         # --- 데이터 샘플링 ---
         sampling_ratios = getattr(run_cfg, 'random_sampling_ratio', None)
-        train_dataset = get_subset(full_train_dataset, 'train', sampling_ratios, run_cfg.random_sampling_seed)
-        valid_dataset = get_subset(full_valid_dataset, 'valid', sampling_ratios, run_cfg.random_sampling_seed)
-        test_dataset = get_subset(full_test_dataset, 'test', sampling_ratios, run_cfg.random_sampling_seed)
+        global_seed = getattr(run_cfg, 'global_seed', 42) # global_seed가 없으면 기본값 42 사용
+        train_dataset = get_subset(full_train_dataset, 'train', sampling_ratios, global_seed)
+        valid_dataset = get_subset(full_valid_dataset, 'valid', sampling_ratios, global_seed)
+        test_dataset = get_subset(full_test_dataset, 'test', sampling_ratios, global_seed)
 
         # --- DataLoader 생성 ---
         # ImageFolder는 (image, label)을 반환하므로, CustomImageDataset과 형식을 맞추기 위해 collate_fn을 사용합니다.

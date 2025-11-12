@@ -1,6 +1,7 @@
 import os
 from tqdm import tqdm
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Subset
@@ -12,6 +13,7 @@ import argparse
 import yaml
 import logging
 from datetime import datetime
+import random
 import time 
 from models import Model as DecoderBackbone, PatchConvEncoder, Classifier, HybridModel
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
@@ -531,10 +533,24 @@ def main():
     run_cfg = SimpleNamespace(**config['run'])
     train_cfg = SimpleNamespace(**config['training_run'])
     model_cfg = SimpleNamespace(**config['model'])
+    # 중첩된 scheduler_params 딕셔너리를 SimpleNamespace로 변환
+    if hasattr(train_cfg, 'scheduler_params') and isinstance(train_cfg.scheduler_params, dict):
+        train_cfg.scheduler_params = SimpleNamespace(**train_cfg.scheduler_params)
+
     # dataset_cfg도 SimpleNamespace로 변환
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
     
     data_dir_name = run_cfg.dataset.name
+
+    # --- 전역 시드 고정 ---
+    global_seed = getattr(run_cfg, 'global_seed', None)
+    if global_seed is not None:
+        random.seed(global_seed)
+        os.environ['PYTHONHASHSEED'] = str(global_seed)
+        np.random.seed(global_seed)
+        torch.manual_seed(global_seed)
+        torch.cuda.manual_seed(global_seed)
+        logging.info(f"전역 랜덤 시드를 {global_seed}로 고정합니다.")
 
     # --- 실행 디렉토리 설정 ---
     if run_cfg.mode == 'train':
@@ -591,8 +607,8 @@ def main():
     decoder_args = SimpleNamespace(**decoder_params)
 
     encoder = PatchConvEncoder(in_channels=model_cfg.in_channels, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, 
-                               featured_patch_dim=model_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
-                               pre_trained=train_cfg.pre_trained)
+                                featured_patch_dim=model_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
+                                pre_trained=train_cfg.pre_trained)
     decoder = DecoderBackbone(args=decoder_args) # models.py의 Model 클래스
     
     classifier = Classifier(num_decoder_patches=model_cfg.num_decoder_patches,
