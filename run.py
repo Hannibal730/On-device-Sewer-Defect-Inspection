@@ -192,14 +192,37 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
         'preds': all_preds
     }
 
-def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names):
+def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
     
     # 모델 저장 경로를 실행별 디렉토리로 설정
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
 
-    criterion = nn.CrossEntropyLoss()
+    loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
+    if loss_function_name == 'bcewithlogitsloss':
+        # BCEWithLogitsLoss는 [B, 1] 형태의 출력을 기대하므로 모델의 마지막 레이어 수정이 필요할 수 있습니다.
+        # 이 코드에서는 num_labels=2를 가정하고, 출력을 [B, 2]에서 [B, 1]로 변환하여 사용합니다.
+        if model.classifier.projection[-1].out_features != 2:
+            logging.warning(f"BCEWithLogitsLoss는 이진 분류(num_labels=2)에 최적화되어 있습니다. 현재 num_labels={model.classifier.projection[-1].out_features}")
+
+        weight_value = getattr(train_cfg, 'bce_pos_weight', None)
+        if weight_value == 'auto':
+            final_pos_weight = pos_weight.to(device) if pos_weight is not None else None
+        else:
+            final_pos_weight = torch.tensor(float(weight_value), dtype=torch.float).to(device) if weight_value is not None else None
+        
+        criterion = nn.BCEWithLogitsLoss(pos_weight=final_pos_weight)
+        logging.info(f"손실 함수: BCEWithLogitsLoss (pos_weight: {final_pos_weight.item() if final_pos_weight is not None else 'None'})")
+    elif loss_function_name == 'crossentropyloss':
+        criterion = nn.CrossEntropyLoss()
+        logging.info("손실 함수: CrossEntropyLoss")
+    else:
+        raise ValueError(f"run.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
+
+    # --- 손실 함수 설정 ---
+
+
     best_f1 = 0.0
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
 
@@ -220,7 +243,12 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             optimizer.zero_grad()
 
             outputs = model(images)
-            loss = criterion(outputs, labels)
+            if loss_function_name == 'bcewithlogitsloss':
+                # BCEWithLogitsLoss는 [B, 1] 형태의 출력을 기대합니다.
+                # outputs: [B, 2] -> [B, 1] (Defect 클래스에 대한 로짓만 사용)
+                loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
+            else: # crossentropyloss
+                loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
             
@@ -540,7 +568,7 @@ def main():
         logging.info("CPU 사용을 시작합니다.")
 
     # --- 데이터 준비 ---
-    train_loader, valid_loader, test_loader, num_labels, class_names = prepare_data(run_cfg, train_cfg, model_cfg)
+    train_loader, valid_loader, test_loader, num_labels, class_names, pos_weight = prepare_data(run_cfg, train_cfg, model_cfg)
 
     # --- 모델 구성 ---
     num_encoder_patches = (model_cfg.img_size // model_cfg.patch_size) ** 2 # 16
@@ -594,7 +622,7 @@ def main():
         logging.info("="*50)
 
         # 훈련 시에는 train_loader와 valid_loader 사용
-        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names)
+        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
 
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")

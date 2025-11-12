@@ -105,7 +105,7 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc, t
         
         # Train Accuracy (빨간색 점선)와 Valid Accuracy (파란색 실선) 플로팅
         if train_epochs:
-            plt.plot(train_epochs, train_accuracies, marker='.', linestyle='--', color='r', label='Train Accuracy')
+            plt.plot(train_epochs, train_accuracies, marker='.', linestyle='-', color='r', label='Train Accuracy')
         plt.plot(val_epochs, val_accuracies, marker='.', linestyle='-', color='b', label='Validation Accuracy')
         
         plt.title(f'Train & Validation Accuracy per Epoch (Final Test Acc: {final_acc:.2f}%)')

@@ -144,11 +144,43 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
         'preds': all_preds
     }
 
-def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names):
+def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
-    criterion = nn.CrossEntropyLoss()
+
+    # --- 손실 함수 설정 ---
+    loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
+    if loss_function_name == 'bcewithlogitsloss':
+        # BCEWithLogitsLoss는 [B, 1] 형태의 출력을 기대하므로 모델의 마지막 레이어 수정이 필요할 수 있습니다.
+        # 이 코드에서는 num_labels=2를 가정하고, 출력을 [B, 2]에서 [B, 1]로 변환하여 사용합니다.
+        
+        # --- 모델 아키텍처에 따라 마지막 분류 레이어를 동적으로 찾기 ---
+        last_layer = None
+        if hasattr(model, 'fc'): # ResNet 계열
+            last_layer = model.fc
+        elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential) and isinstance(model.classifier[-1], nn.Linear): # EfficientNet 계열
+            last_layer = model.classifier[-1]
+        elif hasattr(model, 'head') and hasattr(model.head, 'fc'): # timm의 MobileNetV4 계열
+            last_layer = model.head.fc
+        
+        if last_layer is None:
+            logging.warning("모델의 마지막 분류 레이어를 자동으로 찾을 수 없습니다. BCE 손실 함수 사용 시 num_labels 확인을 건너뜁니다.")
+        elif last_layer.out_features != 2:
+            logging.warning(f"BCE 손실 함수는 이진 분류(num_labels=2)에 최적화되어 있습니다. 현재 num_labels={last_layer.out_features}")
+        
+        weight_value = getattr(train_cfg, 'bce_pos_weight', None)
+        if weight_value == 'auto':
+            final_pos_weight = pos_weight.to(device) if pos_weight is not None else None
+        else:
+            final_pos_weight = torch.tensor(float(weight_value), dtype=torch.float).to(device) if weight_value is not None else None
+        
+        criterion = nn.BCEWithLogitsLoss(pos_weight=final_pos_weight)
+        logging.info(f"손실 함수: BCEWithLogitsLoss (pos_weight: {final_pos_weight.item() if final_pos_weight is not None else 'None'})")
+    else: # 'crossentropyloss' 또는 기본값
+        criterion = nn.CrossEntropyLoss()
+        logging.info("손실 함수: CrossEntropyLoss")
+
     best_f1 = 0.0
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
 
@@ -166,8 +198,16 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         for images, labels, _ in progress_bar:
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             optimizer.zero_grad()
+
             outputs = model(images)
-            loss = criterion(outputs, labels)
+
+            if loss_function_name == 'bcewithlogitsloss':
+                # BCEWithLogitsLoss는 [B, 1] 형태의 출력을 기대합니다.
+                # outputs: [B, 2] -> [B, 1] (Defect 클래스에 대한 로짓만 사용)
+                loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
+            else: # crossentropyloss
+                loss = criterion(outputs, labels)
+
             loss.backward()
             optimizer.step()
             
@@ -368,7 +408,7 @@ def main():
         logging.info("CPU 사용을 시작합니다.")
 
     # --- 데이터 준비 ---
-    train_loader, valid_loader, test_loader, num_labels, class_names = prepare_data(run_cfg, train_cfg, model_cfg)
+    train_loader, valid_loader, test_loader, num_labels, class_names, pos_weight = prepare_data(run_cfg, train_cfg, model_cfg)
 
     # --- Baseline 모델 생성 ---
     model = create_baseline_model(baseline_model_name, num_labels, pretrained=train_cfg.pre_trained).to(device)
@@ -403,7 +443,7 @@ def main():
 
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
-        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names)
+        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
         final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)

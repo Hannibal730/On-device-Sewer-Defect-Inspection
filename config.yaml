@@ -48,6 +48,8 @@ training_run:
   batch_size: 256                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   lr: 0.001                     # 옵티마이저의 학습률.
+  loss_function: 'CrossEntropyLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'
+  bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능.
   # 사용할 학습률 스케줄러를 설정합니다.
   scheduler: 'cosineannealinglr' # 옵션: 'multisteplr', 'cosineannealinglr', 'none'
   scheduler_params:
@@ -64,6 +66,8 @@ training_baseline:
   batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   optimizer: 'sgd'              # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
+  loss_function: 'BCEWithLogitsLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'
+  bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능.
   lr: 0.1                       # 옵티마이저의 학습률.
   momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
   weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.

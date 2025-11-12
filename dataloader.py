@@ -118,7 +118,7 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
             transforms.ToTensor(),
-            normalize
+            normalize,
         ])
         valid_test_transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),
@@ -184,9 +184,47 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
         valid_loader = DataLoader(valid_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False, collate_fn=collate_fn)
         test_loader = DataLoader(test_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False, collate_fn=collate_fn)
         
+        # --- BCE 손실 함수를 위한 pos_weight 계산 ---
+        pos_weight = None # 기본값은 None
+        loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
+
+        if loss_function_name == 'bcewithlogitsloss' and getattr(train_cfg, 'bce_pos_weight', None) == 'auto':
+            logging.info("BCE 손실 함수의 'pos_weight'를 자동 계산합니다.")
+            labels = []
+            # full_train_dataset은 Subset일 수 있으므로 원본 데이터셋에 접근해야 합니다.
+            original_dataset = full_train_dataset.dataset
+            indices = full_train_dataset.indices
+
+            if dataset_cfg.type == 'csv':
+                # CustomImageDataset의 경우, 'Defect' 열이 레이블입니다.
+                labels = original_dataset.img_labels.iloc[indices]['Defect'].values
+            elif dataset_cfg.type == 'image_folder':
+                # ImageFolder의 경우, 클래스 이름을 기반으로 레이블을 결정합니다.
+                # 데이터셋 이름에 따라 'Defect' 또는 'abnormal'을 양성 클래스로 간주합니다.
+                if dataset_cfg.name in ['Sewer-TAP', 'Sewer-TAPNEW']:
+                    positive_class_name = 'abnormal'
+                else: # Sewer-ML 및 기타
+                    positive_class_name = 'Defect'
+                
+                try:
+                    positive_class_idx = original_dataset.class_to_idx[positive_class_name]
+                    all_labels = np.array(original_dataset.targets)
+                    subset_labels = all_labels[indices]
+                    labels = (subset_labels == positive_class_idx).astype(int)
+                except KeyError:
+                    logging.warning(f"'{positive_class_name}' 클래스를 찾을 수 없어 pos_weight 계산을 건너뜁니다. 클래스: {original_dataset.classes}")
+                    labels = []
+            
+            if len(labels) > 0:
+                pos_count = np.sum(labels)
+                neg_count = len(labels) - pos_count
+                if pos_count > 0:
+                    pos_weight = torch.tensor(neg_count / pos_count, dtype=torch.float)
+                    logging.info(f"계산된 pos_weight: {pos_weight.item():.4f} (Negative: {neg_count}, Positive: {pos_count})")
+
         logging.info(f"훈련 데이터: {len(train_dataset)}개, 검증 데이터: {len(valid_dataset)}개, 테스트 데이터: {len(test_dataset)}개")
         
-        return train_loader, valid_loader, test_loader, num_labels, class_names
+        return train_loader, valid_loader, test_loader, num_labels, class_names, pos_weight # pos_weight 반환 추가
         
     except FileNotFoundError as e:
         logging.error(f"데이터 폴더 또는 CSV 파일을 찾을 수 없습니다: {e}. 'config.yaml'의 경로 설정을 확인해주세요.")
