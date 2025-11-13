@@ -163,8 +163,8 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             last_layer = model.fc
         elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential) and isinstance(model.classifier[-1], nn.Linear): # EfficientNet 계열
             last_layer = model.classifier[-1]
-        elif hasattr(model, 'head') and hasattr(model.head, 'fc'): # timm의 MobileNetV4 계열
-            last_layer = model.head.fc
+        elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Linear): # timm으로 생성된 MobileNetV4 계열
+            last_layer = model.classifier
         
         if last_layer is None:
             logging.warning("모델의 마지막 분류 레이어를 자동으로 찾을 수 없습니다. BCE 손실 함수 사용 시 num_labels 확인을 건너뜁니다.")

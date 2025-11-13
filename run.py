@@ -622,13 +622,16 @@ def main():
     if run_cfg.mode == 'train':
         # --- 옵티마이저 및 스케줄러 설정 ---
         optimizer, scheduler = None, None
-        if getattr(train_cfg, 'optimizer', 'adamw').lower() == 'sgd':
+        optimizer_name = getattr(train_cfg, 'optimizer', 'adamw').lower()
+        logging.info("="*50)
+        if optimizer_name == 'sgd':
             # SGD 옵티마이저에 필요한 파라미터들을 train_cfg에서 가져옵니다.
             momentum = getattr(train_cfg, 'momentum', 0.9)
             weight_decay = getattr(train_cfg, 'weight_decay', 0.0001)
             logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={momentum}, weight_decay={weight_decay})")
             optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=momentum, weight_decay=weight_decay)
         else:
+            # 기본값 또는 'adamw'로 설정된 경우
             logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr})")
             optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
 
@@ -637,7 +640,7 @@ def main():
 
         scheduler_name = getattr(train_cfg, 'scheduler', 'none').lower()
         if scheduler_name == 'multisteplr':
-            milestones = getattr(train_cfg, 'milestones', [30, 60, 80])
+            milestones = getattr(train_cfg, 'milestones', [])
             gamma = getattr(train_cfg, 'gamma', 0.1)
             logging.info(f"스케줄러: MultiStepLR (milestones={milestones}, gamma={gamma})")
             scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
@@ -648,8 +651,6 @@ def main():
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
         else:
             logging.info("스케줄러를 사용하지 않습니다.")
-
-        logging.info("="*50)
 
         # 훈련 시에는 train_loader와 valid_loader 사용
         train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
