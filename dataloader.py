@@ -192,9 +192,14 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
         if loss_function_name == 'bcewithlogitsloss' and getattr(train_cfg, 'bce_pos_weight', None) == 'auto':
             logging.info("BCE 손실 함수의 'pos_weight'를 자동 계산합니다.")
             labels = []
-            # full_train_dataset은 Subset일 수 있으므로 원본 데이터셋에 접근해야 합니다.
-            original_dataset = full_train_dataset.dataset
-            indices = full_train_dataset.indices
+            
+            # full_train_dataset이 Subset 객체인지 확인합니다.
+            if isinstance(full_train_dataset, Subset):
+                original_dataset = full_train_dataset.dataset
+                indices = full_train_dataset.indices
+            else: # Subset이 아니라면 (예: CustomImageDataset) 자기 자신을 원본으로 사용합니다.
+                original_dataset = full_train_dataset
+                indices = list(range(len(original_dataset)))
 
             if dataset_cfg.type == 'csv':
                 # CustomImageDataset의 경우, 'Defect' 열이 레이블입니다.

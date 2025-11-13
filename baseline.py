@@ -433,8 +433,8 @@ def main():
             logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={train_cfg.momentum}, weight_decay={train_cfg.weight_decay})")
             optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=train_cfg.momentum, weight_decay=train_cfg.weight_decay)
         else:
-            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={train_cfg.weight_decay})")
-            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=getattr(train_cfg, 'weight_decay', 0.0))
+            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr})")
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
 
         # scheduler_params가 없으면 빈 객체로 초기화
         scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
