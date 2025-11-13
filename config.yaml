@@ -12,8 +12,8 @@ run:
   
   # --- 데이터셋 설정 ---
   dataset:
-    name: 'Sewer-ML' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
-    type: 'csv' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
+    name: 'Sewer-TAPNEW' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
+    type: 'image_folder' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
     train_split_ratio: 0.8 # 'image_folder' 타입일 때 사용할 훈련 데이터 비율 (나머지는 테스트/검증 데이터가 됨)
 
     # 데이터셋 경로 설정
@@ -29,8 +29,8 @@ run:
       # 2. 'image_folder' 타입 데이터셋 경로
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW
-      # img_folder: '/home/cau/workspace/data/Sewer/Sewer-TAPNEW'
-      img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW'
+      img_folder: '/home/cau/workspace/data/Sewer/Sewer-TAPNEW'
+      # img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW'
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
@@ -56,6 +56,21 @@ training_run:
     T_max: 90
     eta_min: 0.000001
   best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
+
+# training_run:
+#   epochs: 90
+#   batch_size: 256
+#   pre_trained: false
+#   optimizer: 'sgd'
+#   loss_function: 'BCEWithLogitsLoss'
+#   bce_pos_weight: 'auto'
+#   lr: 0.1
+#   momentum: 0.9
+#   weight_decay: 0.0001
+#   scheduler: 'multisteplr'
+#   milestones: [30, 60, 80]
+#   gamma: 0.1
+#   best_model_criterion: 'F1_Normal'
 
 # =============================================================================
 # 3. 훈련 하이퍼파라미터 (baseline.py 전용)
@@ -127,7 +142,7 @@ model:
   num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
   attn_pooling: true         # true: 어텐션 풀링으로 동적 쿼리 생성, false: 기존의 고정 쿼리 방식 사용.
   decoder_ff_ratio: 2        # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (decoder_ff_dim = emb_dim * decoder_ff_ratio).
-  dropout: 0.1               # 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).
+  dropout: 0.01               # 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).
   positional_encoding: true  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
   res_attention: false       # 디코더 레이어 간에 어텐션 스코어를 전달하는 잔차 어텐션 사용 여부.
   save_attention: true       # 추론 시 어텐션 맵을 저장할지 여부. True로 설정하면 시각화에 사용할 수 있습니다.
@@ -139,4 +154,4 @@ model:
 baseline:
   # 사용할 baseline 모델의 이름을 지정합니다.
   # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4'
-  model_name: 'resnet18'
+  model_name: 'efficientnet_b0'

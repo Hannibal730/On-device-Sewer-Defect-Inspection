@@ -620,20 +620,34 @@ def main():
     
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
-        optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
-        scheduler = None
+        # --- 옵티마이저 및 스케줄러 설정 ---
+        optimizer, scheduler = None, None
+        if getattr(train_cfg, 'optimizer', 'adamw').lower() == 'sgd':
+            # SGD 옵티마이저에 필요한 파라미터들을 train_cfg에서 가져옵니다.
+            momentum = getattr(train_cfg, 'momentum', 0.9)
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0001)
+            logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={momentum}, weight_decay={weight_decay})")
+            optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=momentum, weight_decay=weight_decay)
+        else:
+            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr})")
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
 
         # scheduler_params가 없으면 빈 객체로 초기화
         scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
 
         scheduler_name = getattr(train_cfg, 'scheduler', 'none').lower()
-        if scheduler_name == 'cosineannealinglr':
+        if scheduler_name == 'multisteplr':
+            milestones = getattr(train_cfg, 'milestones', [30, 60, 80])
+            gamma = getattr(train_cfg, 'gamma', 0.1)
+            logging.info(f"스케줄러: MultiStepLR (milestones={milestones}, gamma={gamma})")
+            scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
+        elif scheduler_name == 'cosineannealinglr':
             T_max = getattr(scheduler_params, 'T_max', train_cfg.epochs)
             eta_min = getattr(scheduler_params, 'eta_min', 0.0)
-            logging.info(f"옵티마이저: AdamW, 스케줄러: CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
+            logging.info(f"스케줄러: CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
         else:
-            logging.info("옵티마이저: AdamW (스케줄러 없음)")
+            logging.info("스케줄러를 사용하지 않습니다.")
 
         logging.info("="*50)
 
