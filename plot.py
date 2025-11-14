@@ -235,7 +235,7 @@ def plot_and_save_f1_normal_graph(log_file_path, save_dir, timestamp, class_name
 
 def plot_and_save_loss_graph(log_file_path, save_dir, timestamp):
     """
-    로그 파일에서 에포크별 [Train] Loss를 추출하여 그래프를 그리고,
+    로그 파일에서 에포크별 [Valid] Loss를 추출하여 그래프를 그리고,
     지정된 디렉토리에 이미지 파일로 저장합니다.
 
     Args:
@@ -249,8 +249,8 @@ def plot_and_save_loss_graph(log_file_path, save_dir, timestamp):
     graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
     os.makedirs(graph_dir, exist_ok=True)
 
-    # [Train] [에포크/총에포크] | Loss: 값 | ... 형식의 로그를 찾습니다.
-    pattern = re.compile(r"\[Train\] \[(\d+)/\d+\] \| Loss: ([\d\.]+)")
+    # [Valid] [에포크/총에포크] | Loss: 값 | ... 형식의 로그를 찾습니다.
+    pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\] \| Loss: ([\d\.]+)")
 
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:
@@ -261,27 +261,27 @@ def plot_and_save_loss_graph(log_file_path, save_dir, timestamp):
                     losses.append(float(match.group(2)))
 
         if not epochs:
-            logging.warning("로그 파일에서 유효한 [Train] Loss 데이터를 찾을 수 없어 Loss 그래프를 생성하지 않습니다.")
+            logging.warning("로그 파일에서 유효한 [Valid] Loss 데이터를 찾을 수 없어 Validation Loss 그래프를 생성하지 않습니다.")
             return
 
         plt.figure(figsize=(12, 8))
-        plt.plot(epochs, losses, marker='.', linestyle='-', color='purple', label='Training Loss')
-        plt.title('Training Loss per Epoch')
+        plt.plot(epochs, losses, marker='.', linestyle='-', color='orange', label='Validation Loss')
+        plt.title('Validation Loss per Epoch')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.grid(True)
         plt.legend()
 
-        png_save_path = os.path.join(graph_dir, 'loss.png')
-        pdf_save_path = os.path.join(graph_dir, 'loss.png'.replace('.png', '.pdf'))
+        png_save_path = os.path.join(graph_dir, 'val_loss.png')
+        pdf_save_path = os.path.join(graph_dir, 'val_loss.pdf')
         plt.tight_layout()
         plt.savefig(png_save_path)
         plt.savefig(pdf_save_path, bbox_inches='tight')
         plt.close()
-        logging.info(f"Loss 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
+        logging.info(f"Validation Loss 그래프 저장 완료: '{png_save_path}' and '{pdf_save_path}'")
 
     except Exception as e:
-        logging.error(f"Loss 그래프 생성 중 오류 발생: {e}")
+        logging.error(f"Validation Loss 그래프 생성 중 오류 발생: {e}")
 
 def plot_and_save_lr_graph(log_file_path, save_dir, timestamp):
     """
@@ -348,7 +348,7 @@ def plot_and_save_compiled_graph(save_dir, timestamp):
     graph_paths = {
         'acc': os.path.join(graph_dir, 'train_val_acc.png'),
         'f1': os.path.join(graph_dir, 'F1_normal.png'),
-        'loss': os.path.join(graph_dir, 'loss.png'),
+        'loss': os.path.join(graph_dir, 'val_loss.png'),
         'lr': os.path.join(graph_dir, 'learning_rate.png')
     }
 
@@ -371,7 +371,7 @@ def plot_and_save_compiled_graph(save_dir, timestamp):
         axes[0, 1].set_title('F1 Score (Normal)', fontsize=18)
 
         axes[1, 0].imshow(plt.imread(graph_paths['loss']))
-        axes[1, 0].set_title('Training Loss', fontsize=18)
+        axes[1, 0].set_title('Validation Loss', fontsize=18)
 
         axes[1, 1].imshow(plt.imread(graph_paths['lr']))
         axes[1, 1].set_title('Learning Rate', fontsize=18)
