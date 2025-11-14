@@ -128,11 +128,12 @@ def log_model_parameters(model):
 # =============================================================================
 # 2. 훈련 및 평가 함수
 # =============================================================================
-def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False):
+def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
     model.eval()
     correct = 0
     total = 0
+    total_loss = 0.0
     all_preds = []
     all_labels = []
     
@@ -143,6 +144,13 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
             images, labels = images.to(device), labels.to(device)
 
             outputs = model(images)
+            
+            if loss_function_name == 'bcewithlogitsloss':
+                loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
+            else: # crossentropyloss
+                loss = criterion(outputs, labels)
+            total_loss += loss.item()
+
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
@@ -151,16 +159,17 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
 
     if total == 0:
         logging.warning("평가 데이터가 없습니다. 평가를 건너뜁니다.")
-        return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': []}
+        return {'accuracy': 0.0, 'f1_macro': 0.0, 'loss': float('inf'), 'labels': [], 'preds': []}
 
     accuracy = 100 * correct / total
+    avg_loss = total_loss / len(data_loader)
     
     if desc.startswith("[Valid]"):
         acc_label = "Val Acc"
-        log_message = f'{desc} | {acc_label}: {accuracy:.2f}%'
+        log_message = f'{desc} | Loss: {avg_loss:.4f} | {acc_label}: {accuracy:.2f}%'
     else:
         acc_label = "Test Acc"
-        log_message = f'{desc} {acc_label}: {accuracy:.2f}%'
+        log_message = f'{desc} Loss: {avg_loss:.4f} | {acc_label}: {accuracy:.2f}%'
     logging.info(log_message)
 
     if log_class_metrics and class_names:
@@ -176,6 +185,7 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
 
     return {
         'accuracy': accuracy,
+        'loss': avg_loss,
         'f1_macro': f1_score(all_labels, all_preds, average='macro', zero_division=0),
         'f1_per_class': f1_per_class if log_class_metrics and class_names else None,
         'labels': all_labels,
@@ -219,8 +229,8 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         criterion = nn.CrossEntropyLoss()
         logging.info("손실 함수: CrossEntropyLoss")
 
-    best_f1 = 0.0
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
+    best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
 
     for epoch in range(train_cfg.epochs):
         logging.info("-" * 50)
@@ -260,25 +270,30 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         train_acc = 100 * correct / total
         logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
         
-        eval_results = evaluate(run_cfg, model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
+        eval_results = evaluate(run_cfg, model, valid_loader, device, criterion, loss_function_name, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
         
         # 에포크 종료 시 Learning Rate 로깅
         current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
         logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
 
-        current_f1 = 0.0
-        if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
-            current_f1 = eval_results['f1_per_class'][0]
-        elif best_model_criterion == 'F1_Defect' and eval_results['f1_per_class'] is not None:
-            current_f1 = eval_results['f1_per_class'][1]
-        else:
-            current_f1 = eval_results['f1_macro']
+        current_metric = 0.0
+        if best_model_criterion == 'val_loss':
+            current_metric = eval_results['loss']
+            is_best = current_metric < best_metric
+        else: # F1 score variants
+            if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
+                current_metric = eval_results['f1_per_class'][0] # Assuming 'Normal' is the first class
+            elif best_model_criterion == 'F1_Defect' and eval_results['f1_per_class'] is not None and len(eval_results['f1_per_class']) > 1:
+                current_metric = eval_results['f1_per_class'][1] # Assuming 'Defect' is the second class
+            else: # 'F1_average' or default
+                current_metric = eval_results['f1_macro']
+            is_best = current_metric > best_metric
         
-        if current_f1 > best_f1:
-            best_f1 = current_f1
+        if is_best:
+            best_metric = current_metric
             torch.save(model.state_dict(), model_path)
             criterion_name = best_model_criterion.replace('_', ' ')
-            logging.info(f"[Best Model Saved] ({criterion_name}: {best_f1:.4f}) -> '{model_path}'")
+            logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
         
         if scheduler:
             scheduler.step()
@@ -392,7 +407,14 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         logging.info(f"추론 결과가 '{result_csv_path}'에 저장되었습니다.")
         final_acc = None
     else:
-        eval_results = evaluate(run_cfg, model, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+        # 추론 시에는 간단한 손실 함수를 임시로 생성하여 전달합니다.
+        loss_function_name = getattr(SimpleNamespace(**yaml.safe_load(open('config.yaml', 'r', encoding='utf-8'))['training_baseline']), 'loss_function', 'CrossEntropyLoss').lower()
+        if loss_function_name == 'bcewithlogitsloss':
+            criterion = nn.BCEWithLogitsLoss()
+        else:
+            criterion = nn.CrossEntropyLoss()
+
+        eval_results = evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
         final_acc = eval_results['accuracy']
 
         if eval_results['labels'] and eval_results['preds']:

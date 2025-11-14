@@ -57,7 +57,7 @@ training_run:
     # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
     T_max: 90
     eta_min: 0.000001
-  best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
+  best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 # training_run:
 #   epochs: 90
@@ -72,7 +72,7 @@ training_run:
 #   scheduler: 'multisteplr'
 #   milestones: [30, 60, 80]
 #   gamma: 0.1
-#   best_model_criterion: 'F1_Normal'
+#   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 # =============================================================================
 # 3. 훈련 하이퍼파라미터 (baseline.py 전용)
@@ -91,7 +91,7 @@ training_run:
 #     # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
 #     T_max: 90
 #     eta_min: 0.000001
-#   best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
+#   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 training_baseline:
   epochs: 90                    # 훈련할 총 에포크 수.
@@ -110,7 +110,7 @@ training_baseline:
     # eta_min: 0.000001
   milestones: [30, 60, 80]      # MultiStepLR 스케줄러에서 학습률을 감소시킬 에포크 지점.
   gamma: 0.1                    # MultiStepLR 스케줄러에서 학습률에 곱할 값.
-  best_model_criterion: 'F1_Normal'  # 최고 모델 저장 기준. 옵션: 'F1_average', 'F1_Normal', 'F1_Defect'.
+  best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 
 # =============================================================================
@@ -145,7 +145,7 @@ model:
   decoder_ff_ratio: 2        # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (decoder_ff_dim = emb_dim * decoder_ff_ratio).
   dropout: 0.1               # 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).
   positional_encoding: true  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
-  res_attention: false       # 디코더 레이어 간에 어텐션 스코어를 전달하는 잔차 어텐션 사용 여부.
+  res_attention: true       # 디코더 레이어 간에 어텐션 스코어를 전달하는 잔차 어텐션 사용 여부.
   save_attention: true       # 추론 시 어텐션 맵을 저장할지 여부. True로 설정하면 시각화에 사용할 수 있습니다.
   num_plot_attention: 1     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
 
@@ -155,4 +155,4 @@ model:
 baseline:
   # 사용할 baseline 모델의 이름을 지정합니다.
   # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4', 'xie2019'
-  model_name: 'mobilenet_v4'
+  model_name: 'xie2019'

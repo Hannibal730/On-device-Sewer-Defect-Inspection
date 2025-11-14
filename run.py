@@ -129,12 +129,13 @@ def log_model_parameters(model):
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
     logging.info("="*50)
 
-def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names=None, log_class_metrics=False):
+def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
     model.eval()
 
     correct = 0
     total = 0
+    total_loss = 0.0
     all_preds = []
     all_labels = []
     
@@ -146,6 +147,12 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
 
             outputs = model(images) # [B, num_labels]
 
+            if loss_function_name == 'bcewithlogitsloss':
+                loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
+            else: # crossentropyloss
+                loss = criterion(outputs, labels)
+            total_loss += loss.item()
+
             _, predicted = torch.max(outputs.data, 1)
 
             total += labels.size(0)
@@ -154,22 +161,21 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
-    accuracy = 100 * correct / total
-    precision = precision_score(all_labels, all_preds, average='macro', zero_division=0)
-    recall = recall_score(all_labels, all_preds, average='macro', zero_division=0)
-    f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
-
     if total == 0:
         logging.warning("테스트 데이터가 없습니다. 평가를 건너뜁니다.")
-        return {'accuracy': 0.0, 'f1': 0.0, 'labels': [], 'preds': []}
+        return {'accuracy': 0.0, 'f1_macro': 0.0, 'loss': float('inf'), 'labels': [], 'preds': []}
+
+    accuracy = 100 * correct / total
+    avg_loss = total_loss / len(data_loader)
+    f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
 
     # desc 내용에 따라 Accuracy 라벨을 동적으로 변경
     if desc.startswith("[Valid]"):
         acc_label = "Val Acc"
-        log_message = f'{desc} | {acc_label}: {accuracy:.2f}%'
+        log_message = f'{desc} | Loss: {avg_loss:.4f} | {acc_label}: {accuracy:.2f}%'
     else: # [Test] 또는 [Inference]의 경우
         acc_label = "Test Acc"
-        log_message = f'{desc} {acc_label}: {accuracy:.2f}%'
+        log_message = f'{desc} Loss: {avg_loss:.4f} | {acc_label}: {accuracy:.2f}%'
     logging.info(log_message)
 
     # 클래스별 상세 지표 로깅
@@ -188,6 +194,7 @@ def evaluate(run_cfg, model, data_loader, device, desc="Evaluating", class_names
 
     return {
         'accuracy': accuracy,
+        'loss': avg_loss,
         'f1_macro': f1, # 평균 F1 점수
         'f1_per_class': f1_per_class if log_class_metrics and class_names else None, # 클래스별 F1 점수
         'labels': all_labels,
@@ -225,8 +232,8 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
     # --- 손실 함수 설정 ---
 
 
-    best_f1 = 0.0
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
+    best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
 
     for epoch in range(train_cfg.epochs):
         # 에포크 시작 시 구분을 위한 라인 추가
@@ -268,42 +275,43 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         
         # --- 평가 단계 ---
         # 클래스별 F1 점수를 계산하고 로깅하도록 옵션 전달
-        eval_results = evaluate(run_cfg, model, valid_loader, device, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
+        eval_results = evaluate(run_cfg, model, valid_loader, device, criterion, loss_function_name, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
         
         # 에포크 종료 시 Learning Rate 로깅
         current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
         logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
 
         # --- 최고 성능 모델 저장 기준 선택 ---
-        current_f1 = 0.0
-        if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
-            try:
-                normal_idx = [i for i, name in enumerate(class_names) if name.lower() == 'normal'][0]
-                current_f1 = eval_results['f1_per_class'][normal_idx]
-            except IndexError:
-                logging.warning("best_model_criterion이 'F1_Normal'로 설정되었으나, 'normal' 클래스를 찾을 수 없습니다. 대신 F1_macro를 사용합니다.")
-                current_f1 = eval_results['f1_macro']
-        elif best_model_criterion == 'F1_Defect' and eval_results['f1_per_class'] is not None:
-            try:
-                # 'normal'이 아닌 다른 클래스를 'defect'로 간주합니다.
-                # 이 로직은 이진 분류(normal vs. one defect class)에 적합합니다.
-                defect_idx = [i for i, name in enumerate(class_names) if name.lower() != 'normal'][0]
-                current_f1 = eval_results['f1_per_class'][defect_idx]
-            except IndexError:
-                logging.warning("best_model_criterion이 'F1_Defect'로 설정되었으나, 'defect' 또는 'abnormal' 클래스를 찾을 수 없습니다. 대신 F1_macro를 사용합니다.")
-                current_f1 = eval_results['f1_macro']
-        elif eval_results['f1_per_class'] is not None: # 'F1_average' 또는 그 외
-            current_f1 = eval_results['f1_macro']
-        else: # Fallback if f1_per_class is None
-            current_f1 = eval_results['f1_macro']
+        current_metric = 0.0
+        if best_model_criterion == 'val_loss':
+            current_metric = eval_results['loss']
+            is_best = current_metric < best_metric
+        else: # F1 score variants
+            if best_model_criterion == 'F1_Normal' and eval_results['f1_per_class'] is not None:
+                try:
+                    normal_idx = class_names.index('Normal')
+                    current_metric = eval_results['f1_per_class'][normal_idx]
+                except (ValueError, IndexError):
+                    logging.warning("best_model_criterion이 'F1_Normal'로 설정되었으나, 'Normal' 클래스를 찾을 수 없습니다. 대신 F1_macro를 사용합니다.")
+                    current_metric = eval_results['f1_macro']
+            elif best_model_criterion == 'F1_Defect' and eval_results['f1_per_class'] is not None:
+                try:
+                    defect_idx = class_names.index('Defect')
+                    current_metric = eval_results['f1_per_class'][defect_idx]
+                except (ValueError, IndexError):
+                    logging.warning("best_model_criterion이 'F1_Defect'로 설정되었으나, 'Defect' 클래스를 찾을 수 없습니다. 대신 F1_macro를 사용합니다.")
+                    current_metric = eval_results['f1_macro']
+            else: # 'F1_average' or default
+                current_metric = eval_results['f1_macro']
+            is_best = current_metric > best_metric
         
         # 최고 성능 모델 저장
-        if current_f1 > best_f1:
-            best_f1 = current_f1
+        if is_best:
+            best_metric = current_metric
             torch.save(model.state_dict(), model_path)
             # 어떤 기준으로 저장되었는지 명확히 로그에 남깁니다.
             criterion_name = best_model_criterion.replace('_', ' ')
-            logging.info(f"[Best Model Saved] ({criterion_name}: {best_f1:.4f}) -> '{model_path}'")
+            logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
         
         # 스케줄러가 설정된 경우에만 step()을 호출
         if scheduler:
@@ -465,7 +473,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
     else:
         # 평가 모드: 기존 evaluate 함수 호출
-        eval_results = evaluate(run_cfg, model, data_loader, device, desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
+        eval_results = evaluate(run_cfg, model, data_loader, device, nn.CrossEntropyLoss(), 'crossentropyloss', desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
         final_acc = eval_results['accuracy']
 
         # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
