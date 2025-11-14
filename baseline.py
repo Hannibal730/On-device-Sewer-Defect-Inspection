@@ -57,6 +57,39 @@ def setup_logging(run_cfg, data_dir_name, baseline_model_name):
     logging.info(f"로그 파일이 '{log_filename}'에 저장됩니다.")
     return run_dir_path, timestamp
 
+class Xie2019(nn.Module):
+    def __init__(self, num_classes, dropout_rate = 0.6):
+        super(Xie2019, self).__init__()
+        self.dropout_rate = dropout_rate
+
+        self.features = nn.Sequential(
+            nn.Conv2d(3,64, 11, padding = 5, stride = 1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2,2),
+            nn.Conv2d(64, 128, 3, padding = 1, stride = 2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2,2),
+            nn.Conv2d(128, 128, 3, padding = 1, stride = 2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2,2)
+        )
+        self.avgpool = nn.AdaptiveAvgPool2d((8, 8))
+        self.classifier = nn.Sequential(
+            nn.Linear(128*8*8, 1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(1024, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(512, num_classes))
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
 def create_baseline_model(model_name, num_labels, pretrained):
     """지정된 이름의 torchvision 모델을 생성하고 마지막 레이어를 수정합니다."""
     logging.info(f"Baseline 모델 '{model_name}'을(를) 생성합니다 (사전 훈련 가중치: {'사용' if pretrained else '미사용'}).")
@@ -74,6 +107,9 @@ def create_baseline_model(model_name, num_labels, pretrained):
         # 'mobilenetv4_conv_small'은 가벼운 버전 중 하나입니다.
         # timm.create_model은 num_classes 인자를 통해 자동으로 마지막 분류 레이어를 교체해줍니다.
         model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, num_classes=num_labels)
+    elif model_name == 'xie2019':
+        # Xie2019 모델은 사전 훈련된 가중치를 지원하지 않습니다.
+        model = Xie2019(num_classes=num_labels)
     else:
         raise ValueError(f"지원하지 않는 baseline 모델 이름입니다: {model_name}")
         

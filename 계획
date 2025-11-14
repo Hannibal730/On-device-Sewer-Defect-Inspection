@@ -562,3 +562,6 @@ run_mobilenet_v4_20251108_163343_62
 63차: 51차를 재실험. 하이브리드모델, sewer-ml
 log/Sewer-ML/run_20251109_162437_63
 
+defect value 0: 552820 (negative, label 0)
+defect value 1: 487309 (positive, label 1)
+positive/defect=1.134434209095256
