@@ -27,7 +27,7 @@ def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timesta
 
     # 정규 표현식을 사용하여 로그 라인에서 에포크와 정확도 추출
     # 예: [Valid] [1/30] | Val Acc: 85.00% ...
-    pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\] \| Val Acc: ([\d\.]+)%")
+    pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\] \|.*?Val Acc: ([\d\.]+)%")
 
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:
@@ -83,7 +83,7 @@ def plot_and_save_train_val_accuracy_graph(log_file_path, save_dir, final_acc, t
 
     # Train 및 Valid 정확도 추출을 위한 정규 표현식
     train_pattern = re.compile(r"\[Train\] \[(\d+)/\d+\] \| .* Train Acc: ([\d\.]+)%")
-    val_pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\] \| Val Acc: ([\d\.]+)%")
+    val_pattern = re.compile(r"\[Valid\] \[(\d+)/\d+\] \|.*?Val Acc: ([\d\.]+)%")
 
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:

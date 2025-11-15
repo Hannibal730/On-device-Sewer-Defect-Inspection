@@ -104,7 +104,7 @@ training_baseline:
   momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
   weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
   scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'cosineannealinglr', 'none'
-  scheduler_params:
+  # scheduler_params:
     # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
     # T_max: 90
     # eta_min: 0.000001
