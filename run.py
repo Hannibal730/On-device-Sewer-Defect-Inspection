@@ -147,13 +147,10 @@ def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name,
 
             outputs = model(images) # [B, num_labels]
 
-            if loss_function_name == 'crossentropyloss':
+            if loss_function_name == 'bcewithlogitsloss':
+                loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
+            else: # crossentropyloss
                 loss = criterion(outputs, labels)
-            elif loss_function_name == 'bcewithlogitsloss':
-                # 레이블을 one-hot 벡터로 변환 (num_classes는 outputs.shape[1]로 추정)
-                num_classes = outputs.shape[1]
-                labels_one_hot = torch.nn.functional.one_hot(labels, num_classes=num_classes).float()
-                loss = criterion(outputs, labels_one_hot)
             total_loss += loss.item()
 
             _, predicted = torch.max(outputs.data, 1)
@@ -255,14 +252,12 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             optimizer.zero_grad()
 
             outputs = model(images)
-            if loss_function_name == 'crossentropyloss':
+            if loss_function_name == 'bcewithlogitsloss':
+                # BCEWithLogitsLoss는 [B, 1] 형태의 출력을 기대합니다.
+                # outputs: [B, 2] -> [B, 1] (Defect 클래스에 대한 로짓만 사용)
+                loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
+            else: # crossentropyloss
                 loss = criterion(outputs, labels)
-            elif loss_function_name == 'bcewithlogitsloss':
-                # 레이블을 one-hot 벡터로 변환 (num_classes는 outputs.shape[1]로 추정)
-                num_classes = outputs.shape[1]
-                labels_one_hot = torch.nn.functional.one_hot(labels, num_classes=num_classes).float()
-                loss = criterion(outputs, labels_one_hot)
-
             loss.backward()
             optimizer.step()
             
@@ -624,9 +619,8 @@ def main():
                                 pre_trained=train_cfg.pre_trained)
     decoder = DecoderBackbone(args=decoder_args) # models.py의 Model 클래스
     
-    classifier = Classifier(featured_patch_dim=model_cfg.featured_patch_dim,
-                            dropout=model_cfg.dropout,
-                            num_labels=num_labels) # kwargs로 num_labels 전달
+    classifier = Classifier(num_decoder_patches=model_cfg.num_decoder_patches,
+                            featured_patch_dim=model_cfg.featured_patch_dim, num_labels=num_labels, dropout=model_cfg.dropout)
     model = HybridModel(encoder, decoder, classifier).to(device)
 
     # 모델 생성 후 파라미터 수 로깅

@@ -140,7 +140,7 @@ model:
   emb_dim: 24                # 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원.
   num_heads: 2               # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `num_heads`로 나누어 떨어져야 합니다.
   num_decoder_layers: 2      # 모델 내부의 디코더 레이어 수.
-  num_decoder_patches: 2     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다. (num_labels와 동일하게 설정)
+  num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다. (num_labels와 동일하게 설정)
   attn_pooling: true         # true: 어텐션 풀링으로 동적 쿼리 생성, false: 기존의 고정 쿼리 방식 사용.
   decoder_ff_ratio: 2        # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (decoder_ff_dim = emb_dim * decoder_ff_ratio).
   dropout: 0.1               # 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).

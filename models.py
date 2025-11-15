@@ -227,13 +227,19 @@ class Projection4Classifier(nn.Module):
         # `nn.Module`의 생성자를 호출합니다.
         self.linear = nn.Linear(emb_dim, featured_patch_dim)
         # 트랜스포머의 은닉 상태 차원(`emb_dim`)을 `featured_patch_dim`으로 변환하는 선형 레이어를 정의합니다.
+        self.flatten = nn.Flatten(start_dim=-2)
+        # 디코더 패치들을 하나의 벡터로 펼치기 위한 Flatten 레이어를 정의합니다.
 
     def forward(self, x):
         # 입력 x의 형태: [B, num_decoder_patches, emb_dim]
         x = self.linear(x)
         # 입력 `x`를 선형 레이어에 통과시켜 차원을 변환합니다.
         # 결과: [B, num_decoder_patches, featured_patch_dim]
-        return x # [B, num_decoder_patches, featured_patch_dim] 형태의 3D 텐서를 반환합니다.
+        
+        # flatten을 적용하여 마지막 두 차원을 하나로 합칩니다.
+        # [B, num_decoder_patches, D] -> [B, num_decoder_patches * D]
+        x = self.flatten(x)
+        return x # [B, num_decoder_patches * featured_patch_dim] 형태의 2D 텐서를 반환합니다.
             
 # 여러 개의 디코더 레이어로 구성된 트랜스포머 디코더 클래스입니다.
 class Decoder(nn.Module):
@@ -462,27 +468,21 @@ class Model(nn.Module):
 # =============================================================================
 class Classifier(nn.Module):
     """디코더 백본의 출력을 받아 최종 클래스 로짓으로 매핑하는 분류기입니다."""
-    def __init__(self, featured_patch_dim, dropout, **kwargs):
+    def __init__(self, num_decoder_patches, featured_patch_dim, num_labels, dropout):
         super().__init__()
-        input_dim = featured_patch_dim
-        # 각 패치 벡터를 입력받아 단일 로짓을 출력하는 MLP
-        # 예: input_dim=24, hidden_dim=16
-        hidden_dim = (input_dim + 1) // 2 
+        input_dim = num_decoder_patches * featured_patch_dim # 48
+        hidden_dim = (input_dim + num_labels) // 2 # 중간 은닉층 차원 (예: (48+2)//2 = 25)
 
         self.projection = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, 1) # 각 패치당 하나의 로짓 출력
+            nn.Linear(hidden_dim, num_labels)
         )
 
     def forward(self, x):
-        # 입력 x의 형태: [B, num_decoder_patches, featured_patch_dim]
-        # 각 패치 벡터에 대해 독립적으로 MLP를 적용합니다.
-        x = self.projection(x) # -> [B, num_decoder_patches, 1]
-        # 마지막 차원을 제거하여 [B, num_decoder_patches] 형태로 만듭니다.
-        # 이 결과는 각 클래스에 대한 로짓 벡터가 됩니다.
-        x = x.squeeze(-1) # -> [B, num_decoder_patches]
+        # x shape: [B, num_decoder_patches * featured_patch_dim]
+        x = self.projection(x) # -> [B, num_labels]
         return x
 
 class HybridModel(torch.nn.Module):
