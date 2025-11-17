@@ -4,32 +4,6 @@
 최근 도시 인프라의 노후화로 인해 하수관의 주기적 점검 및 유지보수의 중요성이 급격히 증가하고 있다. 기존의 하수관 점검 시스템은 고성능 서버나 클라우드 환경에서 작동하도록 설계되어, 현장 실시간 분석 및 자동화 점검에 제약이 존재한다. 본 연구에서는 이러한 한계를 극복하기 위해 엣지 디바이스(On-Device) 상에서 효율적으로 동작하는 Cross-Attention Sharing 기반 경량화 모델을 제안한다. 제안 모델은 다중 시각 특징 맵 간의 Cross-Attention 정보를 공유함으로써, 하수관 내 결함의 특징 표현을 강화하면서도 연산량과 메모리 사용량을 크게 줄인다. 또한, Sewer-ML 및 자체 구축 하수관 영상 데이터셋을 활용하여 모델의 성능을 검증한 결과, 기존의 CNN 및 Transformer 기반 경량 모델 대비 25% 이상의 파라미터 절감과 함께 동등 이상의 탐지 정확도를 달성하였다. 본 연구는 하수관 점검 로봇 및 스마트 시티 인프라 관리 시스템에 적용 가능한 실시간, 저전력 하수관 결함 탐지 기술로서의 활용 가능성을 제시한다.
 
 
-초록 (Abstract)
-
-도시 기반 시설의 노후화로 인해 하수관의 정기적인 점검 및 유지보수의 중요성이 커지고 있습니다. Due to the aging of urban infrastructure, the importance of regular inspection and maintenance of sewer pipes is increasing.
-
-기존 딥러닝 기반 결함 탐지 시스템은 고성능 서버나 클라우드 환경에 의존적이어서, 하수관 점검 로봇과 같은 엣지 디바이스에서의 실시간 처리 및 자동화 점검에 제약이 있습니다. Existing deep learning-based defect detection systems are dependent on high-performance servers or cloud environments, which limits real-time processing and automated inspection on edge devices such as sewer inspection robots.
-
-본 연구에서는 이러한 한계를 해결하고자 **LC-Transformer(Low-Cost Transformer)**를 제안합니다. In this paper, we propose the LC-Transformer (Low-Cost Transformer) to address these limitations.
-
-이는 On-device 하수관 결함 진단을 위해 특별히 설계된 새로운 경량 하이브리드 아키텍처입니다. It is a novel lightweight hybrid architecture specially designed for On-device sewer defect diagnosis.
-
-제안 모델은 파라미터 효율성을 극대화하기 위해 인코더 단계에서 경량 CNN 가중치를 입력 이미지의 패치마다 공유합니다. To maximize parameter efficiency, the proposed model shares lightweight CNN weights across input image's patches in the encoder stage.
-
-그리고 디코더 단계에서는 계산 비용을 크게 줄이기 위해 크로스-어텐션(cross-attention) 방식을 사용합니다. And in the decoder stage, it uses a cross-attention method to significantly reduce computational costs.
-
-또한 디코더의 성능을 높이기 위해서 소수의 학습 가능한 쿼리로부터 이미지 특징에 적응적인 '동적 쿼리(dynamic query)'를 생성하는 어텐션 풀링(attention pooling) 방식을 도입했습니다. Furthermore, to enhance the decoder's performance, we introduced an attention pooling method that generates 'dynamic queries' adaptive to image features from a small number of learnable queries.
-
-하수도 데이터셋을 이용한 실험 결과, 제안 모델은 기존 하수도 전용 모델과 경량 모델들보다 현저히 적은 파라미터와 연산비용으로도 동등하거나 더 우수한 진단 성능을 달성했습니다. Experimental results on the sewer dataset show that the proposed model achieves equivalent or superior diagnostic performance with significantly fewer parameters and computational cost than existing sewer-specific and lightweight models.
-
-본 연구는 하수관 점검 로봇 및 스마트 시티 인프라 관리 시스템과 같은 On-device에 적용 가능한 실시간, 저전력 하수관 결함 탐지 기술로써의 활용 가능성을 제시합니다. This study presents the potential of our work as a real-time, low-power sewer defect detection technology applicable to On-device systems, such as sewer inspection robots and smart city infrastructure management systems.
-
-
-----시작
-
-Urban sewer infrastructure is aging, making routine inspection and maintenance increasingly critical. However, existing deep learning–based defect detectors typically depend on high-end servers or cloud back ends, limiting real-time, automated operation on edge platforms such as sewer-inspection robots. We introduce LC-Transformer (Low-Cost Transformer), a lightweight hybrid architecture for on-device sewer defect diagnosis. In the encoder, a compact CNN shares its weights across image patches, maximizing parameter efficiency; in the decoder, a cross-attention mechanism substantially reduces computation. To further enhance decoding, we employ attention pooling to derive dynamic queries—adapted to the input features—from a small set of learnable seed queries. On a sewer-inspection dataset, LC-Transformer matches or surpasses specialized sewer models and prior lightweight baselines while using significantly fewer parameters and compute. These results highlight LC-Transformer’s potential as a real-time, low-power solution deployable on inspection robots and smart-city infrastructure management systems.
-
-----끝
 
 
 
@@ -66,39 +40,11 @@ LC-Transformer는 CNN의 효율적인 지역 특징 추출 능력과 트랜스�
 저희는 공개 데이터셋 Sewer-ML과 자체 구축 하수관 영상 데이터셋에 대한 실험을 통해, 제안 모델이 기존 경량 모델들 대비 분류 성능은 유지하거나 능가하면서도 파라미터 수, 연산량(FLOPs), 추론 시간, 메모리 사용량 등 온디바이스 환경의 핵심 지표에서 효율성을 보임을 입증했습니다.
 Through experiments on the public Sewer-ML dataset and our self-constructed sewer video dataset, we have demonstrated that our proposed model shows efficiency in key on-device metrics such as the number of parameters, FLOPs, inference time, and memory usage, while maintaining or surpassing the classification performance of existing lightweight models.
 
-본 논문의 나머지 부분은 다음과 같이 구성됩니다.
-The remainder of this paper is organized as follows.
-2장에서는 관련 연구를 소개하고, 3장에서는 제안하는 LC-Transformer의 구조를 상세히 설명합니다.
-Section 2 introduces related work, and Section 3 details the proposed LC-Transformer architecture.
-4장에서는 실험 설정 및 결과를 분석하며, 마지막 5장에서 결론을 맺습니다.
-Section 4 analyzes the experimental setup and results, and finally, Section 5 concludes the paper.
-
-
----- 시작
-
-Introduction
-
-Urban sewer networks are critical infrastructure for public sanitation and environmental protection. However, many systems are aging rapidly, leading to defects such as cracks, intrusions, and collapses that can trigger road sinkholes and environmental pollution. Periodic internal inspections with CCTV robots are therefore essential, yet manual review of large video corpora is time-consuming, costly, and susceptible to inconsistency due to subjective judgments.
-
-Deep learning–based automated defect detection has gained traction as a remedy. Early studies centered on high-capacity CNNs (e.g., VGG, ResNet) to maximize detection accuracy, but their heavy computational and memory demands make them reliant on high-end GPU servers or cloud resources, hindering deployment on edge devices such as fielded sewer-inspection robots.
-
-We introduce LC-Transformer (Low-Cost Transformer), a lightweight hybrid architecture tailored for resource-constrained edge environments that combines the local feature efficiency of CNNs with the information-sharing benefits of Transformer-style attention. The design is built on two key ideas:
-
-1. Parameter-efficient hybrid encoder–decoder. Images are partitioned into patches that share a single lightweight CNN patch-encoder, substantially reducing the parameter count. To further improve parameter and compute efficiency, the decoder omits self-attention and uses only cross-attention to aggregate patch features and produce the final prediction.
-
-2. Dynamic query generation via attention pooling. Instead of fixed queries, a small set of learnable latent queries is adapted to each input through attention pooling, yielding input-conditioned dynamic queries. This focuses computation on the most informative content in each image while introducing no additional parameters beyond the latent queries, thereby lowering decoder complexity.
-
-Experiments on the public Sewer-ML dataset and a private sewer-video dataset demonstrate that LC-Transformer matches or surpasses the classification performance of existing lightweight models while delivering superior on-device metrics, including fewer parameters, lower FLOPs, faster inference, and reduced memory usage.
-
-The remainder of the paper is organized as follows. Section 2 reviews related work. Section 3 details the LC-Transformer architecture. Section 4 presents the experimental setup and results. Section 5 concludes.
-
-
------ 끝
 
 
 
 
-2. 관련 연구 (Related Work)
+1. 관련 연구 (Related Work)
 2.1. 하수관 결함 탐지를 위한 모델
 2.2. 경량 CNN 모델
 2.3. 경량 트랜스포머 모델
