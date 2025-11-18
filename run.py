@@ -595,7 +595,10 @@ def main():
     train_loader, valid_loader, test_loader, num_labels, class_names, pos_weight = prepare_data(run_cfg, train_cfg, model_cfg)
 
     # --- 모델 구성 ---
-    num_encoder_patches = (model_cfg.img_size // model_cfg.patch_size) ** 2 # 16
+    # stride를 고려하여 인코더 패치 수 계산
+    num_patches_per_dim = (model_cfg.img_size - model_cfg.patch_size) // model_cfg.stride + 1
+    num_encoder_patches = num_patches_per_dim ** 2
+    logging.info(f"이미지 크기: {model_cfg.img_size}, 패치 크기: {model_cfg.patch_size}, Stride: {model_cfg.stride} -> 인코더 패치 수: {num_encoder_patches}개")
     
     decoder_params = {
         'num_encoder_patches': num_encoder_patches,
@@ -614,7 +617,7 @@ def main():
     }
     decoder_args = SimpleNamespace(**decoder_params)
 
-    encoder = PatchConvEncoder(in_channels=model_cfg.in_channels, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, 
+    encoder = PatchConvEncoder(in_channels=model_cfg.in_channels, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, stride=model_cfg.stride,
                                 featured_patch_dim=model_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
                                 pre_trained=train_cfg.pre_trained)
     decoder = DecoderBackbone(args=decoder_args) # models.py의 Model 클래스

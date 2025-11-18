@@ -92,12 +92,16 @@ class CnnFeatureExtractor(nn.Module):
 
 class PatchConvEncoder(nn.Module):
     """이미지를 패치로 나누고, 각 패치에서 특징을 추출하여 1D 시퀀스로 변환하는 인코더입니다."""
-    def __init__(self, in_channels, img_size, patch_size, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True):
+    def __init__(self, in_channels, img_size, patch_size, stride, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True):
         super(PatchConvEncoder, self).__init__()
         self.patch_size = patch_size
+        self.stride = stride
         self.featured_patch_dim = featured_patch_dim
-        self.num_encoder_patches = (img_size // patch_size) ** 2
-        
+
+        # stride를 고려한 패치 수 계산
+        num_patches_per_dim = (img_size - self.patch_size) // self.stride + 1
+        self.num_encoder_patches = num_patches_per_dim ** 2
+
         self.shared_conv = nn.Sequential(
             CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=pre_trained, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
             nn.AdaptiveAvgPool2d((1, 1)),
@@ -107,7 +111,7 @@ class PatchConvEncoder(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        patches = x.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size)
+        patches = x.unfold(2, self.patch_size, self.stride).unfold(3, self.patch_size, self.stride)
         # .contiguous()를 추가하여 메모리 연속성을 보장한 후 reshape 수행
         patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous().view(-1, C, self.patch_size, self.patch_size)
         # patches.shape: [B * num_patches, C, patch_size, patch_size]
