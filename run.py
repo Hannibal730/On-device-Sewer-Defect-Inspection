@@ -252,8 +252,9 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         criterion = nn.BCEWithLogitsLoss(pos_weight=final_pos_weight)
         logging.info(f"손실 함수: BCEWithLogitsLoss (pos_weight: {final_pos_weight.item() if final_pos_weight is not None else 'None'})")
     elif loss_function_name == 'crossentropyloss':
-        criterion = nn.CrossEntropyLoss()
-        logging.info("손실 함수: CrossEntropyLoss")
+        label_smoothing = getattr(train_cfg, 'label_smoothing', 0.0)
+        criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+        logging.info(f"손실 함수: CrossEntropyLoss (label_smoothing: {label_smoothing})")
     elif loss_function_name == 'focalloss':
         alpha = getattr(train_cfg, 'focal_loss_alpha', 0.25)
         gamma = getattr(train_cfg, 'focal_loss_gamma', 2.0)

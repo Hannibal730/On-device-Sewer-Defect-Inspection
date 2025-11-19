@@ -50,9 +50,10 @@ training_run:
   lr: 0.001                     # 옵티마이저의 학습률.
   weight_decay: 0.0001             # AdamW 옵티마이저의 가중치 감쇠(Weight Decay) 값.
   loss_function: 'CrossEntropyLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss', 'FocalLoss'
+  label_smoothing: 0.1            # 레이블 스무딩(Label Smoothing) 값. 0.0은 비활성화. (과적합 방지, 모델 일반화 성능 향상)
   # --- 학습률 Warmup 설정 ---
   warmup:
-    enabled: true               # true: Warmup 사용, false: 사용 안 함
+    enabled: false               # true: Warmup 사용, false: 사용 안 함
     epochs: 5                   # Warmup을 진행할 에포크 수
     start_lr: 0.00001           # Warmup 시작 시의 학습률 (선형증가)
 
@@ -166,11 +167,11 @@ model:
     # - 'mobilenet_v4_feat4': MobileNetV4-Conv-Small의 features[3]까지 사용. 96
     # - 'mobilenet_v4_feat5': MobileNetV4-Conv-Small의 features[4]까지 사용. 160
 
-    name: 'efficientnet_b0_feat2'    
+    name: 'efficientnet_b0_feat3'    
 
   # --- 디코더 및 임베딩 설정 ---
-  featured_patch_dim: 24     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원.
-  emb_dim: 24                # 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원.
+  featured_patch_dim: 40     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원.
+  emb_dim: 40                # 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원.
   num_heads: 2               # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `num_heads`로 나누어 떨어져야 합니다.
   num_decoder_layers: 2      # 모델 내부의 디코더 레이어 수.
   num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
