@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import timm
 from torch import Tensor
 from torchvision import models
 
@@ -54,6 +55,29 @@ class CnnFeatureExtractor(nn.Module):
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:4] # features의 4번째 블록까지
             base_out_channels = 40
+
+        # --- MobileNetV4 (timm) ---
+        elif cnn_feature_extractor_name == 'mobilenet_v4_feat1':
+            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0,))
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model
+            base_out_channels = 32 # feat1 출력 채널
+        elif cnn_feature_extractor_name == 'mobilenet_v4_feat2':
+            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1))
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model
+            base_out_channels = 48 # feat2 출력 채널
+        elif cnn_feature_extractor_name == 'mobilenet_v4_feat3':
+            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1, 2))
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model
+            base_out_channels = 64 # feat3 출력 채널
+        elif cnn_feature_extractor_name == 'mobilenet_v4_feat4':
+            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1, 2, 3))
+            self._adjust_input_channels(base_model, in_channels)
+            self.conv_front = base_model
+            base_out_channels = 96 # feat4 출력 채널
+
         else:
             raise ValueError(f"지원하지 않는 CNN 피처 추출기 이름입니다: {cnn_feature_extractor_name}")
 
@@ -81,6 +105,14 @@ class CnnFeatureExtractor(nn.Module):
                 with torch.no_grad():
                     new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
                 base_model.features[0][0] = new_conv
+            elif 'mobilenetv4' in self.cnn_feature_extractor_name:
+                # timm의 MobileNetV4 모델
+                first_conv = base_model.conv_stem
+                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
+                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
+                with torch.no_grad():
+                    new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
+                base_model.conv_stem = new_conv
         elif in_channels != 3:
             raise ValueError("in_channels는 1 또는 3만 지원합니다.")
 
@@ -88,6 +120,11 @@ class CnnFeatureExtractor(nn.Module):
         x = self.conv_front(x)
         
         x = self.conv_1x1(x) # 최종 채널 수 조정
+
+        # timm의 features_only=True 모델은 리스트를 반환하므로 마지막 요소만 사용
+        if isinstance(x, list):
+            x = x[-1]
+
         return x
 
 class PatchConvEncoder(nn.Module):

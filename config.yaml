@@ -74,6 +74,21 @@ training_run:
 #   gamma: 0.1
 #   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
+# training_run:
+#   epochs: 90
+#   batch_size: 256
+#   pre_trained: false
+#   optimizer: 'adamw'
+#   loss_function: 'CrossEntropyLoss' # num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리
+#   # bce_pos_weight: 'auto'
+#   lr: 0.0001
+#   # momentum: 0.9
+#   weight_decay: 0.01
+#   scheduler: 'multisteplr'
+#   milestones: [30, 60, 80]
+#   gamma: 0.1
+#   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
+
 # =============================================================================
 # 3. 훈련 하이퍼파라미터 (baseline.py 전용)
 # =============================================================================
@@ -121,19 +136,27 @@ model:
   img_size: 224                # 모델에 입력하기 전 이미지의 리사이즈 크기 (정사각형).
   in_channels: 3               # 입력 이미지의 채널 수. 옵션: 1 (흑백), 3 (컬러).
   patch_size: 112              # 이미지를 나눌 정사각형 패치의 크기. `img_size`는 `patch_size`로 나누어 떨어져야 합니다.
-  stride: 56                   # 패치를 추출할 때의 보폭(stride). `patch_size`보다 작으면 오버랩됩니다.
+  stride: 112                   # 패치를 추출할 때의 보폭(stride). `patch_size`보다 작으면 오버랩됩니다.
   cnn_feature_extractor:
     # 이미지 패치에서 특징을 추출할 CNN 모델을 선택합니다.
     # 사용 가능한 옵션:
-    # - 'resnet18_layer1': ResNet18의 layer1까지 사용
-    # - 'resnet18_layer2': ResNet18의 layer2까지 사용
+    # - 'resnet18_layer1': ResNet18의 layer1까지 사용. 64
+    # - 'resnet18_layer2': ResNet18의 layer2까지 사용. 128
 
-    # - 'mobilenet_v3_small_feat1': MobileNetV3-Small의 features[1]까지 사용
-    # - 'mobilenet_v3_small_feat3': MobileNetV3-Small의 features[3]까지 사용
-    # - 'mobilenet_v3_small_feat4': MobileNetV3-Small의 features[4]까지 사용
+    # - 'mobilenet_v3_small_feat1': MobileNetV3-Small의 features[1]까지 사용. 16
+    # - 'mobilenet_v3_small_feat3': MobileNetV3-Small의 features[3]까지 사용. 24
+    # - 'mobilenet_v3_small_feat4': MobileNetV3-Small의 features[4]까지 사용. 40
 
-    # - 'efficientnet_b0_feat2': EfficientNet-B0의 features[2]까지 사용 (기본)
-    # - 'efficientnet_b0_feat3': EfficientNet-B0의 features[3]까지 사용
+    # - 'efficientnet_b0_feat2': EfficientNet-B0의 features[2]까지 사용 (기본). 24
+    # - 'efficientnet_b0_feat3': EfficientNet-B0의 features[3]까지 사용. 40
+
+
+    # - 'mobilenet_v4_feat1': MobileNetV4-Conv-Small의 features[0]까지 사용. 32
+    # - 'mobilenet_v4_feat2': MobileNetV4-Conv-Small의 features[1]까지 사용. 48
+    # - 'mobilenet_v4_feat3': MobileNetV4-Conv-Small의 features[2]까지 사용. 64
+    # - 'mobilenet_v4_feat4': MobileNetV4-Conv-Small의 features[3]까지 사용. 96
+    # - 'mobilenet_v4_feat5': MobileNetV4-Conv-Small의 features[4]까지 사용. 160
+
     name: 'efficientnet_b0_feat2'    
 
   # --- 디코더 및 임베딩 설정 ---
