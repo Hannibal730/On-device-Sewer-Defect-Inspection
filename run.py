@@ -287,6 +287,23 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         # 에포크 시작 시 구분을 위한 라인 추가
         logging.info("-" * 50)
 
+        # --- Warmup LR 조정 ---
+        if use_warmup and epoch < warmup_epochs:
+            lr_step = (warmup_end_lr - warmup_start_lr) / warmup_epochs
+            current_lr = warmup_start_lr + (epoch + 1) * lr_step
+            # 첫 에포크(epoch=0)에서는 start_lr로, 마지막 warmup 에포크에서는 end_lr에 가깝도록 선형적으로 증가시킵니다.
+            if warmup_epochs > 1:
+                lr_step = (warmup_end_lr - warmup_start_lr) / (warmup_epochs - 1)
+                current_lr = warmup_start_lr + epoch * lr_step
+            else: # warmup_epochs가 1인 경우
+                current_lr = warmup_end_lr
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = current_lr
+
+        # 에포크 시작 시 Learning Rate 로깅
+        current_lr = optimizer.param_groups[0]['lr']
+        logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
+
         model.train()
 
         running_loss = 0.0
@@ -294,13 +311,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         total = 0
         
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False, disable=not getattr(run_cfg, 'show_log', True))
-
-        # --- Warmup LR 조정 ---
-        if use_warmup and epoch < warmup_epochs:
-            lr_step = (warmup_end_lr - warmup_start_lr) / warmup_epochs
-            current_lr = warmup_start_lr + (epoch + 1) * lr_step
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = current_lr
 
 
         for images, labels, _ in progress_bar: # 파일명은 사용하지 않으므로 _로 받음
@@ -324,7 +334,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             correct += (predicted == labels).sum().item()
             
             # tqdm 프로그레스 바에 현재 loss 표시
-            step_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
+            step_lr = optimizer.param_groups[0]['lr']
             progress_bar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{step_lr:.6f}")
 
         train_acc = 100 * correct / total
@@ -333,10 +343,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         # --- 평가 단계 ---
         # 클래스별 F1 점수를 계산하고 로깅하도록 옵션 전달
         eval_results = evaluate(run_cfg, model, valid_loader, device, criterion, loss_function_name, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
-        
-        # 에포크 종료 시 Learning Rate 로깅
-        current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
-        logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
 
         # --- 최고 성능 모델 저장 기준 선택 ---
         current_metric = 0.0
