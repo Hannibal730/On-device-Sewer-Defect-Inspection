@@ -300,7 +300,7 @@ def plot_and_save_lr_graph(log_file_path, save_dir, timestamp):
     os.makedirs(graph_dir, exist_ok=True)
 
     # [LR] [에포크/총에포크] | Learning Rate: 값 형식의 로그를 찾습니다.
-    pattern = re.compile(r"\[LR\] \[(\d+)/\d+\] \| Learning Rate: ([\d\.e\-\+]+)")
+    pattern = re.compile(r"\[LR\]\s+\[(\d+)/\d+\] \| Learning Rate: ([\d\.e\-\+]+)")
 
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:
