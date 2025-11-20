@@ -154,7 +154,6 @@ def log_model_parameters(model):
     logging.info(f"    - Projection4Classifier:      {decoder_projection4classifier_params:,} 개")
     logging.info(f"  - Classifier (Projection MLP):  {classifier_total_params:,} 개")
     logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
-    logging.info("="*50)
 
 def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
@@ -302,7 +301,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
 
         # 에포크 시작 시 Learning Rate 로깅
         current_lr = optimizer.param_groups[0]['lr']
-        logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
+        logging.info(f"[LR]    [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
 
         model.train()
 
