@@ -34,9 +34,9 @@ run:
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
-    train: 1.0
-    valid: 1.0
-    test: 1.0
+    train: 0.01
+    valid: 0.01
+    test: 0.01
   num_workers: 16 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용. (~24)
 
 # =============================================================================
@@ -46,7 +46,7 @@ training_run:
   epochs: 90                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
   batch_size: 256                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
-  optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
+  optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd', 'nadam', 'radam', 'rmsprop'
   lr: 0.001                     # 옵티마이저의 학습률.
   weight_decay: 0.0001             # AdamW 옵티마이저의 가중치 감쇠(Weight Decay) 값.
   loss_function: 'CrossEntropyLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss', 'FocalLoss'
@@ -167,11 +167,11 @@ model:
     # - 'mobilenet_v4_feat4': MobileNetV4-Conv-Small의 features[3]까지 사용. 96
     # - 'mobilenet_v4_feat5': MobileNetV4-Conv-Small의 features[4]까지 사용. 160
 
-    name: 'efficientnet_b0_feat3'    
+    name: 'efficientnet_b0_feat2'    
 
   # --- 디코더 및 임베딩 설정 ---
-  featured_patch_dim: 40     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원.
-  emb_dim: 40                # 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원.
+  featured_patch_dim: 24     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원.
+  emb_dim: 24                # 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원.
   num_heads: 2               # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `num_heads`로 나누어 떨어져야 합니다.
   num_decoder_layers: 2      # 모델 내부의 디코더 레이어 수.
   num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
@@ -181,7 +181,7 @@ model:
   positional_encoding: true  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
   res_attention: true       # 디코더 레이어 간에 어텐션 스코어를 전달하는 잔차 어텐션 사용 여부.
   save_attention: true       # 추론 시 어텐션 맵을 저장할지 여부. True로 설정하면 시각화에 사용할 수 있습니다.
-  num_plot_attention: 10     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
+  num_plot_attention: 20     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
 
 # =============================================================================
 # 5. Baseline 모델 설정 (baseline.py 전용)

@@ -18,7 +18,6 @@ import random
 import time 
 from models import Model as DecoderBackbone, PatchConvEncoder, Classifier, HybridModel
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
-import schedulefree
 
 try:
     from thop import profile
@@ -714,10 +713,24 @@ def main():
             weight_decay = getattr(train_cfg, 'weight_decay', 0.0001)
             logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={momentum}, weight_decay={weight_decay})")
             optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=momentum, weight_decay=weight_decay)
+        elif optimizer_name == 'nadam':
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
+            logging.info(f"옵티마이저: NAdam (lr={train_cfg.lr}, weight_decay={weight_decay})")
+            optimizer = optim.NAdam(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
+        elif optimizer_name == 'radam':
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
+            logging.info(f"옵티마이저: RAdam (lr={train_cfg.lr}, weight_decay={weight_decay})")
+            optimizer = optim.RAdam(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
+        elif optimizer_name == 'rmsprop':
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
+            momentum = getattr(train_cfg, 'momentum', 0.0)
+            logging.info(f"옵티마이저: RMSprop (lr={train_cfg.lr}, weight_decay={weight_decay}, momentum={momentum})")
+            optimizer = optim.RMSprop(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay, momentum=momentum)
         else:
             # 기본값 또는 'adamw'로 설정된 경우
-            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr})")
-            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.01)
+            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={weight_decay})")
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
 
         # scheduler_params가 없으면 빈 객체로 초기화
         scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
