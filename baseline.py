@@ -110,6 +110,10 @@ def create_baseline_model(model_name, num_labels, pretrained):
     elif model_name == 'xie2019':
         # Xie2019 모델은 사전 훈련된 가중치를 지원하지 않습니다.
         model = Xie2019(num_classes=num_labels)
+    elif model_name == 'vit':
+        # timm 라이브러리를 사용하여 Vision Transformer 모델을 생성합니다.
+        # 'vit_base_patch16_224'는 대표적인 ViT 모델입니다.
+        model = timm.create_model('vit_base_patch16_224', pretrained=pretrained, num_classes=num_labels)
     else:
         raise ValueError(f"지원하지 않는 baseline 모델 이름입니다: {model_name}")
         
@@ -211,6 +215,8 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             last_layer = model.classifier[-1]
         elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Linear): # timm으로 생성된 MobileNetV4 계열
             last_layer = model.classifier
+        elif hasattr(model, 'head'): # timm으로 생성된 ViT 계열
+            last_layer = model.head
         
         if last_layer is None:
             logging.warning("모델의 마지막 분류 레이어를 자동으로 찾을 수 없습니다. BCE 손실 함수 사용 시 num_labels 확인을 건너뜁니다.")

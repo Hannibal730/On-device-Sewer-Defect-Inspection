@@ -118,24 +118,24 @@ training_run:
 #     eta_min: 0.000001
 #   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
-# training_baseline:
-#   epochs: 90                    # 훈련할 총 에포크 수.
-#   batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
-#   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
-#   optimizer: 'sgd'              # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
-#   loss_function: 'BCEWithLogitsLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'. (num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리)
-#   bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능.
-#   lr: 0.1                       # 옵티마이저의 학습률.
-#   momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
-#   weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
-#   scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'cosineannealinglr', 'none'
-#   # scheduler_params:
-#     # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
-#     # T_max: 90
-#     # eta_min: 0.000001
-#   milestones: [30, 60, 80]      # MultiStepLR 스케줄러에서 학습률을 감소시킬 에포크 지점.
-#   gamma: 0.1                    # MultiStepLR 스케줄러에서 학습률에 곱할 값.
-#   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
+training_baseline:
+  epochs: 90                    # 훈련할 총 에포크 수.
+  batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
+  pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
+  optimizer: 'sgd'              # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
+  loss_function: 'BCEWithLogitsLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'. (num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리)
+  bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능.
+  lr: 0.1                       # 옵티마이저의 학습률.
+  momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
+  weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
+  scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'cosineannealinglr', 'none'
+  # scheduler_params:
+    # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
+    # T_max: 90
+    # eta_min: 0.000001
+  milestones: [30, 60, 80]      # MultiStepLR 스케줄러에서 학습률을 감소시킬 에포크 지점.
+  gamma: 0.1                    # MultiStepLR 스케줄러에서 학습률에 곱할 값.
+  best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 
 # =============================================================================
@@ -188,5 +188,5 @@ model:
 # =============================================================================
 # baseline:
 #   # 사용할 baseline 모델의 이름을 지정합니다.
-#   # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4', 'xie2019'
-#   model_name: 'mobilenet_v4'
+#   # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4', 'xie2019', 'vit'
+#   model_name: 'vit'
