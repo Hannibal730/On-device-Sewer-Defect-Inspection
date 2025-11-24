@@ -17,6 +17,12 @@ from datetime import datetime
 import random
 import time 
 from models import Model as DecoderBackbone, PatchConvEncoder, Classifier, HybridModel
+
+try:
+    import cpuinfo
+except ImportError:
+    cpuinfo = None
+
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
 
 try:
@@ -660,7 +666,12 @@ def main():
     else:
         if use_cuda_if_available:
             logging.warning("config.yaml에서 CUDA 사용이 활성화되었지만, 사용 가능한 CUDA 장치를 찾을 수 없습니다. CPU를 사용합니다.")
-        logging.info("CPU 사용을 시작합니다.")
+        if cpuinfo:
+            cpu_info_str = cpuinfo.get_cpu_info().get('brand_raw', 'N/A')
+            logging.info(f"CPU 사용을 시작합니다. (Device: {cpu_info_str})")
+        else:
+            logging.info("CPU 사용을 시작합니다.")
+            logging.info("CPU 정보를 표시하려면 'pip install py-cpuinfo'를 실행하세요.")
 
     # --- 데이터 준비 ---
     train_loader, valid_loader, test_loader, num_labels, class_names, pos_weight = prepare_data(run_cfg, train_cfg, model_cfg)
