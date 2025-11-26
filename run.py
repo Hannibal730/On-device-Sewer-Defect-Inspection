@@ -104,43 +104,40 @@ def log_model_parameters(model):
         return sum(p.numel() for p in m.parameters() if p.requires_grad)
 
     # Encoder 내부를 세분화하여 파라미터 계산
-    # 1. Encoder (PatchConvEncoder) 내부를 세분화하여 파라미터 계산
+    # 1. Encoder (PatchConvEncoder) 내부 파라미터 계산
     cnn_feature_extractor = model.encoder.shared_conv[0]
-
-    # CNN 백본의 파라미터를 계산합니다.
     conv_front_params = count_parameters(cnn_feature_extractor.conv_front)
     conv_1x1_params = count_parameters(cnn_feature_extractor.conv_1x1)
+    patch_mixer_params = count_parameters(model.encoder.patch_mixer)
     encoder_norm_params = count_parameters(model.encoder.norm)
-    encoder_total_params = conv_front_params + conv_1x1_params + encoder_norm_params
+    encoder_total_params = conv_front_params + conv_1x1_params + patch_mixer_params + encoder_norm_params
 
-    # 2. Decoder (DecoderBackbone) 내부를 세분화하여 파라미터 계산
-    # DecoderBackbone (models.py의 Model 클래스)의 구성 요소
-    # - Embedding4Decoder (W_feat2emb, learnable_queries, PE)
-    # - Embedding4Decoder 내부의 Decoder (트랜스포머 레이어들)
-    # - Projection4Classifier
-
-    # Embedding4Decoder의 파라미터를 세분화하여 계산
+    # 2. Decoder (DecoderBackbone) 내부 파라미터 계산
     embedding_module = model.decoder.embedding4decoder
 
-    # PE와 learnable_queries는 nn.Parameter이므로 .numel()로 직접 개수 계산
-    pe_params = 0 # Positional Encoding
-    if hasattr(embedding_module, 'PE') and embedding_module.PE is not None and embedding_module.PE.requires_grad:
-        pe_params = embedding_module.PE.numel()
+    # Positional Encoding 파라미터 계산
+    # 'pos_embed'는 register_buffer로 등록되어 학습되지 않으므로, requires_grad=True인 파라미터만 계산합니다.
+    # 기존의 'PE'는 'pos_embed'로 변경되었고, 학습되지 않으므로 파라미터 수 계산에서 제외됩니다.
+    pe_params = 0
+    if hasattr(embedding_module, 'pos_embed') and isinstance(embedding_module.pos_embed, torch.nn.Parameter) and embedding_module.pos_embed.requires_grad:
+        pe_params = embedding_module.pos_embed.numel()
     
-    query_params = 0 # Learnable Query
+    # Learnable Query 파라미터 계산
+    query_params = 0
     if hasattr(embedding_module, 'learnable_queries') and embedding_module.learnable_queries.requires_grad:
         query_params = embedding_module.learnable_queries.numel()
     
     w_feat2emb_params = count_parameters(embedding_module.W_feat2emb)
 
-    # Embedding4Decoder의 자체 파라미터 총합 (내부 Decoder 제외)
+    # Embedding4Decoder의 파라미터 총합 (내부 Decoder 레이어 제외)
     embedding4decoder_total_params = w_feat2emb_params + query_params + pe_params
 
+    # Decoder 내부의 트랜스포머 레이어와 최종 프로젝션 레이어 파라미터 계산
     decoder_layers_params = count_parameters(model.decoder.embedding4decoder.decoder)
     decoder_projection4classifier_params = count_parameters(model.decoder.projection4classifier)
     decoder_total_params = embedding4decoder_total_params + decoder_layers_params + decoder_projection4classifier_params
 
-    # 3. Classifier (Projection MLP) 내부를 세분화하여 파라미터 계산
+    # 3. Classifier (MLP) 파라미터 계산
     classifier_projection_params = count_parameters(model.classifier.projection)
     classifier_total_params = classifier_projection_params
 
@@ -148,18 +145,19 @@ def log_model_parameters(model):
 
     logging.info("="*50)
     logging.info("모델 파라미터 수:")
-    logging.info(f"  - Encoder (PatchConvEncoder):   {encoder_total_params:,} 개")
-    logging.info(f"    - conv_front (CNN Backbone):  {conv_front_params:,} 개")
-    logging.info(f"    - 1x1_conv (Channel Proj):    {conv_1x1_params:,} 개")
-    logging.info(f"    - norm (LayerNorm):           {encoder_norm_params:,} 개")
-    logging.info(f"  - Decoder (Transformer-based):  {decoder_total_params:,} 개")
-    logging.info(f"    - Embedding Layer (W_feat2emb): {w_feat2emb_params:,} 개")
-    logging.info(f"    - Learnable Queries:            {query_params:,} 개")
-    logging.info(f"    - Positional Encoding:          {pe_params:,} 개")
+    logging.info(f"  - Encoder (PatchConvEncoder):         {encoder_total_params:,} 개")
+    logging.info(f"    - conv_front (CNN Backbone):        {conv_front_params:,} 개")
+    logging.info(f"    - 1x1_conv (Channel Proj):          {conv_1x1_params:,} 개")
+    logging.info(f"    - patch_mixer (Depthwise Conv):     {patch_mixer_params:,} 개")
+    logging.info(f"    - norm (LayerNorm):                 {encoder_norm_params:,} 개")
+    logging.info(f"  - Decoder (Transformer-based):        {decoder_total_params:,} 개")
+    logging.info(f"    - Embedding Layer (W_feat2emb):     {w_feat2emb_params:,} 개")
+    logging.info(f"    - Learnable Queries:                {query_params:,} 개")
+    logging.info(f"    - Positional Encoding (learnable):  {pe_params:,} 개")
     logging.info(f"    - Decoder Layers (Cross-Attention): {decoder_layers_params:,} 개")
-    logging.info(f"    - Projection4Classifier:      {decoder_projection4classifier_params:,} 개")
-    logging.info(f"  - Classifier (Projection MLP):  {classifier_total_params:,} 개")
-    logging.info(f"  - 총 파라미터:                  {total_params:,} 개")
+    logging.info(f"    - Projection4Classifier:            {decoder_projection4classifier_params:,} 개")
+    logging.info(f"  - Classifier (Projection MLP):        {classifier_total_params:,} 개")
+    logging.info(f"  - 총 학습 가능 파라미터:              {total_params:,} 개")
 
 def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""

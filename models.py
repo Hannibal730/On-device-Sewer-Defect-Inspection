@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import timm
+import math
 from torch import Tensor
 from torchvision import models
 
@@ -118,7 +119,6 @@ class CnnFeatureExtractor(nn.Module):
 
     def forward(self, x):
         x = self.conv_front(x)
-        
         x = self.conv_1x1(x) # 최종 채널 수 조정
 
         # timm의 features_only=True 모델은 리스트를 반환하므로 마지막 요소만 사용
@@ -135,129 +135,169 @@ class PatchConvEncoder(nn.Module):
         self.stride = stride
         self.featured_patch_dim = featured_patch_dim
 
-        # stride를 고려한 패치 수 계산
-        num_patches_per_dim = (img_size - self.patch_size) // self.stride + 1
-        self.num_encoder_patches = num_patches_per_dim ** 2
+        # stride를 고려한 패치 수 계산 (H, W 각각 계산)
+        self.num_patches_H = (img_size - self.patch_size) // self.stride + 1
+        self.num_patches_W = (img_size - self.patch_size) // self.stride + 1
+        self.num_encoder_patches = self.num_patches_H * self.num_patches_W
 
+        # 1. Shared CNN Feature Extractor
         self.shared_conv = nn.Sequential(
             CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=pre_trained, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
             nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(start_dim=1) # [B*num_encoder_patches, D, 1, 1] -> [B*num_encoder_patches, D] 형태가 됩니다.
+            nn.Flatten(start_dim=1) # [B*num_encoder_patches, D]
         )
+        
+        # 2. Patch Mixer (Idea 2-1): 패치 간 정보 교환을 위한 Depthwise Convolution
+        # 3x3 Depthwise Conv (groups=in_channels)는 파라미터가 매우 적습니다.
+        # Padding=1을 주어 공간 크기(H_grid, W_grid)를 유지합니다.
+        self.patch_mixer = nn.Sequential(
+            nn.Conv2d(featured_patch_dim, featured_patch_dim, kernel_size=3, padding=1, groups=featured_patch_dim, bias=False),
+            nn.BatchNorm2d(featured_patch_dim),
+            nn.ReLU(inplace=True)
+        )
+
         self.norm = nn.LayerNorm(featured_patch_dim)
 
     def forward(self, x):
         B, C, H, W = x.shape
+        # 이미지를 패치로 분할
         patches = x.unfold(2, self.patch_size, self.stride).unfold(3, self.patch_size, self.stride)
-        # .contiguous()를 추가하여 메모리 연속성을 보장한 후 reshape 수행
         patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous().view(-1, C, self.patch_size, self.patch_size)
-        # patches.shape: [B * num_patches, C, patch_size, patch_size]
+        # patches: [B * num_patches, C, patch_size, patch_size]
         
-        conv_outs = self.shared_conv(patches)
-        # 각 패치 특징 벡터에 대해 Layer Normalization 적용
-        conv_outs = self.norm(conv_outs)
-        # 디코더 모델에 입력하기 위해 [B, num_patches, dim] 형태로 재구성
-        conv_outs = conv_outs.view(B, self.num_encoder_patches, self.featured_patch_dim)
-        return conv_outs
+        # 각 패치별 특징 추출
+        conv_outs = self.shared_conv(patches) # [B * num_patches, D]
+        
+        # --- [Idea 2-1] Patch Mixing ---
+        # 1. Grid 복원: [B * (H_p * W_p), D] -> [B, D, H_p, W_p]
+        #    이 과정은 단순 View 연산으로 비용이 거의 들지 않습니다.
+        #    하지만 이를 통해 인접 패치(상하좌우)가 누구인지 알 수 있게 됩니다.
+        conv_outs_grid = conv_outs.view(B, self.num_patches_H, self.num_patches_W, self.featured_patch_dim).permute(0, 3, 1, 2)
+        
+        # 2. Mixing: Depthwise Conv로 인접 패치 정보 섞기
+        mixed_outs = self.patch_mixer(conv_outs_grid)
+        
+        # 3. Flatten: 다시 시퀀스로 변환 [B, D, H_p, W_p] -> [B, H_p * W_p, D]
+        #    permute(0, 2, 3, 1) -> [B, H_p, W_p, D]
+        mixed_outs = mixed_outs.permute(0, 2, 3, 1).contiguous().view(B, -1, self.featured_patch_dim)
+
+        # Layer Normalization 적용
+        mixed_outs = self.norm(mixed_outs)
+        
+        return mixed_outs
 
 # =============================================================================
 # 2. 디코더 모델 정의
 # =============================================================================
 
-# GEGLU (Gated Enhanced Gated Linear Unit) 액티베이션 함수를 구현한 클래스입니다.
-# 일반적인 ReLU나 GELU와 달리, 입력의 일부를 게이트로 사용하여 동적으로 출력을 조절하는 특징이 있습니다.
 class GEGLU(nn.Module):
-    # 이 클래스의 순전파 로직을 정의합니다. 입력 텐서를 받아 GEGLU 연산을 수행합니다.
     def forward(self, x):
         x, gate = x.chunk(2, dim=-1)
-        # 입력 텐서 `x`의 마지막 차원(`dim=-1`)을 기준으로 x를 두 개의 동일한 크기의 청크(chunk)로 나눕니다.
-        # `x`는 주 데이터 경로가 되고, `gate`는 게이트 역할을 합니다. 수학적으로 x_in = [x, gate] 입니다.
         return x * F.gelu(gate)
-        # 주 데이터 경로 `x`와, `gate`에 GELU(Gaussian Error Linear Unit) 활성화 함수를 적용한 결과를 요소별로 곱합니다.
-        # 이 게이팅 메커니즘은 gate가 x에서 어떤 요소를 증폭하거나 줄일지 스스로 판단합니다.
-        # 덕분에 모델이 더 복잡한 패턴을 학습하도록 돕습니다. 수학식은 Output = x * GELU(gate) 입니다.
 
-# 이미지 분류 모델의 디코더 백본(backbone)을 정의하는 클래스입니다.
-# 입력 패치와 학습 가능한 쿼리(learnable queries)를 임베딩하고 트랜스포머 디코더를 통해 예측을 수행하는 클래스입니다.
-# 디코더에 입력할 seq_encoder_patches와 seq_decoder_patches를 생성합니다. 이후 디코더에 입력되어 특징 벡터를 생성하고, 오차 계산 및 역전파를 통해 훈련됩니다.
-# 이 파라미터는 처음에는 무작위 값으로 시작하지만, 훈련 과정을 통해 분류에 중요한 특징을 추출하기 위한 유의미한 질문(쿼리)으로 학습되기 때문에 "학습 가능한 쿼리"라고 부릅니다.
 class Embedding4Decoder(nn.Module): 
-    # 클래스의 생성자입니다.
-    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, attn_pooling=False, num_decoder_layers=3, emb_dim=128, num_heads=16, qam_prob_start=0.1, qam_prob_end=0.5,
+    """
+    Decoder 입력을 위한 임베딩 레이어.
+    [Idea 1-1] 2D Sinusoidal Position Encoding을 적용하여 위치 정보를 주입합니다.
+    """
+    def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, 
+                 grid_size_h, grid_size_w, # 2D PE 생성을 위해 그리드 크기 인자 추가
+                 attn_pooling=False, num_decoder_layers=3, emb_dim=128, num_heads=16, 
                  decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True):
              
         super().__init__()
-        # `nn.Module`의 생성자를 호출합니다.
         
         self.attn_pooling = attn_pooling
 
         # --- 입력 인코딩 ---
         self.W_feat2emb = nn.Linear(featured_patch_dim, emb_dim)      
-        # 입력 패치(`featured_patch_dim` 차원)를 모델의 은닉 상태 차원(`emb_dim`)으로 변환하는 선형 레이어(가중치 `W_feat2emb`)를 정의합니다.
         self.dropout = nn.Dropout(dropout)
-        # 일반적인 드롭아웃 레이어를 정의합니다.
 
-        # --- 학습 가능한 쿼리(Learnable Query) 설정 (Xavier 초기화 적용) ---
+        # --- 학습 가능한 쿼리(Learnable Query) ---
         self.learnable_queries = nn.Parameter(torch.empty(num_decoder_patches, featured_patch_dim))
-        # Xavier 초기화는 훈련 초기 안정성을 높이고 수렴을 돕는 검증된 방법입니다.
         nn.init.xavier_uniform_(self.learnable_queries)
         
-        # --- 학습 가능한 위치 인코딩 ---
-        # 입력 시퀀스의 위치 정보를 제공하기 위해, '학습 가능한 위치 인코딩(Positional Encoding)'을 파라미터로 생성합니다.
+        # --- [Idea 1-1] 2D Sinusoidal Positional Encoding ---
         self.use_positional_encoding = positional_encoding
         if self.use_positional_encoding:
-            # 사인/코사인 함수 대신, 위치 정보를 담는 벡터 자체를 학습 파라미터로 사용합니다.
-            # [num_encoder_patches, emb_dim] 크기의 텐서를 생성하며, 각 행은 특정 위치(패치)에 대한 위치 인코딩 벡터를 나타냅니다.
-            # 이 파라미터는 훈련 과정에서 역전파를 통해 최적화됩니다.
-            self.PE = nn.Parameter(torch.zeros(num_encoder_patches, emb_dim))
-            nn.init.uniform_(self.PE, -0.02, 0.02) 
+            # 고정된 2D Sinusoidal PE 생성 (학습되지 않음)
+            pos_embed = self.get_2d_sincos_pos_embed(emb_dim, grid_size_h, grid_size_w)
+            # 모델의 state_dict에 저장되지만 optimizer에 의해 업데이트되지 않도록 register_buffer 사용
+            self.register_buffer('pos_embed', pos_embed, persistent=False)
         else:
-            self.PE = None
+            self.pos_embed = None
+
         # --- 디코더 ---
         self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
                                res_attention=res_attention, num_decoder_layers=num_decoder_layers, save_attention=save_attention)
         
-    # 순전파 로직을 정의합니다.
+    def get_2d_sincos_pos_embed(self, embed_dim, grid_h, grid_w):
+        """
+        2D Grid에 대한 Sinusoidal Positional Embedding을 생성합니다.
+        embed_dim의 절반은 Height 정보, 나머지 절반은 Width 정보에 할당합니다.
+        """
+        assert embed_dim % 2 == 0, "Embedding 차원은 짝수여야 합니다."
+        
+        # 1D Sinusoidal PE 생성 함수
+        def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
+            """
+            embed_dim: output dimension for each position
+            pos: [H*W] list of positions to be encoded
+            """
+            omega = torch.arange(embed_dim // 2, dtype=torch.float)
+            omega /= embed_dim / 2.
+            omega = 1. / 10000**omega  # (D/2,)
+
+            pos = pos.reshape(-1)  # (M,)
+            out = torch.einsum('m,d->md', pos, omega)  # (M, D/2), outer product
+
+            emb_sin = torch.sin(out) # (M, D/2)
+            emb_cos = torch.cos(out) # (M, D/2)
+
+            emb = torch.cat([emb_sin, emb_cos], dim=1)  # (M, D)
+            return emb
+
+        # Grid 좌표 생성
+        grid_h_arange = torch.arange(grid_h, dtype=torch.float)
+        grid_w_arange = torch.arange(grid_w, dtype=torch.float)
+        
+        # Meshgrid로 좌표 확장
+        grid_w_coords, grid_h_coords = torch.meshgrid(grid_w_arange, grid_h_arange, indexing='xy')
+        
+        # 각각에 대해 1D PE 생성 (차원의 절반씩 사용)
+        emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid_h_coords) # [H*W, D/2]
+        emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid_w_coords) # [H*W, D/2]
+
+        # Concat하여 최종 2D PE 생성 [H*W, D]
+        pos_embed = torch.cat([emb_h, emb_w], dim=1)
+        return pos_embed.unsqueeze(0) # [1, H*W, D] (Broadcasting을 위해 배치 차원 추가)
+
     def forward(self, x) -> Tensor:
-        # 입력 x의 형태: [배치 크기, 인코더 패치 수, featured_patch_dim]
+        # x: [B, num_encoder_patches, featured_patch_dim]
         bs = x.shape[0]
 
-        # --- 1. 디코더에 입력할 입력 시퀀스 준비 (Key, Value) ---
-        x = self.W_feat2emb(x)
-        if self.use_positional_encoding:
-            # 패치 특징 벡터에 학습 가능한 위치 인코딩(PE)을 더해줍니다.
-            # x: [B, num_patches, emb_dim], PE: [num_patches, emb_dim] -> 브로드캐스팅을 통해 덧셈
-            x = x + self.PE
-        # x shape: [B, num_encoder_patches, emb_dim]
+        x = self.W_feat2emb(x) # [B, N, emb_dim]
+
+        # --- 위치 인코딩 더하기 ---
+        if self.use_positional_encoding and self.pos_embed is not None:
+            # self.pos_embed: [1, N, emb_dim] -> Broadcasting으로 더해짐
+            x = x + self.pos_embed.to(x.device)
 
         seq_encoder_patches = self.dropout(x)
-        # 인코딩된 입력 패치에 드롭아웃을 적용합니다.
         
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
         if self.attn_pooling:
-            # 어텐션 풀링을 이용한 파라미터-프리 동적 쿼리 생성
-            # 1. 잠재 쿼리(latent query) 준비: learnable_queries를 동적 쿼리 생성을 위한 잠재적인 쿼리로 사용합니다.
             latent_queries = self.W_feat2emb(self.learnable_queries)
             latent_queries = latent_queries.unsqueeze(0).repeat(bs, 1, 1)
             
-            # 2. 어텐션 스코어 계산 (Q=잠재 쿼리, K=패치 특징)
             latent_attn_scores = torch.bmm(latent_queries, seq_encoder_patches.transpose(1, 2))
             latent_attn_weights = F.softmax(latent_attn_scores, dim=-1)
             
-            # 3. 가중 평균으로 동적 쿼리 생성 (V=패치 특징)
             seq_decoder_patches = torch.bmm(latent_attn_weights, seq_encoder_patches)
         else:
-            # 고정된 학습 가능 쿼리 사용
-            # 1. learnable_queries를 임베딩
             learnable_queries = self.W_feat2emb(self.learnable_queries)
-            # 2. 배치 크기만큼 복제하여 모든 샘플에 동일한 쿼리를 적용
-            # learnable_queries: [num_decoder_patches, emb_dim]
-            # -> [1, num_decoder_patches, emb_dim]
-            # -> [bs, num_decoder_patches, emb_dim]
             seq_decoder_patches = learnable_queries.unsqueeze(0).repeat(bs, 1, 1)
 
-        # Embedding 클래스는 이제 디코더에 필요한 입력 시퀀스들을 반환합니다.
-        # 실제 디코더 호출은 Model 클래스의 forward에서 이루어집니다.
         return seq_encoder_patches, seq_decoder_patches
             
 
@@ -265,243 +305,175 @@ class Projection4Classifier(nn.Module):
     """디코더의 출력을 받아 최종 분류기가 사용할 수 있는 특징 벡터로 변환합니다."""
     def __init__(self, emb_dim, featured_patch_dim):
         super().__init__()
-        # `nn.Module`의 생성자를 호출합니다.
         self.linear = nn.Linear(emb_dim, featured_patch_dim)
-        # 트랜스포머의 은닉 상태 차원(`emb_dim`)을 `featured_patch_dim`으로 변환하는 선형 레이어를 정의합니다.
         self.flatten = nn.Flatten(start_dim=-2)
-        # 디코더 패치들을 하나의 벡터로 펼치기 위한 Flatten 레이어를 정의합니다.
 
     def forward(self, x):
-        # 입력 x의 형태: [B, num_decoder_patches, emb_dim]
         x = self.linear(x)
-        # 입력 `x`를 선형 레이어에 통과시켜 차원을 변환합니다.
-        # 결과: [B, num_decoder_patches, featured_patch_dim]
-        
-        # flatten을 적용하여 마지막 두 차원을 하나로 합칩니다.
-        # [B, num_decoder_patches, D] -> [B, num_decoder_patches * D]
         x = self.flatten(x)
-        return x # [B, num_decoder_patches * featured_patch_dim] 형태의 2D 텐서를 반환합니다.
+        return x 
             
-# 여러 개의 디코더 레이어로 구성된 트랜스포머 디코더 클래스입니다.
 class Decoder(nn.Module):
-    # 디코더의 생성자입니다.
     def __init__(self, num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=None, attn_dropout=0., dropout=0.,
                  res_attention=False, num_decoder_layers=1, save_attention=False):
         super().__init__()
-        # `nn.Module`의 생성자를 호출합니다.
         
         self.layers = nn.ModuleList([DecoderLayer(num_encoder_patches, emb_dim, num_decoder_patches, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
                                                       res_attention=res_attention, save_attention=save_attention) for i in range(num_decoder_layers)])
-        # `num_decoder_layers` 개수만큼의 `DecoderLayer`를 `nn.ModuleList`로 묶어 관리합니다.
-        
         self.res_attention = res_attention
-        # 잔차 어텐션(어텐션 스코어를 다음 레이어에 더해주는 기법) 메커니즘 사용 여부를 저장합니다.
-    # 디코더의 순전파 로직을 정의합니다.
+
     def forward(self, seq_encoder:Tensor, seq_decoder:Tensor):
         scores = None
-        # 잔차 어텐션에서 이전 레이어의 어텐션 스코어를 전달하기 위한 변수를 초기화합니다.
-        
         if self.res_attention:
-            # 잔차 어텐션을 사용하는 경우,
             for mod in self.layers: _, seq_decoder, scores = mod(seq_encoder, seq_decoder, prev=scores)
             return seq_decoder
-        
         else:
-            # 잔차 어텐션을 사용하지 않는 경우,
             for mod in self.layers: _, seq_decoder = mod(seq_encoder, seq_decoder)
             return seq_decoder
 
-# 트랜스포머 디코더의 단일 레이어를 정의하는 클래스입니다.
-# 크로스-어텐션(Cross-Attention)과 피드포워드 네트워크(Feed-Forward Network)로 구성됩니다.
 class DecoderLayer(nn.Module):
-    # 디코더 레이어의 생성자입니다.
     def __init__(self, num_encoder_patches, emb_dim, num_decoder_patches, num_heads, decoder_ff_dim=256, save_attention=False,
                  attn_dropout=0, dropout=0., bias=True, res_attention=False):
         super().__init__()
-        # `nn.Module`의 생성자를 호출합니다.
         assert not emb_dim%num_heads, f"emb_dim ({emb_dim}) must be divisible by num_heads ({num_heads})"
-        # `emb_dim`이 `num_heads`로 나누어 떨어져야 멀티헤드 어텐션이 가능하므로, 이를 확인합니다.
         
-        # --- 크로스-어텐션 블록 ---
         self.res_attention = res_attention
-        # 잔차 어텐션 사용 여부를 저장합니다.
         self.cross_attn = _MultiheadAttention(emb_dim, num_heads, attn_dropout=attn_dropout, proj_dropout=dropout, res_attention=res_attention, qkv_bias=True)
-        # 멀티헤드 크로스-어텐션 모듈을 초기화합니다.
         self.dropout_attn = nn.Dropout(dropout)
-        # 어텐션 출력에 적용할 Query-Adaptive Masking 레이어를 정의합니다.
         self.norm_attn = nn.LayerNorm(emb_dim)
-        # 어텐션 블록의 잔차 연결(add) 후 적용될 레이어 정규화(Layer Normalization)를 정의합니다.
 
-        # --- 피드포워드 네트워크 블록 ---
-        # 위치별 피드포워드 네트워크(FFN)를 `nn.Sequential`로 정의합니다.
-        self.ffn = nn.Sequential(nn.Linear(emb_dim, decoder_ff_dim, bias=bias), # 1. emb_dim -> decoder_ff_dim 확장
-                                GEGLU(),                             # 2. GEGLU 활성화 함수 (이 활성함수를 거친 직후 차원이 절반이 됨))
-                                nn.Dropout(dropout),                 # 3. 드롭아웃
-                                nn.Linear(decoder_ff_dim//2, emb_dim, bias=bias)) # 4. decoder_ff_dim/2 -> emb_dim 축소
+        self.ffn = nn.Sequential(nn.Linear(emb_dim, decoder_ff_dim, bias=bias),
+                                GEGLU(),
+                                nn.Dropout(dropout),
+                                nn.Linear(decoder_ff_dim//2, emb_dim, bias=bias)) 
         self.dropout_ffn = nn.Dropout(dropout)
-        # FFN 출력에 적용할 Query-Adaptive Masking 레이어를 정의합니다.
         self.norm_ffn = nn.LayerNorm(emb_dim)
-        # FFN 블록의 잔차 연결(add) 후 적용될 레이어 정규화를 정의합니다.
         
         self.save_attention = save_attention
-        # 어텐션 가중치를 시각화 등의 목적으로 저장할지 여부를 결정합니다.
 
-    # 디코더 레이어의 순전파 로직을 정의합니다.
     def forward(self, seq_encoder:Tensor, seq_decoder:Tensor, prev=None) -> Tensor:
-        # `seq_decoder`는 쿼리(Q), `seq_encoder`는 키(K)와 값(V)으로 사용됩니다.
-        
-        # --- 멀티헤드 크로스-어텐션 ---
         if self.res_attention:
-            # 잔차 어텐션을 사용하는 경우,
             decoder_out, attn, scores = self.cross_attn(seq_decoder, seq_encoder, seq_encoder, prev)
-            # 어텐션 모듈은 (출력, 어텐션 가중치, 어텐션 스코어)를 반환합니다.
         else:
-            # 잔차 어텐션을 사용하지 않는 경우,
             decoder_out, attn = self.cross_attn(seq_decoder, seq_encoder, seq_encoder)
-            # 어텐션 모듈은 (출력, 어텐션 가중치)를 반환합니다.
+        
         if self.save_attention:
-            # 어텐션 가중치를 저장하도록 설정된 경우,
             self.attn = attn
-            # 계산된 어텐션 가중치를 `self.attn`에 저장합니다.
         
-        # --- 첫 번째 Add & Norm ---
         seq_decoder = seq_decoder + self.dropout_attn(decoder_out)
-        # 1번째 Residual Connection: 어텐션 출력에 드롭아웃을 적용하고, 이를 입력에 더합니다.
         seq_decoder = self.norm_attn(seq_decoder)
-        # 레이어 정규화를 적용합니다.
         
-        # --- 피드포워드 네트워크 ---
         ffn_out = self.ffn(seq_decoder)
-        # 정규화된 결과를 FFN에 통과시킵니다.
-
-        # --- 두 번째 Add & Norm ---
         seq_decoder = seq_decoder + self.dropout_ffn(ffn_out)  
-        # 2번째 Residual Connection: FFN의 출력에 드롭아웃을 적용하고, 이를 FFN의 입력에 더합니다.
         seq_decoder = self.norm_ffn(seq_decoder)
-        # 레이어 정규화를 적용합니다.
         
         if self.res_attention: return seq_encoder, seq_decoder, scores
         else: return seq_encoder, seq_decoder
 
-# 멀티헤드 어텐션 메커니즘을 구현한 내부 클래스입니다.
 class _MultiheadAttention(nn.Module):
-    # 멀티헤드 어텐션의 생성자입니다.
     def __init__(self, emb_dim, num_heads, res_attention=False, attn_dropout=0., proj_dropout=0., qkv_bias=True, **kwargs):
-        """
-        멀티헤드 어텐션 레이어
-        입력 형태:
-            Q (쿼리): [배치 크기, 디코더 패치 수, emb_dim]
-            K (키), V (값): [배치 크기, 인코더 패치 수, emb_dim]
-        """
         super().__init__()
-        # `nn.Module`의 생성자를 호출합니다.
         
         head_dim = emb_dim // num_heads
-        # 각 어텐션 헤드의 차원을 계산합니다.
         self.scale = head_dim**-0.5
-        # 어텐션 스코어를 스케일링하기 위한 팩터입니다. d_k의 제곱근의 역수(1/sqrt(d_k))를 사용합니다.
-        # 이는 Q, K 내적 값의 분산이 d_k에 비례하여 커지는 것을 방지하여, softmax 함수의 기울기 소실(gradient vanishing) 문제를 완화합니다.
         self.num_heads, self.head_dim = num_heads, head_dim
-        # 헤드의 수와 각 헤드의 차원을 저장합니다.
 
-        # 입력 Q, K, V를 `emb_dim` 차원에서 `num_heads * head_dim` 차원으로 변환하는 선형 레이어들을 정의합니다.
         self.W_Q = nn.Linear(emb_dim, head_dim * num_heads, bias=qkv_bias)
         self.W_K = nn.Linear(emb_dim, head_dim * num_heads, bias=qkv_bias)
         self.W_V = nn.Linear(emb_dim, head_dim * num_heads, bias=qkv_bias)
 
         self.res_attention = res_attention
-        # 잔차 어텐션 사용 여부를 저장합니다.
         self.attn_dropout = nn.Dropout(attn_dropout)
-        # 계산된 어텐션 가중치에 적용될 드롭아웃 레이어를 정의합니다.
         
-        # 여러 헤드의 출력을 합친 벡터를 최종 임베딩 차원으로 변환하는 출력 레이어를 정의합니다.
         self.concatheads2emb = nn.Sequential(nn.Linear(num_heads * head_dim, emb_dim), nn.Dropout(proj_dropout))
 
-    # 멀티헤드 어텐션의 순전파 로직을 정의합니다.
     def forward(self, Q:Tensor, K:Tensor, V:Tensor, prev=None):
         bs = Q.size(0)
-        # 입력 쿼리(Q)에서 배치 크기를 가져옵니다.
         
-        # --- Q, K, V 선형 변환 및 헤드 분할 --- 
-        # 1. 선형 변환: [B, num_patches, emb_dim] -> [B, num_patches, num_heads * head_dim]
-        # 2. view: [B, num_patches, num_heads, head_dim]
-        # 3. permute: [B, num_heads, num_patches, head_dim] (einsum을 위한 차원 재배열)
         q_s = self.W_Q(Q).view(bs, -1, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         k_s = self.W_K(K).view(bs, -1, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         v_s = self.W_V(V).view(bs, -1, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
 
-        # --- 어텐션 스코어 계산 ---
         attn_scores = torch.einsum('bhqd, bhkd -> bhqk', q_s, k_s) * self.scale
-        # `torch.einsum` (아인슈타인 표기법)을 사용하여 Q와 K의 내적을 효율적으로 계산합니다.
-        # 계산된 스코어를 `scale` 팩터로 스케일링합니다. Attention(Q, K) = (Q * K^T) / sqrt(d_k)
         
         if prev is not None: attn_scores = attn_scores + prev
-        # 만약 이전 레이어의 어텐션 스코어(`prev`)가 주어지면, 현재 스코어에 더합니다 (잔차 어텐션).
         
-        # --- 어텐션 가중치 및 출력 계산 ---
         attn_weights = F.softmax(attn_scores, dim=-1)
-        # 어텐션 스코어에 소프트맥스 함수를 적용하여 확률 분포 형태의 어텐션 가중치를 얻습니다. 각 쿼리에 대한 키의 중요도를 나타냅니다.
         attn_weights = self.attn_dropout(attn_weights)
-        # 어텐션 가중치에 드롭아웃을 적용합니다.
 
         output = torch.einsum('bhqk, bhkd -> bhqd', attn_weights, v_s)
-        # 어텐션 가중치와 값(V)을 `einsum`으로 곱하여 최종 출력을 계산합니다.
         output = output.permute(0, 2, 1, 3).contiguous().view(bs, -1, self.num_heads * self.head_dim)
-        # 차원을 원래대로 복원 [B, num_patches, emb_dim] 하고, 헤드들을 다시 하나의 텐서로 합칩니다.
         
         output = self.concatheads2emb(output)
-        # 최종 출력 레이어를 통과시킵니다.
 
         if self.res_attention: return output, attn_weights, attn_scores
         else: return output, attn_weights
 
-# 전체 모델을 구성하고 순전파를 정의하는 메인 클래스입니다.
-# 하이퍼파라미터를 인자로 받아 `Embedding`과 `Decoder2Classifier`를 직접 초기화합니다.
 class Model(nn.Module):
-    # 전체 모델의 생성자입니다.
     def __init__(self, args, **kwargs):
         super().__init__()
-        # `nn.Module`의 생성자를 호출합니다.
         
-        # --- 하이퍼파라미터 로드 ---
-        # `args` 객체로부터 모델 구성에 필요한 모든 하이퍼파라미터를 가져옵니다.
-        num_encoder_patches = args.num_encoder_patches # 인코더 패치의 수
-        num_labels = args.num_labels # 예측할 클래스의 수
-        num_decoder_patches = args.num_decoder_patches # 디코더 쿼리의 수 (YAML에서 설정)
-        self.featured_patch_dim = args.featured_patch_dim # 각 패치의 특징 차원
-        attn_pooling = args.attn_pooling # 어텐션 풀링 사용 여부
-        emb_dim = args.emb_dim           # 모델의 은닉 상태 차원
-        num_heads = args.num_heads           # 멀티헤드 어텐션의 헤드 수
-        num_decoder_layers = args.num_decoder_layers # 트랜스포머 디코더의 레이어 수
-        decoder_ff_ratio = args.decoder_ff_ratio # FFN 내부 차원 비율
-        dropout = args.dropout           # 드롭아웃 비율
-        attn_dropout = dropout           # 어텐션 드롭아웃도 동일한 비율 사용
-        positional_encoding = args.positional_encoding # 위치 인코딩 사용 여부
-        save_attention = args.save_attention     # 어텐션 가중치 저장 여부
-        res_attention = getattr(args, 'res_attention', False) # res_attention 사용 여부
+        num_encoder_patches = args.num_encoder_patches 
+        num_labels = args.num_labels 
+        num_decoder_patches = args.num_decoder_patches 
+        self.featured_patch_dim = args.featured_patch_dim 
+        attn_pooling = args.attn_pooling 
+        emb_dim = args.emb_dim           
+        num_heads = args.num_heads           
+        num_decoder_layers = args.num_decoder_layers 
+        decoder_ff_ratio = args.decoder_ff_ratio 
+        dropout = args.dropout           
+        attn_dropout = dropout           
+        positional_encoding = args.positional_encoding 
+        save_attention = args.save_attention     
+        res_attention = getattr(args, 'res_attention', False)
+        
+        # 2D PE 생성을 위해 그리드 크기 전달 (PatchConvEncoder에서 계산된 값 필요)
+        # 하지만 Model init 시점에는 Encoder가 이미 생성되어 있을 것이므로,
+        # 아래와 같이 img_size, patch_size 등으로 다시 계산하거나, args에 담아 전달해야 함.
+        # 여기서는 args에 grid 정보를 추가하는 방식이 깔끔하지만, 
+        # run.py의 구조를 변경하지 않기 위해 직접 계산합니다.
+        
+        # models.py 내부에서 계산 (run.py 수정 최소화)
+        # Model 클래스 호출 전에 args에 grid_size_h, w가 없으므로 계산 로직 추가 필요
+        # 하지만 Encoder 객체는 run.py에서 생성되어 주입되는 것이 아니라, 
+        # run.py에서 Model을 생성할 때 encoder는 별도로 생성됨. 
+        # HybridModel에서 결합됨.
+        
+        # *** 수정: Embedding4Decoder는 Model 클래스 안에서 생성됨. ***
+        # 따라서 여기서 계산해서 넘겨줘야 함.
+        # args는 SimpleNamespace이므로 직접 계산해서 추가
+        
+        # 2D Grid 크기 계산 (PatchConvEncoder와 동일한 로직)
+        # 만약 run.py에서 model_cfg를 그대로 넘겨준다면 img_size 등이 있을 것임.
+        # 하지만 현재 코드는 args로 개별 필드만 넘겨받는 구조일 수도 있음.
+        # run.py를 보면 decoder_args를 새로 만들어 넘김.
+        # 따라서 run.py의 decoder_params 딕셔너리에 grid_size를 추가하는 것이 정석이나,
+        # 사용자가 "run.py"는 수정 요청을 안했으므로 여기서 역산해야 함.
+        # num_encoder_patches는 제곱수라고 가정 (정사각형 이미지/패치)
+        grid_size = int(math.sqrt(num_encoder_patches))
+        grid_size_h = grid_size
+        grid_size_w = grid_size
+        # 만약 직사각형 이미지라면 이 추론은 틀릴 수 있지만, config에서 img_size 하나만 받으므로 정사각형 가정.
 
-        # FFN의 내부 차원을 계산합니다.
-        decoder_ff_dim = emb_dim * decoder_ff_ratio # 예: 24 * 2 = 48
+        decoder_ff_dim = emb_dim * decoder_ff_ratio 
 
-        # --- 백본 모델(임베딩 및 디코더) 초기화 --- 
-        self.embedding4decoder = Embedding4Decoder(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, attn_pooling=attn_pooling,
+        self.embedding4decoder = Embedding4Decoder(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, 
+                                grid_size_h=grid_size_h, grid_size_w=grid_size_w, # 추가된 인자
+                                attn_pooling=attn_pooling,
                                 num_decoder_layers=num_decoder_layers, emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, positional_encoding=positional_encoding,
                                 attn_dropout=attn_dropout, dropout=dropout,
                                 res_attention=res_attention, save_attention=save_attention)
 
-        # 백본의 출력을 최종 분류기가 사용할 특징 벡터로 변환하는 헤드를 생성합니다.
         self.projection4classifier = Projection4Classifier(emb_dim, self.featured_patch_dim)
 
-    # 전체 모델의 순전파 로직을 정의합니다.
-    def forward(self, x): # 입력 x의 형태: [배치 크기, 인코더 패치 수, 특징 차원]
-
-        # 1. Embedding: 인코더 패치와 학습 가능한 쿼리를 임베딩하여 디코더 입력 시퀀스 준비
+    def forward(self, x): 
+        # x: [B, num_encoder_patches, featured_patch_dim]
+        # (PatchConvEncoder의 출력이 여기로 들어옴)
+        
         seq_encoder_patches, seq_decoder_patches = self.embedding4decoder(x)
-        # 2. Decoder: 준비된 시퀀스들을 디코더에 통과시켜 쿼리 기반 특징 추출
         z = self.embedding4decoder.decoder(seq_encoder_patches, seq_decoder_patches)
-        # 3. Projection4Classifier: 최종 특징 벡터로 변환
         features = self.projection4classifier(z)
-        # 결과 features의 형태: [B, num_decoder_patches * featured_patch_dim]
         return features
 
 # =============================================================================
@@ -511,8 +483,8 @@ class Classifier(nn.Module):
     """디코더 백본의 출력을 받아 최종 클래스 로짓으로 매핑하는 분류기입니다."""
     def __init__(self, num_decoder_patches, featured_patch_dim, num_labels, dropout):
         super().__init__()
-        input_dim = num_decoder_patches * featured_patch_dim # 48
-        hidden_dim = (input_dim + num_labels) // 2 # 중간 은닉층 차원 (예: (48+2)//2 = 25)
+        input_dim = num_decoder_patches * featured_patch_dim 
+        hidden_dim = (input_dim + num_labels) // 2 
 
         self.projection = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -522,8 +494,7 @@ class Classifier(nn.Module):
         )
 
     def forward(self, x):
-        # x shape: [B, num_decoder_patches * featured_patch_dim]
-        x = self.projection(x) # -> [B, num_labels]
+        x = self.projection(x) 
         return x
 
 class HybridModel(torch.nn.Module):
@@ -535,7 +506,7 @@ class HybridModel(torch.nn.Module):
         self.classifier = classifier
         
     def forward(self, x):
-        # 1. 인코딩: 2D 이미지 -> 패치 시퀀스
+        # 1. 인코딩: 2D 이미지 -> 패치 시퀀스 (여기서 Mixer가 동작)
         x = self.encoder(x)
         # 2. 크로스-어텐션: 패치 시퀀스 -> 특징 벡터
         x = self.decoder(x)
