@@ -144,20 +144,20 @@ def log_model_parameters(model):
     total_params = encoder_total_params + decoder_total_params + classifier_total_params
 
     logging.info("="*50)
-    logging.info("모델 파라미터 수:")
+    logging.info(f"모델 파라미터 수: {total_params:,} 개")
     logging.info(f"  - Encoder (PatchConvEncoder):         {encoder_total_params:,} 개")
     logging.info(f"    - conv_front (CNN Backbone):        {conv_front_params:,} 개")
     logging.info(f"    - 1x1_conv (Channel Proj):          {conv_1x1_params:,} 개")
     logging.info(f"    - patch_mixer (Depthwise Conv):     {patch_mixer_params:,} 개")
     logging.info(f"    - norm (LayerNorm):                 {encoder_norm_params:,} 개")
-    logging.info(f"  - Decoder (Transformer-based):        {decoder_total_params:,} 개")
+    logging.info(f"  - Decoder (Cross-Attention-based):    {decoder_total_params:,} 개")
     logging.info(f"    - Embedding Layer (W_feat2emb):     {w_feat2emb_params:,} 개")
     logging.info(f"    - Learnable Queries:                {query_params:,} 개")
-    logging.info(f"    - Positional Encoding (learnable):  {pe_params:,} 개")
+    # logging.info(f"    - Positional Encoding (learnable):  {pe_params:,} 개")
     logging.info(f"    - Decoder Layers (Cross-Attention): {decoder_layers_params:,} 개")
     logging.info(f"    - Projection4Classifier:            {decoder_projection4classifier_params:,} 개")
     logging.info(f"  - Classifier (Projection MLP):        {classifier_total_params:,} 개")
-    logging.info(f"  - 총 학습 가능 파라미터:              {total_params:,} 개")
+    # logging.info(f"  - 총 학습 가능 파라미터:                {total_params:,} 개")
 
 def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
