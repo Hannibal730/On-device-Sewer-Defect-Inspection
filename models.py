@@ -14,123 +14,231 @@ class CnnFeatureExtractor(nn.Module):
     다양한 CNN 아키텍처의 앞부분을 특징 추출기로 사용하는 범용 클래스입니다.
     config.yaml의 `cnn_feature_extractor.name` 설정에 따라 모델 구조가 결정됩니다.
     """
-    def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, in_channels=3, featured_patch_dim=None):
+    def __init__(
+        self,
+        cnn_feature_extractor_name: str = "resnet18_layer1",
+        pretrained: bool = True,
+        in_channels: int = 3,
+        featured_patch_dim: int | None = None,
+    ) -> None:
         super().__init__()
         self.cnn_feature_extractor_name = cnn_feature_extractor_name
 
         # CNN 모델 이름에 따라 모델과 잘라낼 레이어, 기본 출력 채널을 설정합니다.
-        if cnn_feature_extractor_name == 'resnet18_layer1':
-            base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+        if cnn_feature_extractor_name == "resnet18_layer1":
+            base_model = models.resnet18(
+                weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
+            )
             self._adjust_input_channels(base_model, in_channels)
-            self.conv_front = nn.Sequential(*list(base_model.children())[:5]) # layer1까지
+            # stem + layer1까지 사용
+            self.conv_front = nn.Sequential(*list(base_model.children())[:5])
             base_out_channels = 64
-        elif cnn_feature_extractor_name == 'resnet18_layer2':
-            base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+
+        elif cnn_feature_extractor_name == "resnet18_layer2":
+            base_model = models.resnet18(
+                weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
+            )
             self._adjust_input_channels(base_model, in_channels)
-            self.conv_front = nn.Sequential(*list(base_model.children())[:6]) # layer2까지
+            # stem + layer1 + layer2까지 사용
+            self.conv_front = nn.Sequential(*list(base_model.children())[:6])
             base_out_channels = 128
-            
-        elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat1':
-            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+
+        elif cnn_feature_extractor_name == "mobilenet_v3_small_feat1":
+            base_model = models.mobilenet_v3_small(
+                weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None
+            )
             self._adjust_input_channels(base_model, in_channels)
-            self.conv_front = base_model.features[:2] # features의 2번째 블록까지
+            # features의 2번째 블록까지
+            self.conv_front = base_model.features[:2]
             base_out_channels = 16
-        elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat3':
-            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+
+        elif cnn_feature_extractor_name == "mobilenet_v3_small_feat3":
+            base_model = models.mobilenet_v3_small(
+                weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None
+            )
             self._adjust_input_channels(base_model, in_channels)
-            self.conv_front = base_model.features[:4] # features의 4번째 블록까지
+            # features의 4번째 블록까지
+            self.conv_front = base_model.features[:4]
             base_out_channels = 24
-        elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat4':
-            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+
+        elif cnn_feature_extractor_name == "mobilenet_v3_small_feat4":
+            base_model = models.mobilenet_v3_small(
+                weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None
+            )
             self._adjust_input_channels(base_model, in_channels)
-            self.conv_front = base_model.features[:5] # features의 5번째 블록까지
-            base_out_channels = 40
-            
-        elif cnn_feature_extractor_name == 'efficientnet_b0_feat2':
-            base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
-            self.conv_front = base_model.features[:3] # features의 3번째 블록까지
-            base_out_channels = 24
-        elif cnn_feature_extractor_name == 'efficientnet_b0_feat3':
-            base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
-            self.conv_front = base_model.features[:4] # features의 4번째 블록까지
+            # features의 5번째 블록까지
+            self.conv_front = base_model.features[:5]
             base_out_channels = 40
 
-        # --- MobileNetV4 (timm) ---
-        elif cnn_feature_extractor_name == 'mobilenet_v4_feat1':
-            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0,))
+        elif cnn_feature_extractor_name == "efficientnet_b0_feat2":
+            base_model = models.efficientnet_b0(
+                weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
+            )
+            self._adjust_input_channels(base_model, in_channels)
+            # features의 3번째 블록까지
+            self.conv_front = base_model.features[:3]
+            base_out_channels = 24
+
+        elif cnn_feature_extractor_name == "efficientnet_b0_feat3":
+            base_model = models.efficientnet_b0(
+                weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
+            )
+            self._adjust_input_channels(base_model, in_channels)
+            # features의 4번째 블록까지
+            self.conv_front = base_model.features[:4]
+            base_out_channels = 40
+
+        # --- MobileNetV4 (timm, features_only) ---
+        elif cnn_feature_extractor_name == "mobilenet_v4_feat1":
+            base_model = timm.create_model(
+                "mobilenetv4_conv_small",
+                pretrained=pretrained,
+                features_only=True,
+                out_indices=(0,),
+            )
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
-            base_out_channels = 32 # feat1 출력 채널
-        elif cnn_feature_extractor_name == 'mobilenet_v4_feat2':
-            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1))
+            base_out_channels = 32
+
+        elif cnn_feature_extractor_name == "mobilenet_v4_feat2":
+            base_model = timm.create_model(
+                "mobilenetv4_conv_small",
+                pretrained=pretrained,
+                features_only=True,
+                out_indices=(0, 1),
+            )
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
-            base_out_channels = 48 # feat2 출력 채널
-        elif cnn_feature_extractor_name == 'mobilenet_v4_feat3':
-            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1, 2))
+            base_out_channels = 48
+
+        elif cnn_feature_extractor_name == "mobilenet_v4_feat3":
+            base_model = timm.create_model(
+                "mobilenetv4_conv_small",
+                pretrained=pretrained,
+                features_only=True,
+                out_indices=(0, 1, 2),
+            )
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
-            base_out_channels = 64 # feat3 출력 채널
-        elif cnn_feature_extractor_name == 'mobilenet_v4_feat4':
-            base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1, 2, 3))
+            base_out_channels = 64
+
+        elif cnn_feature_extractor_name == "mobilenet_v4_feat4":
+            base_model = timm.create_model(
+                "mobilenetv4_conv_small",
+                pretrained=pretrained,
+                features_only=True,
+                out_indices=(0, 1, 2, 3),
+            )
             self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
-            base_out_channels = 96 # feat4 출력 채널
+            base_out_channels = 96
 
         else:
-            raise ValueError(f"지원하지 않는 CNN 피처 추출기 이름입니다: {cnn_feature_extractor_name}")
+            raise ValueError(
+                f"지원하지 않는 CNN 피처 추출기 이름입니다: {cnn_feature_extractor_name}"
+            )
 
         # 최종 출력 채널 수를 `featured_patch_dim`에 맞추기 위한 1x1 컨볼루션 레이어입니다.
-        if featured_patch_dim is not None and featured_patch_dim != base_out_channels:
-            self.conv_1x1 = nn.Conv2d(base_out_channels, featured_patch_dim, kernel_size=1)
-        else:
-            self.conv_1x1 = nn.Identity()
+        final_channels = featured_patch_dim if featured_patch_dim is not None else base_out_channels
 
-    def _adjust_input_channels(self, base_model, in_channels):
+        if featured_patch_dim is not None and featured_patch_dim != base_out_channels:
+            # 채널 수를 바꾸면서 conv + BN + GELU 한 번에 처리
+            self.conv_1x1 = nn.Sequential(
+                nn.Conv2d(
+                    base_out_channels,
+                    featured_patch_dim,
+                    kernel_size=1,
+                    bias=False,
+                ),
+                nn.BatchNorm2d(featured_patch_dim),
+                nn.GELU(),
+            )    
+        else:
+            # 채널은 그대로지만 BN + GELU는 한 번 더 태우고 싶을 때
+            self.conv_1x1 = nn.Sequential(
+                nn.Identity(),
+                nn.BatchNorm2d(final_channels),
+                nn.GELU(),
+            )
+
+    def _adjust_input_channels(self, base_model, in_channels: int) -> None:
         """모델의 첫 번째 컨볼루션 레이어의 입력 채널을 조정합니다."""
         if in_channels == 1:
-            # 첫 번째 conv 레이어 찾기
-            if 'resnet' in self.cnn_feature_extractor_name:
+            # ResNet 계열
+            if "resnet" in self.cnn_feature_extractor_name:
                 first_conv = base_model.conv1
-                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
-                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
+                out_c = first_conv.out_channels
+                k = first_conv.kernel_size
+                s = first_conv.stride
+                p = first_conv.padding
+
+                new_conv = nn.Conv2d(
+                    1, out_c, kernel_size=k, stride=s, padding=p, bias=False
+                )
                 with torch.no_grad():
                     new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
                 base_model.conv1 = new_conv
-            elif 'mobilenet' in self.cnn_feature_extractor_name or 'efficientnet' in self.cnn_feature_extractor_name:
-                first_conv = base_model.features[0][0] # nn.Sequential -> Conv2dNormActivation -> Conv2d
-                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
-                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
+
+            # torchvision MobileNetV3 / EfficientNet 계열
+            elif "mobilenet_v3" in self.cnn_feature_extractor_name or "efficientnet" in self.cnn_feature_extractor_name:
+                # Conv2dNormActivation → Conv2d
+                first_conv = base_model.features[0][0]
+                out_c = first_conv.out_channels
+                k = first_conv.kernel_size
+                s = first_conv.stride
+                p = first_conv.padding
+
+                new_conv = nn.Conv2d(
+                    1, out_c, kernel_size=k, stride=s, padding=p, bias=False
+                )
                 with torch.no_grad():
                     new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
                 base_model.features[0][0] = new_conv
-            elif 'mobilenetv4' in self.cnn_feature_extractor_name:
-                # timm의 MobileNetV4 모델
+
+            # timm MobileNetV4 계열
+            elif "mobilenet_v4" in self.cnn_feature_extractor_name:
                 first_conv = base_model.conv_stem
-                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
-                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
+                out_c = first_conv.out_channels
+                k = first_conv.kernel_size
+                s = first_conv.stride
+                p = first_conv.padding
+
+                new_conv = nn.Conv2d(
+                    1, out_c, kernel_size=k, stride=s, padding=p, bias=False
+                )
                 with torch.no_grad():
                     new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
                 base_model.conv_stem = new_conv
+
         elif in_channels != 3:
             raise ValueError("in_channels는 1 또는 3만 지원합니다.")
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1. 기본 특징 추출
         x = self.conv_front(x)
-        x = self.conv_1x1(x) # 최종 채널 수 조정
 
         # timm의 features_only=True 모델은 리스트를 반환하므로 마지막 요소만 사용
         if isinstance(x, list):
             x = x[-1]
 
+        # 2. conv_1x1 블록 (Conv/Identity(선택) + BN + GELU)
+        x = self.conv_1x1(x)
         return x
+
 
 class PatchConvEncoder(nn.Module):
     """이미지를 패치로 나누고, 각 패치에서 특징을 추출하여 1D 시퀀스로 변환하는 인코더입니다."""
-    def __init__(self, in_channels, img_size, patch_size, stride, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True):
-        super(PatchConvEncoder, self).__init__()
+    def __init__(
+        self,
+        in_channels: int,
+        img_size: int,
+        patch_size: int,
+        stride: int,
+        featured_patch_dim: int,
+        cnn_feature_extractor_name: str,
+        pre_trained: bool = True,
+    ) -> None:
+        super().__init__()
         self.patch_size = patch_size
         self.stride = stride
         self.featured_patch_dim = featured_patch_dim
@@ -142,48 +250,82 @@ class PatchConvEncoder(nn.Module):
 
         # 1. Shared CNN Feature Extractor
         self.shared_conv = nn.Sequential(
-            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=pre_trained, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
+            CnnFeatureExtractor(
+                cnn_feature_extractor_name=cnn_feature_extractor_name,
+                pretrained=pre_trained,
+                in_channels=in_channels,
+                featured_patch_dim=featured_patch_dim,
+            ),
             nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(start_dim=1) # [B*num_encoder_patches, D]
-        )
-        
-        # 2. Patch Mixer (Idea 2-1): 패치 간 정보 교환을 위한 Depthwise Convolution
-        # 3x3 Depthwise Conv (groups=in_channels)는 파라미터가 매우 적습니다.
-        # Padding=1을 주어 공간 크기(H_grid, W_grid)를 유지합니다.
-        self.patch_mixer = nn.Sequential(
-            nn.Conv2d(featured_patch_dim, featured_patch_dim, kernel_size=3, padding=1, groups=featured_patch_dim, bias=False),
-            nn.BatchNorm2d(featured_patch_dim),
-            nn.ReLU(inplace=True)
+            nn.Flatten(start_dim=1),  # [B * num_encoder_patches, D]
         )
 
+        # 2. Patch-wise FFN (MLP) + Residual
+        # 각 패치 벡터를 비선형적으로 변환하여 표현력을 높이는 역할을 합니다.
+        self.patch_ffn = nn.Sequential(
+            nn.LayerNorm(featured_patch_dim),
+            nn.Linear(featured_patch_dim, featured_patch_dim * 4),
+            nn.GELU(),
+            nn.Linear(featured_patch_dim * 4, featured_patch_dim),
+        )
+
+        # 3. Patch Mixer: Depthwise Conv로 인접 패치 간 정보 교환
+        self.patch_mixer = nn.Sequential(
+            nn.Conv2d(
+                featured_patch_dim,
+                featured_patch_dim,
+                kernel_size=3,
+                padding=1,
+                groups=featured_patch_dim,
+                bias=False,
+            ),
+            nn.BatchNorm2d(featured_patch_dim),
+            nn.ReLU(inplace=True),
+        )
+
+        # 4. 최종 LayerNorm (patch sequence 차원에서)
         self.norm = nn.LayerNorm(featured_patch_dim)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
-        # 이미지를 패치로 분할
-        patches = x.unfold(2, self.patch_size, self.stride).unfold(3, self.patch_size, self.stride)
-        patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous().view(-1, C, self.patch_size, self.patch_size)
-        # patches: [B * num_patches, C, patch_size, patch_size]
-        
-        # 각 패치별 특징 추출
-        conv_outs = self.shared_conv(patches) # [B * num_patches, D]
-        
-        # --- [Idea 2-1] Patch Mixing ---
-        # 1. Grid 복원: [B * (H_p * W_p), D] -> [B, D, H_p, W_p]
-        #    이 과정은 단순 View 연산으로 비용이 거의 들지 않습니다.
-        #    하지만 이를 통해 인접 패치(상하좌우)가 누구인지 알 수 있게 됩니다.
-        conv_outs_grid = conv_outs.view(B, self.num_patches_H, self.num_patches_W, self.featured_patch_dim).permute(0, 3, 1, 2)
-        
-        # 2. Mixing: Depthwise Conv로 인접 패치 정보 섞기
-        mixed_outs = self.patch_mixer(conv_outs_grid)
-        
-        # 3. Flatten: 다시 시퀀스로 변환 [B, D, H_p, W_p] -> [B, H_p * W_p, D]
-        #    permute(0, 2, 3, 1) -> [B, H_p, W_p, D]
-        mixed_outs = mixed_outs.permute(0, 2, 3, 1).contiguous().view(B, -1, self.featured_patch_dim)
 
-        # Layer Normalization 적용
+        # 이미지를 패치로 분할
+        patches = x.unfold(2, self.patch_size, self.stride).unfold(
+            3, self.patch_size, self.stride
+        )
+        # [B, num_patches_H, num_patches_W, C, patch_size, patch_size]
+        patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous()
+        patches = patches.view(-1, C, self.patch_size, self.patch_size)
+        # patches: [B * num_patches, C, patch_size, patch_size]
+
+        # 1. 각 패치별 CNN 특징 추출 → [B * num_patches, D]
+        conv_outs = self.shared_conv(patches)
+
+        # 2. Patch-wise FFN + Residual (ViT-style)
+        residual = conv_outs
+        conv_outs = self.patch_ffn(conv_outs)  # [B * num_patches, D]
+        conv_outs = conv_outs + residual
+
+        # 3. Grid 복원: [B * (H_p * W_p), D] -> [B, D, H_p, W_p]
+        conv_outs_grid = conv_outs.view(
+            B,
+            self.num_patches_H,
+            self.num_patches_W,
+            self.featured_patch_dim,
+        ).permute(0, 3, 1, 2)  # [B, D, H_p, W_p]
+
+        # 4. Patch Mixer (Depthwise Conv) + Residual
+        x_grid = conv_outs_grid
+        mixed_outs = self.patch_mixer(x_grid)
+        mixed_outs = mixed_outs + x_grid  # residual connection
+
+        # 5. 다시 시퀀스로 변환 [B, D, H_p, W_p] -> [B, H_p * W_p, D]
+        mixed_outs = mixed_outs.permute(0, 2, 3, 1).contiguous()
+        mixed_outs = mixed_outs.view(B, -1, self.featured_patch_dim)
+
+        # 6. 최종 Layer Normalization
         mixed_outs = self.norm(mixed_outs)
-        
+
         return mixed_outs
 
 # =============================================================================
@@ -429,32 +571,10 @@ class Model(nn.Module):
         res_attention = getattr(args, 'res_attention', False)
         
         # 2D PE 생성을 위해 그리드 크기 전달 (PatchConvEncoder에서 계산된 값 필요)
-        # 하지만 Model init 시점에는 Encoder가 이미 생성되어 있을 것이므로,
-        # 아래와 같이 img_size, patch_size 등으로 다시 계산하거나, args에 담아 전달해야 함.
-        # 여기서는 args에 grid 정보를 추가하는 방식이 깔끔하지만, 
-        # run.py의 구조를 변경하지 않기 위해 직접 계산합니다.
-        
-        # models.py 내부에서 계산 (run.py 수정 최소화)
-        # Model 클래스 호출 전에 args에 grid_size_h, w가 없으므로 계산 로직 추가 필요
-        # 하지만 Encoder 객체는 run.py에서 생성되어 주입되는 것이 아니라, 
-        # run.py에서 Model을 생성할 때 encoder는 별도로 생성됨. 
-        # HybridModel에서 결합됨.
-        
-        # *** 수정: Embedding4Decoder는 Model 클래스 안에서 생성됨. ***
-        # 따라서 여기서 계산해서 넘겨줘야 함.
-        # args는 SimpleNamespace이므로 직접 계산해서 추가
-        
-        # 2D Grid 크기 계산 (PatchConvEncoder와 동일한 로직)
-        # 만약 run.py에서 model_cfg를 그대로 넘겨준다면 img_size 등이 있을 것임.
-        # 하지만 현재 코드는 args로 개별 필드만 넘겨받는 구조일 수도 있음.
-        # run.py를 보면 decoder_args를 새로 만들어 넘김.
-        # 따라서 run.py의 decoder_params 딕셔너리에 grid_size를 추가하는 것이 정석이나,
-        # 사용자가 "run.py"는 수정 요청을 안했으므로 여기서 역산해야 함.
-        # num_encoder_patches는 제곱수라고 가정 (정사각형 이미지/패치)
+        # num_encoder_patches는 정사각형 그리드라고 가정
         grid_size = int(math.sqrt(num_encoder_patches))
         grid_size_h = grid_size
         grid_size_w = grid_size
-        # 만약 직사각형 이미지라면 이 추론은 틀릴 수 있지만, config에서 img_size 하나만 받으므로 정사각형 가정.
 
         decoder_ff_dim = emb_dim * decoder_ff_ratio 
 
