@@ -166,9 +166,12 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             images, labels, filenames = zip(*batch)
             return torch.stack(images, 0), torch.tensor(labels), list(filenames)
 
-        train_loader = DataLoader(train_dataset, batch_size=train_cfg.batch_size, shuffle=True, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False, collate_fn=collate_fn, drop_last=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False, collate_fn=collate_fn)
-        test_loader = DataLoader(test_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=True if run_cfg.num_workers > 0 else False, collate_fn=collate_fn)
+        # persistent_workers는 num_workers > 0 이고 CUDA가 사용 가능할 때만 활성화합니다.
+        use_persistent_workers = run_cfg.num_workers > 0 and torch.cuda.is_available()
+
+        train_loader = DataLoader(train_dataset, batch_size=train_cfg.batch_size, shuffle=True, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=use_persistent_workers, collate_fn=collate_fn, drop_last=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=use_persistent_workers, collate_fn=collate_fn)
+        test_loader = DataLoader(test_dataset, batch_size=train_cfg.batch_size, shuffle=False, num_workers=run_cfg.num_workers, pin_memory=True, persistent_workers=use_persistent_workers, collate_fn=collate_fn)
         
         # --- BCE 손실 함수를 위한 pos_weight 계산 ---
         pos_weight = None # 기본값은 None

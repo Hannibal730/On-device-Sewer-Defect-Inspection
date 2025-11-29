@@ -107,11 +107,10 @@ def log_model_parameters(model: nn.Module) -> None:
     cnn_feature_extractor = model.encoder.shared_conv[0]
     conv_front_params = count_parameters(cnn_feature_extractor.conv_front)
     conv_1x1_params = count_parameters(cnn_feature_extractor.conv_1x1)
-    patch_ffn_params = count_parameters(model.encoder.patch_ffn)
     patch_mixer_params = count_parameters(model.encoder.patch_mixer)
     encoder_norm_params = count_parameters(model.encoder.norm)
     encoder_total_params = (
-        conv_front_params + conv_1x1_params + patch_ffn_params + patch_mixer_params + encoder_norm_params
+        conv_front_params + conv_1x1_params + patch_mixer_params + encoder_norm_params
     )
 
     # 2. Decoder (DecoderBackbone) 내부 파라미터 계산
@@ -144,7 +143,6 @@ def log_model_parameters(model: nn.Module) -> None:
     logging.info(f"  - Encoder (PatchConvEncoder):         {encoder_total_params:,} 개")
     logging.info(f"    - conv_front (CNN Backbone):        {conv_front_params:,} 개")
     logging.info(f"    - 1x1_conv (Channel Proj):          {conv_1x1_params:,} 개")
-    logging.info(f"    - patch_ffn (Patch-wise FFN):       {patch_ffn_params:,} 개")
     logging.info(f"    - patch_mixer (Depthwise Conv):     {patch_mixer_params:,} 개")
     logging.info(f"    - norm (LayerNorm):                 {encoder_norm_params:,} 개")
     logging.info(f"  - Decoder (Cross-Attention-based):    {decoder_total_params:,} 개")

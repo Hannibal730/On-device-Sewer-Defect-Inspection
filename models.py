@@ -260,15 +260,6 @@ class PatchConvEncoder(nn.Module):
             nn.Flatten(start_dim=1),  # [B * num_encoder_patches, D]
         )
 
-        # 2. Patch-wise FFN (MLP) + Residual
-        # 각 패치 벡터를 비선형적으로 변환하여 표현력을 높이는 역할을 합니다.
-        self.patch_ffn = nn.Sequential(
-            nn.LayerNorm(featured_patch_dim),
-            nn.Linear(featured_patch_dim, featured_patch_dim * 4),
-            nn.GELU(),
-            nn.Linear(featured_patch_dim * 4, featured_patch_dim),
-        )
-
         # 3. Patch Mixer: Depthwise Conv로 인접 패치 간 정보 교환
         self.patch_mixer = nn.Sequential(
             nn.Conv2d(
@@ -300,11 +291,6 @@ class PatchConvEncoder(nn.Module):
 
         # 1. 각 패치별 CNN 특징 추출 → [B * num_patches, D]
         conv_outs = self.shared_conv(patches)
-
-        # 2. Patch-wise FFN + Residual (ViT-style)
-        residual = conv_outs
-        conv_outs = self.patch_ffn(conv_outs)  # [B * num_patches, D]
-        conv_outs = conv_outs + residual
 
         # 3. Grid 복원: [B * (H_p * W_p), D] -> [B, D, H_p, W_p]
         conv_outs_grid = conv_outs.view(
