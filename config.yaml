@@ -51,6 +51,13 @@ training_run:
   lr: 0.001                     # 옵티마이저의 학습률.
   weight_decay: 0.0001             # AdamW 옵티마이저의 가중치 감쇠(Weight Decay) 값.
   loss_function: 'CrossEntropyLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss', 'FocalLoss'
+  label_smoothing: 0.1            # 레이블 스무딩(Label Smoothing) 값. 0.0은 비활성화. (과적합 방지, 모델 일반화 성능 향상)
+  # --- 학습률 Warmup 설정 ---
+  warmup:
+    enabled: false               # true: Warmup 사용, false: 사용 안 함
+    epochs: 5                   # Warmup을 진행할 에포크 수
+    start_lr: 0.00001           # Warmup 시작 시의 학습률 (선형증가)
+
   # bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능. (num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리)
   # FocalLoss 하이퍼파라미터 (loss_function이 'FocalLoss'일 때 사용)
   # focal_loss_alpha: 0.5          # 클래스 불균형 조절. (0.5: 균등, >0.5: Defect 중요도 상승(Recall 향상), <0.5: Normal 중요도 상승(Precision 향상))
@@ -97,41 +104,40 @@ training_run:
 # =============================================================================
 # 3. 훈련 하이퍼파라미터 (baseline.py 전용)
 # =============================================================================
-training_baseline:
-  epochs: 90                    # 훈련할 총 에포크 수.
-  batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
-  pre_trained: false            # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
-  lr: 0.001
-  weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
-  optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
-  loss_function: 'CrossEntropyLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'
-  # bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능. (num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리)
-  # 사용할 학습률 스케줄러를 설정합니다.
-  scheduler: 'cosineannealinglr'      # 옵션: 'multisteplr', 'cosineannealinglr', 'none'
-  scheduler_params:
-    # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
-    T_max: 90
-    eta_min: 0.0001
-  best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
-
 # training_baseline:
 #   epochs: 90                    # 훈련할 총 에포크 수.
 #   batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
-#   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
-#   optimizer: 'sgd'              # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
-#   loss_function: 'BCEWithLogitsLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'. (num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리)
-#   bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능.
-#   lr: 0.1                       # 옵티마이저의 학습률.
-#   momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
-#   weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
-#   scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'cosineannealinglr', 'none'
-#   # scheduler_params:
+#   pre_trained: false            # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
+#   lr: 0.001
+#   optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
+#   loss_function: 'CrossEntropyLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'
+#   # bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능. (num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리)
+#   # 사용할 학습률 스케줄러를 설정합니다.
+#   scheduler: 'cosineannealinglr'      # 옵션: 'multisteplr', 'cosineannealinglr', 'none'
+#   scheduler_params:
 #     # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
-#     # T_max: 90
-#     # eta_min: 0.000001
-#   milestones: [30, 60, 80]      # MultiStepLR 스케줄러에서 학습률을 감소시킬 에포크 지점.
-#   gamma: 0.1                    # MultiStepLR 스케줄러에서 학습률에 곱할 값.
+#     T_max: 90
+#     eta_min: 0.000001
 #   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
+
+training_baseline:
+  epochs: 90                    # 훈련할 총 에포크 수.
+  batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
+  pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
+  optimizer: 'sgd'              # 사용할 옵티마이저. 옵션: 'adamw', 'sgd'
+  loss_function: 'BCEWithLogitsLoss' # 사용할 손실 함수. 옵션: 'CrossEntropyLoss', 'BCEWithLogitsLoss'. (num_labels=2여도 코드가 자동으로 [B, 1]로 변환하여 처리)
+  bce_pos_weight: 'auto'        # 'BCEWithLogitsLoss' 사용 시 양성 클래스 가중치. 'auto'로 설정 시 자동 계산, 특정 값(예: 9.0)으로 수동 설정 가능.
+  lr: 0.1                       # 옵티마이저의 학습률.
+  momentum: 0.9                 # SGD 옵티마이저의 모멘텀 값.
+  weight_decay: 0.0001          # 옵티마이저의 가중치 감쇠(Weight Decay) 값.
+  scheduler: 'multisteplr'      # 사용할 학습률 스케줄러. 옵션: 'multisteplr', 'cosineannealinglr', 'none'
+  # scheduler_params:
+    # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
+    # T_max: 90
+    # eta_min: 0.000001
+  milestones: [30, 60, 80]      # MultiStepLR 스케줄러에서 학습률을 감소시킬 에포크 지점.
+  gamma: 0.1                    # MultiStepLR 스케줄러에서 학습률에 곱할 값.
+  best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
 
 # =============================================================================
@@ -140,6 +146,7 @@ training_baseline:
 model:
   # --- 이미지 및 인코더 설정 ---
   img_size: 224                # 모델에 입력하기 전 이미지의 리사이즈 크기 (정사각형).
+  in_channels: 3               # 입력 이미지의 채널 수. 옵션: 1 (흑백), 3 (컬러).
   patch_size: 56              # 이미지를 나눌 정사각형 패치의 크기. `img_size`는 `patch_size`로 나누어 떨어져야 합니다.
   stride: 56                   # 패치를 추출할 때의 보폭(stride). `patch_size`보다 작으면 오버랩됩니다.
   cnn_feature_extractor:
@@ -172,11 +179,11 @@ model:
   num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
   attn_pooling: true         # true: 어텐션 풀링으로 동적 쿼리 생성, false: 기존의 고정 쿼리 방식 사용.
   decoder_ff_ratio: 2        # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (decoder_ff_dim = emb_dim * decoder_ff_ratio).
-  dropout: 0.0               # 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).
+  dropout: 0.1               # 모델 내부에 적용될 드롭아웃 비율 (분류기, FFN, 어텐션 출력에 적용).
   positional_encoding: true  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
   res_attention: true        # 디코더 레이어 간에 어텐션 스코어를 전달하는 잔차 어텐션 사용 여부.
   save_attention: true       # 추론 시 어텐션 맵을 저장할지 여부. True로 설정하면 시각화에 사용할 수 있습니다.
-  num_plot_attention: 7     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
+  num_plot_attention: 5     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
 
 # =============================================================================
 # 5. Baseline 모델 설정 (baseline.py 전용)

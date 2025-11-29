@@ -493,16 +493,12 @@ def main():
     # --- 옵티마이저 및 스케줄러 설정 ---
     optimizer, scheduler = None, None
     if run_cfg.mode == 'train':
-        optimizer_name = getattr(train_cfg, 'optimizer', 'adamw').lower()
-        weight_decay = getattr(train_cfg, 'weight_decay', 0.0) # weight_decay 값을 train_cfg에서 가져옴
-
-        if optimizer_name == 'sgd':
-            momentum = getattr(train_cfg, 'momentum', 0.9)
-            logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={momentum}, weight_decay={weight_decay})")
-            optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=momentum, weight_decay=weight_decay)
+        if getattr(train_cfg, 'optimizer', 'adamw').lower() == 'sgd':
+            logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={train_cfg.momentum}, weight_decay={train_cfg.weight_decay})")
+            optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=train_cfg.momentum, weight_decay=train_cfg.weight_decay)
         else:
-            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={weight_decay})")
-            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
+            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr})")
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
 
         # scheduler_params가 없으면 빈 객체로 초기화
         scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())

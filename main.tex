@@ -1,0 +1,298 @@
+%% 
+%% Copyright 2007-2020 Elsevier Ltd
+%% 
+%% This file is part of the 'Elsarticle Bundle'.
+%% ---------------------------------------------
+%% 
+%% It may be distributed under the conditions of the LaTeX Project Public
+%% License, either version 1.2 of this license or (at your option) any
+%% later version.  The latest version of this license is in
+%%    http://www.latex-project.org/lppl.txt
+%% and version 1.2 or later is part of all distributions of LaTeX
+%% version 1999/12/01 or later.
+%% 
+%% The list of all files belonging to the 'Elsarticle Bundle' is
+%% given in the file `manifest.txt'.
+%% 
+%% Template article for Elsevier's document class `elsarticle'
+%% with harvard style bibliographic references
+
+\documentclass[preprint,12pt,authoryear]{elsarticle}
+
+%% Use the option review to obtain double line spacing
+%% \documentclass[authoryear,preprint,review,12pt]{elsarticle}
+
+%% Use the options 1p,twocolumn; 3p; 3p,twocolumn; 5p; or 5p,twocolumn
+%% for a journal layout:
+%% \documentclass[final,1p,times,authoryear]{elsarticle}
+%% \documentclass[final,1p,times,twocolumn,authoryear]{elsarticle}
+%% \documentclass[final,3p,times,authoryear]{elsarticle}
+%% \documentclass[final,3p,times,twocolumn,authoryear]{elsarticle}
+%% \documentclass[final,5p,times,authoryear]{elsarticle}
+%% \documentclass[final,5p,times,twocolumn,authoryear]{elsarticle}
+
+%% For including figures, graphicx.sty has been loaded in
+%% elsarticle.cls. If you prefer to use the old commands
+%% please give \usepackage{epsfig}
+
+%% The amssymb package provides various useful mathematical symbols
+% \usepackage{amssymb}
+% \usepackage[ruled,vlined]{algorithm2e}
+\usepackage{graphicx}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\input{math_commands}
+\usepackage{multirow}
+
+\usepackage{pifont}
+\newcommand{\xmark}{\ding{55}}%
+
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+%% The amsthm package provides extended theorem environments
+%% \usepackage{amsthm}
+
+%% The lineno packages adds line numbers. Start line numbering with
+%% \begin{linenumbers}, end it with \end{linenumbers}. Or switch it on
+%% for the whole article with \linenumbers.
+%% \usepackage{lineno}
+
+\usepackage[utf8]{inputenc}
+\usepackage{verbatim}
+\usepackage[USenglish, nodayofweek]{datetime}
+\usepackage{url}
+\usepackage{graphics}
+\usepackage{subfig}
+\usepackage{makecell}
+\usepackage{multirow}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{rotating}
+\usepackage{geometry}
+\usepackage{pdflscape}
+\usepackage{afterpage}
+\hypersetup{colorlinks = true, linkcolor = blue, anchorcolor =red, citecolor = blue, filecolor = red, urlcolor = red, pdfauthor=author}
+
+\journal{Engineering Applications of Artificial Intelligence}
+
+\begin{document}
+
+\begin{frontmatter}
+
+%% Title, authors and addresses
+
+%% use the tnoteref command within \title for footnotes;
+%% use the tnotetext command for theassociated footnote;
+%% use the fnref command within \author or \affiliation for footnotes;
+%% use the fntext command for theassociated footnote;
+%% use the corref command within \author for corresponding author footnotes;
+%% use the cortext command for theassociated footnote;
+%% use the ead command for the email address,
+%% and the form \ead[url] for the home page:
+%% \title{Title\tnoteref{label1}}
+%% \tnotetext[label1]{}
+%% \author{Name\corref{cor1}\fnref{label2}}
+%% \ead{email address}
+%% \ead[url]{home page}
+%% \fntext[label2]{}
+%% \cortext[cor1]{}
+%% \affiliation{organization={},
+%%            addressline={}, 
+%%            city={},
+%%            postcode={}, 
+%%            state={},
+%%            country={}}
+%% \fntext[label3]{}
+
+\title{Low Cost Sewer Defect Diagnosis Transformer for On-Device Processing}
+%% use optional labels to link authors explicitly to addresses:
+% \author[a]{Dongbin Kim}
+% \affiliation[a]{organization={Department of Industrial Engineering, Seoul National University},
+%             addressline={Gwanakro 1},
+%             city={Seoul},
+%             country={Korea}}
+
+% \author[a]{Jaewook Lee}            
+
+% \author[b]{Hoki Kim\corref{cor1}}
+% \cortext[cor1]{corresponding author}
+% \ead{hokikim@cau.ac.kr}
+% \affiliation[b]{organization={Department of Industrial Security, Chung-Ang University},
+%             addressline={84, Heukseok-ro},
+%             city={Seoul},
+%             country={Korea}}
+
+\author{Anonymous}
+% \affiliation[a]{organization={Anonymous},
+%             addressline={ },
+%             city={ },
+%             country={ }}
+
+
+            
+\begin{abstract}
+%% Text of abstract
+
+% Here is the first paragraph in Introduction,
+% “Sewer maintenance is an important issue for the city infrastructure, because undetected sewer defect can cause the urban problems like sinkhole, city flooding and pollution. To prevent these urban problems, sewer experts diagnose sewer system by their eyes, watching the real time images that is given by remote robots. (1)
+% However, Dirksen et al. found that human cognitive ability failed to classify the 25% of the sewer defect from German, Netherland, France, Austria sewer datasets. (2)
+% For this reason, automated sewer diagnosis system, using deep learning also developed actively to reduce human biases, and to save city infrastructure cost.
+% Traditional AI models depends on high performance server and cloud computing resources. (3). But Edge Intelligence deploying AI algorithms to edge-device can reduce the dependency of cloud system reduced and make the local processing more faster. (4)
+% However, there are limits for real time processing and automated diagnosis because of its lack of on-device computing resources. (5)
+
+% In this paper, we propose new model to solve this problem.
+% New model is a lightweight classification model designed to diagnose the sewer defect on On-device.
+% This model divides input images into patches and extracts features from each patch. In this stage, the model shares convolutional weight with all patches to enlarge the efficiency of parameter size.
+% And in decoder stage, we use cross -attention mechanism instead of self-attention to reduce the computational cost.
+% Also, we set the decoder’s query as few learnable parameters to improve the performance of decoder, by actively adapting the individual input image's features.
+% Our models can be the effective solution for the automated sewer defect diagnosis system.” 
+% Please correct and revise it.
+\begin{comment}
+Sewer maintenance is critical to urban infrastructure: undetected defects can trigger sinkholes, flooding, and environmental contamination. Current practice relies on experts who visually inspect real-time video captured by remotely operated robots \citep{HAURUM2020103061}. However, \citet{Dirksen01032013}. reported that human inspectors missed or misclassified about 25\% of defects in datasets from Germany, the Netherlands, France, and Austria. To mitigate such errors and reduce maintenance costs, deep-learning–based automated inspection systems have been actively explored, yet many approaches assume access to high-performance servers or cloud resources \citep{sijingundefined}. Edge intelligence—deploying models on edge devices—reduces reliance on the cloud and enables low-latency local processing \citep{zhou2019edge}. But tight compute and memory budgets still hinder real-time inference and fully automated diagnosis \citep{10.1145/3486618}.
+
+In this paper, we introduce a lightweight on-device classifier for sewer-defect diagnosis. The model partitions each image into patches and applies a shared convolutional encoder across all patches, amortizing parameters and improving efficiency. The decoder replaces self-attention with cross-attention to cut computational cost, and it operates on a small set of learnable queries that adapt to each input image, improving accuracy with minimal overhead. This architecture satisfies edge-device constraints while maintaining strong performance, making it a practical component for automated sewer inspection systems.
+\end{comment}
+\end{abstract}
+
+
+%\begin{keyword}
+%Rotating machinery \sep Fault diagnosis \sep  On-device\sep Periodicity \sep Patch representation
+%\end{keyword}
+
+\end{frontmatter}
+
+% \linenumbers
+
+\section{Introduction}
+\label{sec:introduction}
+
+\begin{comment}
+Sewer maintenance is very important task for public safety. Because undetected sewer defects can cause urban failures like sinkholes, contamination of groundwater and soil leading public health risks (1).
+However, 2025 American Society of Civil Engineers (ASCE) infrastructure report card (2) gave a grade of D+ to the wastewater infrastructure in the United States. 
+According to the report, the number of failures per 100 miles of pipe was hovered around 2 since 2017, however it increased to 3.3 in 2021. And it also cited that the cost of upgrading or replacing parts is becoming more expensive.
+Therefore, regular inspection of sewage networks is very crucial for urban safety.
+\end{comment}
+
+Sewer maintenance is a critical task for ensuring public safety, as undetected sewer defects can lead to urban failures such as sinkholes and contamination of groundwater and soil, which in turn pose serious public health risks \citep{YANG2026107027}. Despite its importance, the infrastructure report card published by the American Society of Civil Engineers assigned a grade of D+ to the wastewater infrastructure in the United States \citep{ASCE2025Infrastructure}. According to this report, the number of failures per 100 miles of pipe hovered around 2 from 2017 onward but increased to 3.3 in 2021, and the cost of upgrading or replacing aging components continues to rise. These trends highlight that regular inspection of sewer networks is crucial for maintaining urban safety.
+
+To diagnose the condition of sewer systems, remotely operated robots are used to record the interior of sewer pipes, and domain experts then inspect the recorded images \citep{NGUYEN2025106479}. This manual inspection process is time-consuming and labor-intensive \citep{WANG2021103840}. Moreover, \citet{Dirksen01032013} reported that human inspectors failed to correctly classify approximately 25\% of sewer defects in datasets from Germany, the Netherlands, France, and Austria. To address these limitations, previous studies have proposed sewer defect detection systems based on conventional machine-learning techniques \citep{doi:10.1061/(ASCE)1076-0342(1999)5:2(69)}. More recently, \citet{KUMAR2018273} proposed a deep learning based sewer defect detection system, and with the rapid progress of deep learning, such methods are now being actively investigated \citep{NASHAT2025295}.
+
+Despite these advances, deep learning–based approaches typically require substantial computational resources, memory, and power to process complex inspection tasks \citep{9985008}. Consequently, deploying sewer defect detection models on edge or embedded devices equipped with low-performance GPUs is challenging \citep{9904106}. To address this limitation, we propose a lightweight sewer defect diagnosis model for on-device deployment that employs a shared-weights cross-attention mechanism.
+
+Our architecture is inspired by CATS \citep{10.5555/3737916.3741543}, which improves model efficiency by removing self-attention, leveraging cross-attention, and sharing parameters
+
+
+
+
+
+
+
+
+
+
+\section{Related Work}
+\label{sec:rel}
+
+% perceiver IO처럼 디코더의 쿼리 사이즈를 지정해두고 어텐션하여 모델 사이즈를 줄이는 방식 인용 필요
+
+\subsection{Sewer Defect Diagnosis}
+\subsection{Diagnosis Model Architecture}
+%  machine learning deep learning
+\subsection{On-device System}
+.
+
+
+\section{Methodology}
+
+\subsection{Overall Architecture}
+We define the proposed LC-Transformer as a function \( f_{LC} \) that maps an input image \( I \) to class logits:
+\[
+\text{Logits} = f_{LC}(I; \theta) = \bigl(\Phi_{\mathrm{cls}} \circ \Phi_{\mathrm{dec}} \circ \Phi_{\mathrm{enc}}\bigr)(I),
+\]
+where \(\Phi_{\mathrm{enc}}\), \(\Phi_{\mathrm{dec}}\), and \(\Phi_{\mathrm{cls}}\) denote the patch encoder, decoder, and classifier, respectively, and \(\theta\) comprises all the learnable parameters.
+
+\subsection{Patch Convolutional Encoder}
+The encoder \(\Phi_{\mathrm{enc}}\) converts an input image into a sequence of patch features in three steps.
+First, the input image \( I \in \mathbb{R}^{H \times W \times C} \) is partitioned into \(N_p\) patches. To maximize parameter efficiency, a single CNN feature extractor \(\Phi_{\mathrm{feat}}\) is applied to each patch \(p_i\) to extract a feature vector \(\mathbf{f}_i\):
+\[
+\mathbf{f}_i = \mathrm{Flatten}\!\left(\mathrm{AdaptiveAvgPool}\!\left(\Phi_{\mathrm{feat}}(p_i)\right)\right)
+\in \mathbb{R}^{D_{\mathrm{feat}}}.
+\]
+The sequence of patch features is then reshaped into a 2D grid \(F_{\mathrm{grid}} \in \mathbb{R}^{D_{\mathrm{feat}} \times H_p \times W_p}\) to restore spatial relationships. A depthwise convolution operation, \(\Phi_{\mathrm{mix}}\), is applied to this grid. This step allows each patch feature to efficiently integrate information from its neighbors, enriching it with local context:
+\[
+F_{\mathrm{mixed}} = \Phi_{\mathrm{mix}}(F_{\mathrm{grid}}) \in \mathbb{R}^{D_{\mathrm{feat}} \times H_p \times W_p}.
+\]
+Finally, the context-mixed feature map is flattened back into a 1D sequence and passed through Layer Normalization to produce the final encoder output \(X_{\mathrm{enc}}\):
+\[
+X_{\mathrm{enc}}
+= \mathrm{LayerNorm}\!\left(\mathrm{FlattenToSequence}(F_{\mathrm{mixed}})\right)
+\in \mathbb{R}^{N_p \times D_{\mathrm{feat}}}.
+\]
+
+\subsection{Lightweight Cross-Attention Decoder}
+Given \(X_{\mathrm{enc}}\), the decoder \(\Phi_{\mathrm{dec}}\) extracts and aggregates task-relevant information for classification.
+
+\subsubsection{Input preparation} % 3.3.1
+Keys and values are obtained by projecting \(X_{\mathrm{enc}}\) and adding learnable positional encodings \(PE \in \mathbb{R}^{N_p \times D_{\mathrm{emb}}}\):
+\[
+K = V = W_{\mathrm{emb}}(X_{\mathrm{enc}}) + PE \in \mathbb{R}^{N_p \times D_{\mathrm{emb}}}.
+\]
+
+\subsubsection{Dynamic query generation via attention pooling} % 3.3.2
+To initialize the decoder efficiently, we generate \emph{dynamic queries} by attending from a set of learnable queries to \((K,V)\).
+To keep the decoder lightweight and parameter-efficient, we do not introduce separate projection matrices \((W_Q, W_K, W_V)\) at this step. As a result, no additional parameters are added beyond the latent queries.
+
+\begin{enumerate}
+  \item \textbf{Latent queries.} Maintain \(N_q\) learnable queries \(Q_{\mathrm{learnable}} \in \mathbb{R}^{N_q \times D_{\mathrm{feat}}}\) and project them to the embedding space:
+  \[
+  Q_{\mathrm{latent}} = W_{\mathrm{emb}}(Q_{\mathrm{learnable}}) \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}}.
+  \]
+  \item \textbf{Attention scores.} Compute attention from \(Q_{\mathrm{latent}}\) to \(K\):
+  \[
+  \mathrm{Scores} = \mathrm{softmax}\!\left(\frac{Q_{\mathrm{latent}} K^{\top}}{\sqrt{D_{\mathrm{emb}}}}\right) \in \mathbb{R}^{N_q \times N_p}.
+  \]
+  \item \textbf{Dynamic queries.} Aggregate values to form the input queries for the first decoder layer:
+  \[
+  Q_{\mathrm{dynamic}} = \mathrm{Scores}\cdot V \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}}.
+  \]
+\end{enumerate}
+
+
+\subsubsection{Decoder layers} % 3.3.3
+The decoder consists of \(L\) layers, each comprising multi-head cross-attention (MHCA) and a feed-forward network (FFN), both with residual connections and layer normalization. 
+We take \(Q^{(0)} = Q_{\mathrm{dynamic}}\) as the input to the first layer, with \(K\) and \(V\) shared across all layers.
+Unlike the initialization step above, each MHCA layer applies learned projections \((W_Q^i, W_K^i, W_V^i)\).
+
+For input \(Q^{(l-1)}\) to layer \(l\),
+\[
+\hat{Q}^{(l)} = \mathrm{LayerNorm}\!\Bigl(Q^{(l-1)} + \mathrm{MHCA}\bigl(Q^{(l-1)}, K, V\bigr)\Bigr), \qquad
+Q^{(l)} = \mathrm{LayerNorm}\!\Bigl(\hat{Q}^{(l)} + \mathrm{FFN}(\hat{Q}^{(l)})\Bigr).
+\]
+MHCA uses \(h\) heads:
+\[
+\mathrm{MHCA}(Q,K,V) = \mathrm{Concat}(\mathrm{head}_1,\dots,\mathrm{head}_h)\, W_O,
+\]
+\[
+\mathrm{head}_i = \mathrm{Attention}(QW_Q^{i}, KW_K^{i}, VW_V^{i}), \qquad
+\mathrm{Attention}(Q',K',V') = \mathrm{softmax}\!\left(\frac{Q'K'^{\top}}{\sqrt{d_k}}\right)V'.
+\]
+Here \(W_Q^{i}, W_K^{i}, W_V^{i} \in \mathbb{R}^{D_{\mathrm{emb}} \times d_k}\), \(d_k = D_{\mathrm{emb}}/h\), and \(W_O \in \mathbb{R}^{D_{\mathrm{emb}} \times D_{\mathrm{emb}}}\). 
+The FFN is a two-layer MLP with GEGLU activation:
+\[
+\mathrm{FFN}(x) = W_2\bigl(\mathrm{GEGLU}(W_1 x)\bigr).
+\]
+
+
+\subsection{Classifier}
+Let \(Z = Q^{(L)} \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}}\) be the output of the final decoder layer. A projection head \(\Phi_{\mathrm{proj}}\) maps \(Z\) to \(D_{\mathrm{feat}}\) per query, and the result is flattened to form a single feature vector:
+\[
+\mathrm{Features} = \mathrm{Flatten}\!\bigl(\Phi_{\mathrm{proj}}(Z)\bigr) \in \mathbb{R}^{N_q \cdot D_{\mathrm{feat}}}.
+\]
+An MLP classifier then produces the class logits:
+\[
+\mathrm{Logits} = \mathrm{MLP}(\mathrm{Features}) \in \mathbb{R}^{N_{\mathrm{cls}}}.
+\]

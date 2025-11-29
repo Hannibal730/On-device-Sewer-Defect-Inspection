@@ -97,46 +97,51 @@ class FocalLoss(nn.Module):
 # =============================================================================
 # 3. 훈련 및 평가 함수
 # =============================================================================
-def log_model_parameters(model: nn.Module) -> None:
+def log_model_parameters(model):
     """모델의 구간별 및 총 파라미터 수를 계산하고 로깅합니다."""
     
-    def count_parameters(m: nn.Module) -> int:
+    def count_parameters(m):
         return sum(p.numel() for p in m.parameters() if p.requires_grad)
 
+    # Encoder 내부를 세분화하여 파라미터 계산
     # 1. Encoder (PatchConvEncoder) 내부 파라미터 계산
     cnn_feature_extractor = model.encoder.shared_conv[0]
     conv_front_params = count_parameters(cnn_feature_extractor.conv_front)
     conv_1x1_params = count_parameters(cnn_feature_extractor.conv_1x1)
     patch_mixer_params = count_parameters(model.encoder.patch_mixer)
     encoder_norm_params = count_parameters(model.encoder.norm)
-    encoder_total_params = (
-        conv_front_params + conv_1x1_params + patch_mixer_params + encoder_norm_params
-    )
+    encoder_total_params = conv_front_params + conv_1x1_params + patch_mixer_params + encoder_norm_params
 
     # 2. Decoder (DecoderBackbone) 내부 파라미터 계산
     embedding_module = model.decoder.embedding4decoder
 
+    # Positional Encoding 파라미터 계산
+    # 'pos_embed'는 register_buffer로 등록되어 학습되지 않으므로, requires_grad=True인 파라미터만 계산합니다.
+    # 기존의 'PE'는 'pos_embed'로 변경되었고, 학습되지 않으므로 파라미터 수 계산에서 제외됩니다.
+    pe_params = 0
+    if hasattr(embedding_module, 'pos_embed') and isinstance(embedding_module.pos_embed, torch.nn.Parameter) and embedding_module.pos_embed.requires_grad:
+        pe_params = embedding_module.pos_embed.numel()
+    
     # Learnable Query 파라미터 계산
     query_params = 0
     if hasattr(embedding_module, 'learnable_queries') and embedding_module.learnable_queries.requires_grad:
         query_params = embedding_module.learnable_queries.numel()
     
     w_feat2emb_params = count_parameters(embedding_module.W_feat2emb)
+
+    # Embedding4Decoder의 파라미터 총합 (내부 Decoder 레이어 제외)
+    embedding4decoder_total_params = w_feat2emb_params + query_params + pe_params
+
+    # Decoder 내부의 트랜스포머 레이어와 최종 프로젝션 레이어 파라미터 계산
     decoder_layers_params = count_parameters(model.decoder.embedding4decoder.decoder)
     decoder_projection4classifier_params = count_parameters(model.decoder.projection4classifier)
-    decoder_total_params = (
-        w_feat2emb_params
-        + query_params
-        + decoder_layers_params
-        + decoder_projection4classifier_params
-    )
+    decoder_total_params = embedding4decoder_total_params + decoder_layers_params + decoder_projection4classifier_params
 
     # 3. Classifier (MLP) 파라미터 계산
     classifier_projection_params = count_parameters(model.classifier.projection)
     classifier_total_params = classifier_projection_params
 
-    # 전체 파라미터는 각 부분의 합으로 계산
-    total_params = count_parameters(model)
+    total_params = encoder_total_params + decoder_total_params + classifier_total_params
 
     logging.info("="*50)
     logging.info(f"모델 파라미터 수: {total_params:,} 개")
@@ -148,9 +153,11 @@ def log_model_parameters(model: nn.Module) -> None:
     logging.info(f"  - Decoder (Cross-Attention-based):    {decoder_total_params:,} 개")
     logging.info(f"    - Embedding Layer (W_feat2emb):     {w_feat2emb_params:,} 개")
     logging.info(f"    - Learnable Queries:                {query_params:,} 개")
+    # logging.info(f"    - Positional Encoding (learnable):  {pe_params:,} 개")
     logging.info(f"    - Decoder Layers (Cross-Attention): {decoder_layers_params:,} 개")
     logging.info(f"    - Projection4Classifier:            {decoder_projection4classifier_params:,} 개")
     logging.info(f"  - Classifier (Projection MLP):        {classifier_total_params:,} 개")
+    # logging.info(f"  - 총 학습 가능 파라미터:                {total_params:,} 개")
 
 def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
@@ -247,8 +254,9 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         criterion = nn.BCEWithLogitsLoss(pos_weight=final_pos_weight)
         logging.info(f"손실 함수: BCEWithLogitsLoss (pos_weight: {final_pos_weight.item() if final_pos_weight is not None else 'None'})")
     elif loss_function_name == 'crossentropyloss':
-        criterion = nn.CrossEntropyLoss()
-        logging.info("손실 함수: CrossEntropyLoss")
+        label_smoothing = getattr(train_cfg, 'label_smoothing', 0.0)
+        criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+        logging.info(f"손실 함수: CrossEntropyLoss (label_smoothing: {label_smoothing})")
     elif loss_function_name == 'focalloss':
         alpha = getattr(train_cfg, 'focal_loss_alpha', 0.25)
         gamma = getattr(train_cfg, 'focal_loss_gamma', 2.0)
@@ -263,9 +271,37 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
     best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
 
+    # --- Warmup 설정 ---
+    warmup_cfg = getattr(train_cfg, 'warmup', None)
+    use_warmup = warmup_cfg and getattr(warmup_cfg, 'enabled', False)
+    if use_warmup:
+        warmup_epochs = getattr(warmup_cfg, 'epochs', 0)
+        warmup_start_lr = getattr(warmup_cfg, 'start_lr', 0.0)
+        warmup_end_lr = train_cfg.lr # Warmup 종료 LR은 메인 LR로 설정
+        logging.info(f"Warmup 활성화: {warmup_epochs} 에포크 동안 LR을 {warmup_start_lr}에서 {warmup_end_lr}로 선형 증가시킵니다.")
+
+        # Warmup 기간 동안에는 스케줄러를 비활성화합니다.
+        original_scheduler_step = scheduler.step if scheduler else lambda: None
+        if scheduler:
+            scheduler.step = lambda: None
+
+
     for epoch in range(train_cfg.epochs):
         # 에포크 시작 시 구분을 위한 라인 추가
         logging.info("-" * 50)
+
+        # --- Warmup LR 조정 ---
+        if use_warmup and epoch < warmup_epochs:
+            lr_step = (warmup_end_lr - warmup_start_lr) / warmup_epochs
+            current_lr = warmup_start_lr + (epoch + 1) * lr_step
+            # 첫 에포크(epoch=0)에서는 start_lr로, 마지막 warmup 에포크에서는 end_lr에 가깝도록 선형적으로 증가시킵니다.
+            if warmup_epochs > 1:
+                lr_step = (warmup_end_lr - warmup_start_lr) / (warmup_epochs - 1)
+                current_lr = warmup_start_lr + epoch * lr_step
+            else: # warmup_epochs가 1인 경우
+                current_lr = warmup_end_lr
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = current_lr
 
         # 에포크 시작 시 Learning Rate 로깅
         current_lr = optimizer.param_groups[0]['lr']
@@ -344,8 +380,14 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
         
         # 스케줄러가 설정된 경우에만 step()을 호출
-        if scheduler:
-            scheduler.step()
+        # Warmup 기간이 끝난 후에만 원래 스케줄러를 사용합니다.
+        if use_warmup and epoch == warmup_epochs - 1:
+            logging.info(f"Warmup 종료. 에포크 {epoch + 2}부터 기존 스케줄러를 활성화합니다.")
+            if scheduler:
+                scheduler.step = original_scheduler_step # 원래 스케줄러 step 함수 복원
+        
+        if not (use_warmup and epoch < warmup_epochs) and scheduler:
+            scheduler.step() # Warmup 기간이 아닐 때 스케줄러 step 호출
 
 def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
@@ -574,6 +616,9 @@ def main():
     # 중첩된 scheduler_params 딕셔너리를 SimpleNamespace로 변환
     if hasattr(train_cfg, 'scheduler_params') and isinstance(train_cfg.scheduler_params, dict):
         train_cfg.scheduler_params = SimpleNamespace(**train_cfg.scheduler_params)
+    # Warmup 설정을 SimpleNamespace로 변환
+    if hasattr(train_cfg, 'warmup') and isinstance(train_cfg.warmup, dict):
+        train_cfg.warmup = SimpleNamespace(**train_cfg.warmup)
 
     # dataset_cfg도 SimpleNamespace로 변환
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
@@ -652,7 +697,7 @@ def main():
     }
     decoder_args = SimpleNamespace(**decoder_params)
 
-    encoder = PatchConvEncoder(in_channels=3, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, stride=model_cfg.stride,
+    encoder = PatchConvEncoder(in_channels=model_cfg.in_channels, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, stride=model_cfg.stride,
                                 featured_patch_dim=model_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
                                 pre_trained=train_cfg.pre_trained)
     decoder = DecoderBackbone(args=decoder_args) # models.py의 Model 클래스
