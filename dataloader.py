@@ -95,36 +95,20 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
         return dataset
 
     # --- 데이터 변환(Transform) 정의 ---
-    if model_cfg.in_channels == 1:
-        normalize = transforms.Normalize(mean=[0.5], std=[0.5])
-        train_transform = transforms.Compose([
-            transforms.Resize((img_size, img_size)),
-            transforms.RandomHorizontalFlip(),
-            transforms.Grayscale(num_output_channels=1),
-            transforms.ToTensor(),
-            normalize
-        ])
-        valid_test_transform = transforms.Compose([
-            transforms.Resize((img_size, img_size)),
-            transforms.Grayscale(num_output_channels=1),
-            transforms.ToTensor(),
-            normalize
-        ])
-    elif model_cfg.in_channels == 3:
-        # Sewer-ML의 lightning_trainer.py에서 사용하는 전처리 가져오기
-        normalize = transforms.Normalize(mean=[0.523, 0.453, 0.345], std=[0.210, 0.199, 0.154])
-        train_transform = transforms.Compose([
-            transforms.Resize((img_size, img_size)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-            transforms.ToTensor(),
-            normalize,
-        ])
-        valid_test_transform = transforms.Compose([
-            transforms.Resize((img_size, img_size)),
-            transforms.ToTensor(),
-            normalize
-        ])
+    # Sewer-ML의 lightning_trainer.py에서 사용하는 전처리 가져오기
+    normalize = transforms.Normalize(mean=[0.523, 0.453, 0.345], std=[0.210, 0.199, 0.154])
+    train_transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+        transforms.ToTensor(),
+        normalize,
+    ])
+    valid_test_transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
+        normalize
+    ])
 
     try:
         logging.info(f"'{dataset_cfg.name}' 데이터 로드를 시작합니다 (Type: {dataset_cfg.type}).")

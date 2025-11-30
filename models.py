@@ -14,68 +14,57 @@ class CnnFeatureExtractor(nn.Module):
     다양한 CNN 아키텍처의 앞부분을 특징 추출기로 사용하는 범용 클래스입니다.
     config.yaml의 `cnn_feature_extractor.name` 설정에 따라 모델 구조가 결정됩니다.
     """
-    def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, in_channels=3, featured_patch_dim=None):
+    def __init__(self, cnn_feature_extractor_name='resnet18_layer1', pretrained=True, featured_patch_dim=None):
         super().__init__()
         self.cnn_feature_extractor_name = cnn_feature_extractor_name
 
         # CNN 모델 이름에 따라 모델과 잘라낼 레이어, 기본 출력 채널을 설정합니다.
         if cnn_feature_extractor_name == 'resnet18_layer1':
             base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = nn.Sequential(*list(base_model.children())[:5]) # layer1까지
             base_out_channels = 64
         elif cnn_feature_extractor_name == 'resnet18_layer2':
             base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = nn.Sequential(*list(base_model.children())[:6]) # layer2까지
             base_out_channels = 128
             
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat1':
             base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:2] # features의 2번째 블록까지
             base_out_channels = 16
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat3':
             base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:4] # features의 4번째 블록까지
             base_out_channels = 24
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat4':
             base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:5] # features의 5번째 블록까지
             base_out_channels = 40
             
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat2':
             base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:3] # features의 3번째 블록까지
             base_out_channels = 24
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat3':
             base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model.features[:4] # features의 4번째 블록까지
             base_out_channels = 40
 
         # --- MobileNetV4 (timm) ---
         elif cnn_feature_extractor_name == 'mobilenet_v4_feat1':
             base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0,))
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
             base_out_channels = 32 # feat1 출력 채널
         elif cnn_feature_extractor_name == 'mobilenet_v4_feat2':
             base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1))
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
             base_out_channels = 48 # feat2 출력 채널
         elif cnn_feature_extractor_name == 'mobilenet_v4_feat3':
             base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1, 2))
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
             base_out_channels = 64 # feat3 출력 채널
         elif cnn_feature_extractor_name == 'mobilenet_v4_feat4':
             base_model = timm.create_model('mobilenetv4_conv_small', pretrained=pretrained, features_only=True, out_indices=(0, 1, 2, 3))
-            self._adjust_input_channels(base_model, in_channels)
             self.conv_front = base_model
             base_out_channels = 96 # feat4 출력 채널
 
@@ -87,35 +76,6 @@ class CnnFeatureExtractor(nn.Module):
             self.conv_1x1 = nn.Conv2d(base_out_channels, featured_patch_dim, kernel_size=1)
         else:
             self.conv_1x1 = nn.Identity()
-
-    def _adjust_input_channels(self, base_model, in_channels):
-        """모델의 첫 번째 컨볼루션 레이어의 입력 채널을 조정합니다."""
-        if in_channels == 1:
-            # 첫 번째 conv 레이어 찾기
-            if 'resnet' in self.cnn_feature_extractor_name:
-                first_conv = base_model.conv1
-                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
-                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
-                with torch.no_grad():
-                    new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
-                base_model.conv1 = new_conv
-            elif 'mobilenet' in self.cnn_feature_extractor_name or 'efficientnet' in self.cnn_feature_extractor_name:
-                first_conv = base_model.features[0][0] # nn.Sequential -> Conv2dNormActivation -> Conv2d
-                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
-                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
-                with torch.no_grad():
-                    new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
-                base_model.features[0][0] = new_conv
-            elif 'mobilenetv4' in self.cnn_feature_extractor_name:
-                # timm의 MobileNetV4 모델
-                first_conv = base_model.conv_stem
-                out_c, _, k, s, p, _, _, _ = first_conv.out_channels, first_conv.in_channels, first_conv.kernel_size, first_conv.stride, first_conv.padding, first_conv.dilation, first_conv.groups, first_conv.bias
-                new_conv = nn.Conv2d(1, out_c, kernel_size=k, stride=s, padding=p, bias=False)
-                with torch.no_grad():
-                    new_conv.weight.copy_(first_conv.weight.mean(dim=1, keepdim=True))
-                base_model.conv_stem = new_conv
-        elif in_channels != 3:
-            raise ValueError("in_channels는 1 또는 3만 지원합니다.")
 
     def forward(self, x):
         x = self.conv_front(x)
@@ -129,7 +89,7 @@ class CnnFeatureExtractor(nn.Module):
 
 class PatchConvEncoder(nn.Module):
     """이미지를 패치로 나누고, 각 패치에서 특징을 추출하여 1D 시퀀스로 변환하는 인코더입니다."""
-    def __init__(self, in_channels, img_size, patch_size, stride, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True):
+    def __init__(self, img_size, patch_size, stride, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True):
         super(PatchConvEncoder, self).__init__()
         self.patch_size = patch_size
         self.stride = stride
@@ -142,7 +102,7 @@ class PatchConvEncoder(nn.Module):
 
         # 1. Shared CNN Feature Extractor
         self.shared_conv = nn.Sequential(
-            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=pre_trained, in_channels=in_channels, featured_patch_dim=featured_patch_dim),
+            CnnFeatureExtractor(cnn_feature_extractor_name=cnn_feature_extractor_name, pretrained=pre_trained, featured_patch_dim=featured_patch_dim),
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(start_dim=1) # [B*num_encoder_patches, D]
         )

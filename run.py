@@ -697,7 +697,7 @@ def main():
     }
     decoder_args = SimpleNamespace(**decoder_params)
 
-    encoder = PatchConvEncoder(in_channels=model_cfg.in_channels, img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, stride=model_cfg.stride,
+    encoder = PatchConvEncoder(img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, stride=model_cfg.stride,
                                 featured_patch_dim=model_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
                                 pre_trained=train_cfg.pre_trained)
     decoder = DecoderBackbone(args=decoder_args) # models.py의 Model 클래스
