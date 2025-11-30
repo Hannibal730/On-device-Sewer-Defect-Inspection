@@ -24,12 +24,6 @@ try:
 except ImportError:
     profile = None
 
-# --- NNI 경량화 관련 모듈 임포트 ---
-from nni.compression.pruning import L1NormPruner
-from nni.compression.quantization import QATQuantizer
-from nni.compression.utils import TorchEvaluator
-from nni.compression.speedup import ModelSpeedup
-
 from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph, plot_and_save_compiled_graph
 
 # =============================================================================
@@ -496,6 +490,12 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
     return final_acc
 
 def main():
+    # =============================================================================
+    # [최종 수정] NNI 모듈을 main 함수 내부에서 필요할 때 import 하도록 변경
+    # =============================================================================
+    from nni.compression.pruning import L1NormPruner
+    from nni.compression.speedup import ModelSpeedup
+    from nni.compression.quantization import QATQuantizer
     """메인 실행 함수"""
     parser = argparse.ArgumentParser(description="YAML 설정을 이용한 Baseline 모델 분류기")
     parser.add_argument('--config', type=str, default='config.yaml', help="설정 파일 경로. 기본값: 'config.yaml'")
@@ -560,6 +560,40 @@ def main():
 
     # --- Baseline 모델 생성 ---
     model = create_baseline_model(baseline_model_name, num_labels, pretrained=train_cfg.pre_trained).to(device)
+
+    # =============================================================================
+    # [최종 수정] timm 모델의 복합 레이어를 NNI가 이해할 수 있는 표준 레이어로 변환
+    # =============================================================================
+    # timm 라이브러리 버전 문제와 상관없이 직접 복합 레이어를 표준 레이어로 교체하는 함수
+    def fuse_timm_norm_act_layers(module):
+        """
+        timm의 복합 레이어(예: BatchNormAct2d)를 표준 nn.Sequential(nn.BatchNorm2d, nn.ReLU)로 교체합니다.
+        이 함수는 재귀적으로 모든 자식 모듈을 순회합니다.
+        """
+        # timm.layers.norm_act.BatchNormAct2d 타입을 동적으로 가져옵니다.
+        try:
+            from timm.layers import BatchNormAct2d
+        except ImportError:
+            # timm 버전이 다르거나 해당 모듈이 없는 경우, 함수를 조용히 종료합니다.
+            return module
+
+        for name, child in module.named_children():
+            if isinstance(child, BatchNormAct2d):
+                # [최종 수정] BatchNormAct2d는 nn.BatchNorm2d를 상속하므로, child 자체가 BN 레이어입니다.
+                # BN 레이어에서 활성화 함수(act)만 분리하여 nn.Sequential로 재구성합니다.
+                bn_layer = nn.BatchNorm2d(child.num_features, child.eps, child.momentum, child.affine, child.track_running_stats).to(next(child.parameters()).device)
+                bn_layer.load_state_dict(child.state_dict())
+                new_module = nn.Sequential(bn_layer, child.act)
+                setattr(module, name, new_module)
+                logging.info(f"  - 복합 레이어 '{name}'를 nn.Sequential(BatchNorm2d, ReLU)로 교체했습니다.")
+            else:
+                # 자식 모듈에 대해 재귀적으로 함수 호출
+                fuse_timm_norm_act_layers(child)
+        return module
+
+    logging.info(f"timm 모델({baseline_model_name})의 복합 레이어를 표준 레이어로 변환합니다...")
+    model = fuse_timm_norm_act_layers(model)
+
     log_model_parameters(model)
     pruner = None # pruner를 main 함수 스코프에서 정의
 
@@ -574,12 +608,18 @@ def main():
         target_op_names = []
         last_linear_name = None
         for name, module in model.named_modules():
-            if isinstance(module, nn.Linear):
-                last_linear_name = name # 마지막으로 발견된 Linear 레이어 이름을 저장
-            if isinstance(module, (nn.Conv2d, nn.Linear)):
+            # [최종 수정] 마지막 분류기와 직접 연결된 헤드 블록(conv_head, norm_head)을 Pruning 대상에서 제외합니다.
+            # 이 레이어들이 Pruning되면 최종 분류기의 입력 차원과 불일치가 발생합니다.
+            if name.startswith('classifier') or name.startswith('conv_head') or name.startswith('norm_head'):
+                if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
+                    logging.info(f"분류기 헤드 블록 '{name}'을(를) Pruning 대상에서 제외합니다.")
+                continue
+
+            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
                 target_op_names.append(name)
 
-        # 마지막 Linear 레이어를 Pruning 대상에서 제외합니다.
+        # 이전 로직(마지막 linear 레이어 이름으로 제외)은 더 이상 필요하지 않습니다.
+        # last_linear_name = 'classifier'
         if last_linear_name:
             logging.info(f"마지막 분류 레이어 '{last_linear_name}'를 Pruning 대상에서 제외합니다.")
             target_op_names.remove(last_linear_name)
@@ -687,20 +727,30 @@ def main():
             #    이를 위해 모델에 입력될 더미 데이터가 필요합니다.
             dummy_input = torch.randn(1, 3, 224, 224).to(device) # config의 img_size를 사용하면 더 좋습니다.
 
-            # NNI의 자체 추적 기능(concrete_trace) 대신, 안정적인 torch.fx.symbolic_trace를 직접 사용하여
-            # 모델의 연산 그래프(GraphModule)를 생성합니다.
-            # 이렇게 생성된 그래프를 ModelSpeedup에 graph_module 인자로 전달합니다.
+            # [최종 수정] NNI의 기본 추적 기능 대신, 안정적인 torch.fx.symbolic_trace를 사용하여
+            # 모델의 연산 그래프(GraphModule)를 명시적으로 생성합니다.
+            # 이렇게 생성된 그래프를 ModelSpeedup에 전달하면 추적 오류를 방지할 수 있습니다.
             from torch.fx import symbolic_trace
+            # [최종 수정] symbolic_trace와 ModelSpeedup은 eval() 모드에서 실행해야 합니다.
+            # train() 모드에서 배치 크기가 1인 dummy_input을 사용하면 BatchNorm 레이어에서 오류가 발생합니다.
+            model.eval()
             graph_module = symbolic_trace(model)
 
-            # --- [수정] add 연산에 대한 마스크 충돌 해결 로직을 비활성화합니다. ---
-            # EfficientNet과 같이 residual connection이 복잡한 모델에서 발생하는 채널 불일치 문제를 해결합니다.
-            import operator
-            from nni.compression.speedup.mask_updater import NoChangeMaskUpdater
-            # 'add' 연산(operator.add)에 대해 마스크를 변경하지 않도록 NoChangeMaskUpdater를 설정합니다.
-            customized_mask_updaters = [NoChangeMaskUpdater(customized_no_change_act_func=(operator.add,))]
+            # [최종 수정] nn.Identity 모듈을 위한 사용자 정의 Replacer 클래스 정의
+            # ModelSpeedup이 Identity 레이어를 만났을 때 처리 방법을 몰라 경고를 발생시키고
+            # 채널 정보 전파에 실패하는 문제를 해결합니다.
+            from nni.compression.speedup.replacer import Replacer
+            class IdentityReplacer(Replacer):
+                def replace_modules(self, speedup):
+                    for node in speedup.graph_module.graph.nodes:
+                        if node.op == 'call_module':
+                            module = speedup.fetch_attr(node.target)
+                            if isinstance(module, nn.Identity):
+                                # Identity 모듈은 아무것도 변경하지 않으므로, 교체되었다고만 표시합니다.
+                                speedup.node_infos[node].replaced = True
 
-            speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module, customized_mask_updaters=customized_mask_updaters)
+            # 생성된 그래프(graph_module)를 사용하여 ModelSpeedup을 초기화합니다.
+            speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module, customized_replacers=[IdentityReplacer()])
             model = speedup.speedup_model()
             logging.info("ModelSpeedup 완료. 모델 구조가 영구적으로 변경 및 압축되었습니다.")
 
