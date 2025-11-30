@@ -231,12 +231,29 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         
         criterion = nn.BCEWithLogitsLoss(pos_weight=final_pos_weight)
         logging.info(f"손실 함수: BCEWithLogitsLoss (pos_weight: {final_pos_weight.item() if final_pos_weight is not None else 'None'})")
+    elif loss_function_name == 'crossentropyloss':
+        label_smoothing = getattr(train_cfg, 'label_smoothing', 0.0)
+        criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+        logging.info(f"손실 함수: CrossEntropyLoss (label_smoothing: {label_smoothing})")
     else: # 'crossentropyloss' 또는 기본값
-        criterion = nn.CrossEntropyLoss()
-        logging.info("손실 함수: CrossEntropyLoss")
+        raise ValueError(f"baseline.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
 
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
     best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
+
+    # --- Warmup 설정 ---
+    warmup_cfg = getattr(train_cfg, 'warmup', None)
+    use_warmup = warmup_cfg and getattr(warmup_cfg, 'enabled', False)
+    if use_warmup:
+        warmup_epochs = getattr(warmup_cfg, 'epochs', 0)
+        warmup_start_lr = getattr(warmup_cfg, 'start_lr', 0.0)
+        warmup_end_lr = train_cfg.lr # Warmup 종료 LR은 메인 LR로 설정
+        logging.info(f"Warmup 활성화: {warmup_epochs} 에포크 동안 LR을 {warmup_start_lr}에서 {warmup_end_lr}로 선형 증가시킵니다.")
+
+        # Warmup 기간 동안에는 스케줄러를 비활성화합니다.
+        original_scheduler_step = scheduler.step if scheduler else lambda: None
+        if scheduler:
+            scheduler.step = lambda: None
 
     for epoch in range(train_cfg.epochs):
         logging.info("-" * 50)
@@ -248,7 +265,21 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         correct = 0
         total = 0
         
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False, disable=False)
+        # --- Warmup LR 조정 ---
+        if use_warmup and epoch < warmup_epochs:
+            if warmup_epochs > 1:
+                lr_step = (warmup_end_lr - warmup_start_lr) / (warmup_epochs - 1)
+                current_lr = warmup_start_lr + epoch * lr_step
+            else: # warmup_epochs가 1인 경우
+                current_lr = warmup_end_lr
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = current_lr
+
+        # 에포크 시작 시 Learning Rate 로깅
+        current_lr = optimizer.param_groups[0]['lr']
+        logging.info(f"[LR]    [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
+
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False, disable=not getattr(run_cfg, 'show_log', True))
         for images, labels, _ in progress_bar:
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             optimizer.zero_grad()
@@ -270,17 +301,13 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
             
-            step_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
+            step_lr = optimizer.param_groups[0]['lr']
             progress_bar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{step_lr:.6f}")
 
         train_acc = 100 * correct / total
         logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
         
         eval_results = evaluate(run_cfg, model, valid_loader, device, criterion, loss_function_name, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
-        
-        # 에포크 종료 시 Learning Rate 로깅
-        current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
-        logging.info(f"[LR] [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
 
         current_metric = 0.0
         if best_model_criterion == 'val_loss':
@@ -301,8 +328,14 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             criterion_name = best_model_criterion.replace('_', ' ')
             logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
         
-        if scheduler:
-            scheduler.step()
+        # Warmup 기간이 끝난 후에만 원래 스케줄러를 사용합니다.
+        if use_warmup and epoch == warmup_epochs - 1:
+            logging.info(f"Warmup 종료. 에포크 {epoch + 2}부터 기존 스케줄러를 활성화합니다.")
+            if scheduler:
+                scheduler.step = original_scheduler_step # 원래 스케줄러 step 함수 복원
+        
+        if not (use_warmup and epoch < warmup_epochs) and scheduler:
+            scheduler.step() # Warmup 기간이 아닐 때 스케줄러 step 호출
 
 def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델로 추론 및 성능 평가를 수행합니다."""
@@ -441,6 +474,11 @@ def main():
     train_cfg = SimpleNamespace(**config['training_baseline'])
     model_cfg = SimpleNamespace(**config['model'])
     baseline_cfg = SimpleNamespace(**config.get('baseline', {})) # baseline 섹션 로드
+    # 중첩된 scheduler_params 딕셔너리를 SimpleNamespace로 변환
+    if hasattr(train_cfg, 'scheduler_params') and isinstance(train_cfg.scheduler_params, dict):
+        train_cfg.scheduler_params = SimpleNamespace(**train_cfg.scheduler_params)
+    if hasattr(train_cfg, 'warmup') and isinstance(train_cfg.warmup, dict):
+        train_cfg.warmup = SimpleNamespace(**train_cfg.warmup)
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
     
     # --- 전역 시드 고정 ---
@@ -493,22 +531,41 @@ def main():
     # --- 옵티마이저 및 스케줄러 설정 ---
     optimizer, scheduler = None, None
     if run_cfg.mode == 'train':
-        if getattr(train_cfg, 'optimizer', 'adamw').lower() == 'sgd':
-            logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={train_cfg.momentum}, weight_decay={train_cfg.weight_decay})")
-            optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=train_cfg.momentum, weight_decay=train_cfg.weight_decay)
+        optimizer_name = getattr(train_cfg, 'optimizer', 'adamw').lower()
+        logging.info("="*50)
+        if optimizer_name == 'sgd':
+            momentum = getattr(train_cfg, 'momentum', 0.9)
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0001)
+            logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={momentum}, weight_decay={weight_decay})")
+            optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=momentum, weight_decay=weight_decay)
+        elif optimizer_name == 'nadam':
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
+            logging.info(f"옵티마이저: NAdam (lr={train_cfg.lr}, weight_decay={weight_decay})")
+            optimizer = optim.NAdam(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
+        elif optimizer_name == 'radam':
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
+            logging.info(f"옵티마이저: RAdam (lr={train_cfg.lr}, weight_decay={weight_decay})")
+            optimizer = optim.RAdam(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
+        elif optimizer_name == 'rmsprop':
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
+            momentum = getattr(train_cfg, 'momentum', 0.0)
+            logging.info(f"옵티마이저: RMSprop (lr={train_cfg.lr}, weight_decay={weight_decay}, momentum={momentum})")
+            optimizer = optim.RMSprop(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay, momentum=momentum)
         else:
-            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr})")
-            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr)
+            weight_decay = getattr(train_cfg, 'weight_decay', 0.01)
+            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={weight_decay})")
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
 
         # scheduler_params가 없으면 빈 객체로 초기화
         scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
 
-        if getattr(train_cfg, 'scheduler', 'none').lower() == 'multisteplr':
-            milestones = getattr(train_cfg, 'milestones', [30, 60, 80])
+        scheduler_name = getattr(train_cfg, 'scheduler', 'none').lower()
+        if scheduler_name == 'multisteplr':
+            milestones = getattr(train_cfg, 'milestones', [])
             gamma = getattr(train_cfg, 'gamma', 0.1)
             logging.info(f"스케줄러: MultiStepLR (milestones={milestones}, gamma={gamma})")
             scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
-        elif getattr(train_cfg, 'scheduler', 'none').lower() == 'cosineannealinglr':
+        elif scheduler_name == 'cosineannealinglr':
             T_max = getattr(scheduler_params, 'T_max', train_cfg.epochs)
             eta_min = getattr(scheduler_params, 'eta_min', 0.0)
             logging.info(f"스케줄러: CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
