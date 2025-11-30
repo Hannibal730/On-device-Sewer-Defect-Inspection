@@ -686,7 +686,7 @@ def main():
         'num_decoder_layers': model_cfg.num_decoder_layers,
         'num_decoder_patches': model_cfg.num_decoder_patches,
         'featured_patch_dim': model_cfg.featured_patch_dim,
-        'attn_pooling': getattr(model_cfg, 'attn_pooling', False),
+        'adaptive_initial_query': getattr(model_cfg, 'adaptive_initial_query', False),
         'emb_dim': model_cfg.emb_dim,
         'num_heads': model_cfg.num_heads,
         'decoder_ff_ratio': model_cfg.decoder_ff_ratio,

@@ -162,12 +162,12 @@ class Embedding4Decoder(nn.Module):
     """
     def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, 
                  grid_size_h, grid_size_w, # 2D PE 생성을 위해 그리드 크기 인자 추가
-                 attn_pooling=False, num_decoder_layers=3, emb_dim=128, num_heads=16, 
+                 adaptive_initial_query=False, num_decoder_layers=3, emb_dim=128, num_heads=16, 
                  decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True):
              
         super().__init__()
         
-        self.attn_pooling = attn_pooling
+        self.adaptive_initial_query = adaptive_initial_query
 
         # --- 입력 인코딩 ---
         self.W_feat2emb = nn.Linear(featured_patch_dim, emb_dim)      
@@ -246,7 +246,7 @@ class Embedding4Decoder(nn.Module):
         seq_encoder_patches = self.dropout(x)
         
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
-        if self.attn_pooling:
+        if self.adaptive_initial_query:
             latent_queries = self.W_feat2emb(self.learnable_queries)
             latent_queries = latent_queries.unsqueeze(0).repeat(bs, 1, 1)
             
@@ -377,7 +377,7 @@ class Model(nn.Module):
         num_labels = args.num_labels 
         num_decoder_patches = args.num_decoder_patches 
         self.featured_patch_dim = args.featured_patch_dim 
-        attn_pooling = args.attn_pooling 
+        adaptive_initial_query = args.adaptive_initial_query 
         emb_dim = args.emb_dim           
         num_heads = args.num_heads           
         num_decoder_layers = args.num_decoder_layers 
@@ -420,7 +420,7 @@ class Model(nn.Module):
 
         self.embedding4decoder = Embedding4Decoder(num_encoder_patches=num_encoder_patches, featured_patch_dim=self.featured_patch_dim, num_decoder_patches=num_decoder_patches, 
                                 grid_size_h=grid_size_h, grid_size_w=grid_size_w, # 추가된 인자
-                                attn_pooling=attn_pooling,
+                                adaptive_initial_query=adaptive_initial_query,
                                 num_decoder_layers=num_decoder_layers, emb_dim=emb_dim, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, positional_encoding=positional_encoding,
                                 attn_dropout=attn_dropout, dropout=dropout,
                                 res_attention=res_attention, save_attention=save_attention)
