@@ -195,8 +195,8 @@ model:
 # =============================================================================
 baseline:
   # 사용할 baseline 모델의 이름을 지정합니다.
-  # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4', 'xie2019', 'vit'
-  model_name: 'resnet18'
+  # 사용 가능한 옵션: 'resnet18',(0.997445) 'efficientnet_b0', 'mobilenet_v4', 'xie2019', 'vit'
+  model_name: 'efficientnet_b0'
 
   # --- 경량화 옵션 ---
   use_l1_pruning: true      # L1 Norm Pruning 적용 여부

@@ -693,7 +693,14 @@ def main():
             from torch.fx import symbolic_trace
             graph_module = symbolic_trace(model)
 
-            speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module)
+            # --- [수정] add 연산에 대한 마스크 충돌 해결 로직을 비활성화합니다. ---
+            # EfficientNet과 같이 residual connection이 복잡한 모델에서 발생하는 채널 불일치 문제를 해결합니다.
+            import operator
+            from nni.compression.speedup.mask_updater import NoChangeMaskUpdater
+            # 'add' 연산(operator.add)에 대해 마스크를 변경하지 않도록 NoChangeMaskUpdater를 설정합니다.
+            customized_mask_updaters = [NoChangeMaskUpdater(customized_no_change_act_func=(operator.add,))]
+
+            speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module, customized_mask_updaters=customized_mask_updaters)
             model = speedup.speedup_model()
             logging.info("ModelSpeedup 완료. 모델 구조가 영구적으로 변경 및 압축되었습니다.")
 
