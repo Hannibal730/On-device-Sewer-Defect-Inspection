@@ -24,6 +24,12 @@ try:
 except ImportError:
     profile = None
 
+# --- NNI 경량화 관련 모듈 임포트 ---
+from nni.compression.pruning import L1NormPruner
+from nni.compression.quantization import QATQuantizer
+from nni.compression.utils import TorchEvaluator
+from nni.compression.speedup import ModelSpeedup
+
 from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph, plot_and_save_compiled_graph
 
 # =============================================================================
@@ -196,7 +202,7 @@ def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name,
         'preds': all_preds
     }
 
-def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
+def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, quantizer=None):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
@@ -237,6 +243,19 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         logging.info(f"손실 함수: CrossEntropyLoss (label_smoothing: {label_smoothing})")
     else: # 'crossentropyloss' 또는 기본값
         raise ValueError(f"baseline.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
+
+    # --- QAT를 위한 Evaluator 설정 ---
+    evaluator = None
+    if quantizer:
+        logging.info("QAT Quantizer를 위한 TorchEvaluator를 설정합니다.")
+        # TorchEvaluator는 훈련 로직(training_step)을 인자로 받습니다.
+        # training_step 함수는 배치 데이터를 받아 loss를 반환해야 합니다.
+        def training_step(batch):
+            images, labels, _ = batch
+            outputs = model(images.to(device))
+            return criterion(outputs, labels.to(device))
+        evaluator = TorchEvaluator(training_step, optimizer, criterion)
+        quantizer.compress(evaluator=evaluator) # Evaluator를 연결하여 QAT 훈련 준비
 
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
     best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
@@ -284,20 +303,26 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             optimizer.zero_grad()
 
-            outputs = model(images)
+            # QAT가 활성화된 경우, evaluator.step()이 내부적으로 training_step을 호출하고
+            # optimizer.step()까지 수행합니다.
+            if evaluator:
+                # evaluator.step()은 loss를 반환합니다.
+                loss = evaluator.step(batch=(images, labels, _))
+                outputs = model(images) # 정확도 계산을 위해 forward pass 한번 더 필요
+            else:
+                outputs = model(images)
+                if loss_function_name == 'bcewithlogitsloss':
+                    loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
+                else: # crossentropyloss
+                    loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
-            if loss_function_name == 'bcewithlogitsloss':
-                # BCEWithLogitsLoss는 [B, 1] 형태의 출력을 기대합니다.
-                # outputs: [B, 2] -> [B, 1] (Defect 클래스에 대한 로짓만 사용)
-                loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
-            else: # crossentropyloss
-                loss = criterion(outputs, labels)
+            # loss가 텐서일 수 있으므로 .item()으로 값을 가져옵니다.
+            loss_val = loss.item() if isinstance(loss, torch.Tensor) else loss
+            running_loss += loss_val
 
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
-            _, predicted = torch.max(outputs.data, 1)
+            _, predicted = torch.max(outputs.data, 1) # outputs는 로짓이므로 그대로 사용
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
             
@@ -340,17 +365,26 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
 def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델로 추론 및 성능 평가를 수행합니다."""
     logging.info(f"{mode_name} 모드를 시작합니다.")
-    model_path = os.path.join(run_dir_path, run_cfg.model_path)
-    if not os.path.exists(model_path):
-        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드를 먼저 실행했는지 확인하세요.")
-        return
 
-    try:
-        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
-        logging.info(f"'{model_path}' 가중치 로드 완료.")
-    except Exception as e:
-        logging.error(f"모델 가중치 로딩 중 오류 발생: {e}")
-        return
+    # --- [수정] Pruning된 모델과 일반 모델에 맞는 가중치 파일을 선택적으로 로드 ---
+    # Pruning이 적용된 경우, 압축된 모델의 파라미터는 'pruned_model.pth'에 저장되어 있습니다.
+    # main 함수에서 이미 압축된 모델 객체를 전달했으므로, 여기서는 가중치를 다시 로드할 필요가 없습니다.
+    # 하지만, 만약 'inference' 모드로만 실행될 경우를 대비하여 로드 로직을 유지하되, 올바른 파일을 선택하도록 합니다.
+    pruned_model_path = os.path.join(run_dir_path, 'pruned_model.pth')
+    best_model_path = os.path.join(run_dir_path, run_cfg.model_path)
+
+    # 'pruned_model.pth'가 존재하면 그것을 우선적으로 사용합니다.
+    model_to_load = pruned_model_path if os.path.exists(pruned_model_path) else best_model_path
+
+    # main 함수에서 이미 올바른 상태의 모델을 전달했으므로, 여기서는 가중치를 다시 로드할 필요가 없습니다.
+    # 만약 'inference' 모드로만 실행될 경우, 아래 로직이 필요합니다.
+    # if run_cfg.mode == 'inference':
+    #     try:
+    #         model.load_state_dict(torch.load(model_to_load, map_location=device))
+    #         logging.info(f"'{model_to_load}' 가중치 로드 완료.")
+    #     except Exception as e:
+    #         logging.error(f"모델 가중치 로딩 중 오류 발생: {e}")
+    #         return
 
     model.eval()
 
@@ -527,6 +561,65 @@ def main():
     # --- Baseline 모델 생성 ---
     model = create_baseline_model(baseline_model_name, num_labels, pretrained=train_cfg.pre_trained).to(device)
     log_model_parameters(model)
+    pruner = None # pruner를 main 함수 스코프에서 정의
+
+    # --- 경량화 적용 (config.yaml 설정에 따라) ---
+    # 1. Pruning (가지치기) 적용
+    if getattr(baseline_cfg, 'use_l1_pruning', False):
+        logging.info("="*50)
+        logging.info("L1 Norm Pruning을 시작합니다...")
+        pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
+        
+        # --- [수정] 마지막 분류 레이어를 제외한 모든 Conv2d와 Linear 레이어의 이름을 찾습니다. ---
+        target_op_names = []
+        last_linear_name = None
+        for name, module in model.named_modules():
+            if isinstance(module, nn.Linear):
+                last_linear_name = name # 마지막으로 발견된 Linear 레이어 이름을 저장
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                target_op_names.append(name)
+
+        # 마지막 Linear 레이어를 Pruning 대상에서 제외합니다.
+        if last_linear_name:
+            logging.info(f"마지막 분류 레이어 '{last_linear_name}'를 Pruning 대상에서 제외합니다.")
+            target_op_names.remove(last_linear_name)
+        
+        # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
+        pruner_config_list = [{
+            'op_names': target_op_names,
+            'sparsity': pruning_sparsity
+        }]
+        
+        logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
+        
+        # Pruner 생성 및 모델 압축
+        pruner = L1NormPruner(model, pruner_config_list)
+        model, masks = pruner.compress() # 모델에 마스크가 적용되고, masks를 반환받음
+        
+        logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
+        logging.info("="*50)
+
+    # 2. Quantization (양자화) 적용
+    # QAT는 훈련 루프와 통합되어야 하므로, Quantizer 객체만 생성하고 train 함수에 전달합니다.
+    quantizer = None
+    if getattr(baseline_cfg, 'use_qat_quantization', False):
+        logging.info("="*50)
+        logging.info("QAT Quantization을 설정합니다...")
+        quant_start_step = getattr(baseline_cfg, 'quant_start_step', 0)
+
+        # 모든 Conv2d와 Linear 레이어의 가중치(weight)와 출력(output)을 양자화 대상으로 설정
+        quantizer_config_list = [{
+            'op_types': ['Conv2d', 'Linear'],
+            'target_names': ['_input_', 'weight', '_output_'], # 입력, 가중치, 출력 모두 양자화
+            'quant_dtype': 'int8',
+            'quant_scheme': 'affine'
+        }]
+        
+        # QATQuantizer는 훈련 과정에 개입해야 하므로 Evaluator가 필요합니다.
+        # 여기서는 Quantizer 객체만 생성하고, train 함수 내부에서 Evaluator와 연결합니다.
+        quantizer = QATQuantizer(model, quantizer_config_list, evaluator=None, quant_start_step=quant_start_step)
+        logging.info(f"QAT Quantization 설정 완료. 훈련 스텝 {quant_start_step}부터 적용됩니다.")
+        logging.info("="*50)
     
     # --- 옵티마이저 및 스케줄러 설정 ---
     optimizer, scheduler = None, None
@@ -576,14 +669,51 @@ def main():
 
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
-        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, quantizer=quantizer)
+        
+        # --- [수정] 훈련 완료 후 Pruning 모델 Export 및 저장 ---
+        if pruner:
+            logging.info("="*50)
+            logging.info("Pruning된 모델을 Export합니다 (가중치를 영구적으로 제거).")
+            
+            # 1. 훈련 중 가장 성능이 좋았던 모델의 가중치와 마스크 정보를 불러옵니다.
+            model.load_state_dict(torch.load(os.path.join(run_dir_path, run_cfg.model_path), map_location=device))
+            
+            # 2. 모델을 감싸고 있던 Wrapper를 제거하여 순수한 Pytorch 모델로 되돌립니다.
+            pruner.unwrap_model()
+            logging.info("Pruner.unwrap_model() 완료. 모델에서 Wrapper가 제거되었습니다.")
+
+            # 3. ModelSpeedup을 사용하여 마스크를 기반으로 모델을 물리적으로 가속(압축)합니다.
+            #    이를 위해 모델에 입력될 더미 데이터가 필요합니다.
+            dummy_input = torch.randn(1, 3, 224, 224).to(device) # config의 img_size를 사용하면 더 좋습니다.
+
+            # NNI의 자체 추적 기능(concrete_trace) 대신, 안정적인 torch.fx.symbolic_trace를 직접 사용하여
+            # 모델의 연산 그래프(GraphModule)를 생성합니다.
+            # 이렇게 생성된 그래프를 ModelSpeedup에 graph_module 인자로 전달합니다.
+            from torch.fx import symbolic_trace
+            graph_module = symbolic_trace(model)
+
+            speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module)
+            model = speedup.speedup_model()
+            logging.info("ModelSpeedup 완료. 모델 구조가 영구적으로 변경 및 압축되었습니다.")
+
+            # 4. 압축된 모델의 state_dict를 새로운 파일로 저장합니다.
+            pruned_model_path = os.path.join(run_dir_path, 'pruned_model.pth')
+            torch.save(model.state_dict(), pruned_model_path)
+            logging.info(f"Pruning이 적용된 모델이 '{pruned_model_path}'에 저장되었습니다.")
+            
+            # 5. 압축된 모델의 파라미터 수를 다시 확인합니다.
+            # 이 시점에서 파라미터 수가 실제로 줄어든 것을 확인할 수 있습니다.
+            logging.info("Export된 Pruned 모델의 파라미터 수를 다시 확인합니다.")
+            log_model_parameters(model)
+
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
         final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
 
-        log_filename = f"log_{timestamp}.log"
-        log_file_path = os.path.join(run_dir_path, log_filename)
         if final_acc is not None:
+            log_filename = f"log_{timestamp}.log"
+            log_file_path = os.path.join(run_dir_path, log_filename)
             plot_and_save_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
             plot_and_save_train_val_accuracy_graph(log_file_path, run_dir_path, final_acc, timestamp)
             plot_and_save_f1_normal_graph(log_file_path, run_dir_path, timestamp, class_names)
