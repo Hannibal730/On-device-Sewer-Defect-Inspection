@@ -105,7 +105,7 @@ training_run:
 # 3. 훈련 하이퍼파라미터 (baseline.py 전용)
 # =============================================================================
 training_baseline:
-  epochs: 2                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
+  epochs: 1                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
   batch_size: 256                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd', 'nadam', 'radam', 'rmsprop'
@@ -195,12 +195,13 @@ model:
 # =============================================================================
 baseline:
   # 사용할 baseline 모델의 이름을 지정합니다.
-  # 사용 가능한 옵션: 'resnet18',(0.997445) 'efficientnet_b0', 'mobilenet_v4', 'xie2019', 'vit'
-  model_name: 'mobilenet_v4'
+  # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4', 'xie2019', 'vit'
+  model_name: 'resnet18'
 
   # --- 경량화 옵션 ---
-  use_l1_pruning: true      # L1 Norm Pruning 적용 여부
+  use_l1_pruning: false      # L1 Norm Pruning 적용 여부 ('true', 'false')
   pruning_sparsity: 0.3      # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)
 
-  use_qat_quantization: false # Quantization-Aware Training 적용 여부
+  use_qat_quantization: true # Quantization-Aware Training 적용 여부 ('true', 'false')
   quant_start_step: 0        # QAT를 시작할 훈련 스텝 (0은 훈련 시작부터 바로 적용)
+  quant_bits: 8              # 양자화 비트 수. 일반적으로 8을 사용하며, 하드웨어 지원에 따라 4, 2 등을 시도할 수 있습니다. (옵션: 8, 4, 2 등)
