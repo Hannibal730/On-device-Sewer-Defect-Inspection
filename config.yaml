@@ -2,15 +2,18 @@
 # 1. 실행 및 데이터 관련 설정 (run.py, baseline.py 공용)
 # =============================================================================
 run:
-  mode: 'inference' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
-  cuda: true # true: CUDA 사용 시도. false: CPU만 사용. CUDA를 사용할 수 없는 경우 자동으로 CPU로 전환됩니다.
-  evaluate_onnx: true # true: 훈련/추론 후 ONNX로 변환하고 성능을 평가합니다.
-  only_inference: false # true: 정답 레이블 없이 순수 추론만 수행. false: 정답 레이블과 비교하여 성능 평가.
-  only_inference_dir: './log/Sewer-TAPNEW/run_20251123_084550'   # 추론 모드에서 사용할 훈련된 모델이 포함된 디렉토리의 경로
   global_seed: 42 # 프로그램 전체의 재현성을 위한 전역 랜덤 시드. None으로 설정 시 비활성화.
-  model_path: 'best_model.pth' # 훈련 시 저장할 최고 성능 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름.
-  # .onnx 파일 경로를 지정하면, inference 모드에서 PyTorch 모델 평가/변환을 건너뛰고 해당 ONNX 모델을 직접 평가합니다.
-  onnx_model_path: './log/Sewer-TAPNEW/baseline_resnet18_20251201_095747/model_20251201_095747.onnx' # onnx_model_path: './log/Sewer-TAPNEW/run_20251201_095258/model_20251201_095320.onnx' # 평가할 ONNX 파일 경로
+  cuda: true # true: CUDA 사용 시도. false: CPU만 사용. CUDA를 사용할 수 없는 경우 자동으로 CPU로 전환됩니다.
+  mode: 'train' # 실행 모드. 'train': 모델 훈련, 'inference': 모델 추론 및 성능 평가
+  
+  pth_inference_dir: './log/Sewer-TAPNEW/run_20251201_095610'   # 추론 모드에서 사용할 .pth 모델이 포함된 디렉토리의 경로
+  pth_best_name: 'best_model.pth' # 훈련 시 저장할 최고 성능 .pth 모델의 파일 이름 또는 추론 시 불러올 모델의 파일 이름.
+  evaluate_onnx: true # true: 훈련/추론 후 ONNX로 변환하고 성능을 평가합니다.
+
+# .onnx 파일 경로를 지정하면, inference 모드에서 PyTorch 모델 평가/변환을 건너뛰고 해당 ONNX 모델을 직접 평가합니다.
+  onnx_inference_path: './log/Sewer-TAPNEW/baseline_resnet18_20251201_095747/model_20251201_095747.onnx' # onnx_inference_path: './log/Sewer-TAPNEW/run_20251201_095258/model_20251201_095320.onnx' # 평가할 ONNX 파일 경로
+  
+  only_inference: false # true: 정답 레이블 없이 순수 추론만 수행. false: 정답 레이블과 비교하여 성능 평가.
   show_log: true # true: 로그를 콘솔에 출력하고 파일로 저장. false: 모든 로깅 비활성화.
   
   # --- 데이터셋 설정 ---
@@ -47,7 +50,7 @@ run:
 # 2. 훈련 하이퍼파라미터 (run.py 전용)
 # =============================================================================
 training_run:
-  epochs: 90                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
+  epochs: 1                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
   batch_size: 256                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd', 'nadam', 'radam', 'rmsprop'
@@ -204,5 +207,5 @@ baseline:
   # --- 경량화 옵션 ---
   use_l1_pruning: false      # L1 Norm Pruning 적용 여부
   use_l2_pruning: false     # L2 Norm Pruning 적용 여부
-  use_fpgm_pruning: true     # FPGM Pruning 적용 여부
+  use_fpgm_pruning: false     # FPGM Pruning 적용 여부
   pruning_sparsity: 0.3      # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)

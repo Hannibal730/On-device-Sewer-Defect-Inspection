@@ -242,7 +242,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
     logging.info("train 모드를 시작합니다.")
     
     # 모델 저장 경로를 실행별 디렉토리로 설정
-    model_path = os.path.join(run_dir_path, run_cfg.model_path)
+    model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
 
     loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
     if loss_function_name == 'bcewithlogitsloss':
@@ -399,15 +399,15 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
     """저장된 모델을 불러와 추론 시 GPU 메모리 사용량을 측정하고, 테스트셋 성능을 평가합니다."""
     
     # --- ONNX 모델 직접 평가 분기 ---
-    onnx_model_path = getattr(run_cfg, 'onnx_model_path', None)
-    if onnx_model_path and os.path.exists(onnx_model_path):
+    onnx_inference_path = getattr(run_cfg, 'onnx_inference_path', None)
+    if onnx_inference_path and os.path.exists(onnx_inference_path):
         logging.info("="*50)
-        logging.info(f"ONNX 모델 직접 평가를 시작합니다: '{onnx_model_path}'")
+        logging.info(f"ONNX 모델 직접 평가를 시작합니다: '{onnx_inference_path}'")
         if not onnxruntime:
             logging.error("ONNX Runtime이 설치되지 않았습니다. 'pip install onnxruntime'으로 설치해주세요.")
             return None
         try:
-            onnx_session = onnxruntime.InferenceSession(onnx_model_path)
+            onnx_session = onnxruntime.InferenceSession(onnx_inference_path)
             dummy_input, _, _ = next(iter(data_loader))
             measure_onnx_performance(onnx_session, dummy_input)
             evaluate_onnx(run_cfg, onnx_session, data_loader, desc=f"[{mode_name} (ONNX)]", class_names=class_names, log_class_metrics=True)
@@ -418,9 +418,9 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
     logging.info(f"{mode_name} 모드를 시작합니다.")
     
     # 훈련 시 사용된 모델 경로를 불러옴
-    model_path = os.path.join(run_dir_path, run_cfg.model_path)
+    model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
     if not os.path.exists(model_path) and mode_name != "Final Evaluation":
-        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'config.yaml'의 'only_inference_dir' 설정이 올바른지 확인하세요.")
+        logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'train' 모드로 먼저 훈련을 실행했는지, 또는 'config.yaml'의 'pth_inference_dir' 설정이 올바른지 확인하세요.")
         return
 
     try:
@@ -468,7 +468,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                 decoded_features = model.decoder(encoded_features)
                 decoder_end_event.record()
                 # 3. Classifier 구간
-                _ = model.classifier(single_dummy_input)
+                _ = model.classifier(decoded_features)
                 classifier_end_event.record()
 
                 # 모든 이벤트가 기록된 후 동기화
@@ -683,9 +683,9 @@ def main():
         run_dir_path, timestamp = setup_logging(run_cfg, data_dir_name) # 여기서 run_dir_path와 timestamp가 반환됨
     elif run_cfg.mode == 'inference':
         # 추론 모드: 지정된 실행 디렉토리 사용
-        run_dir_path = getattr(run_cfg, 'only_inference_dir', None)
+        run_dir_path = getattr(run_cfg, 'pth_inference_dir', None)
         if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
-            logging.error("추론 모드에서는 'config.yaml'에 'only_inference_dir'를 올바르게 설정해야 합니다.")
+            logging.error("추론 모드에서는 'config.yaml'에 'pth_inference_dir'를 올바르게 설정해야 합니다.")
             exit()
         # 로깅 설정은 하지만, run_dir_path는 yaml에서 읽은 값을 사용
         _, timestamp = setup_logging(run_cfg, data_dir_name)
@@ -820,10 +820,10 @@ def main():
 
     elif run_cfg.mode == 'inference':
         # 추론 모드에서는 test_loader를 사용해 성능 평가
-        # onnx_model_path가 지정된 경우, model 객체는 필요 없으므로 None을 전달합니다.
-        onnx_model_path = getattr(run_cfg, 'onnx_model_path', None)
-        if onnx_model_path and os.path.exists(onnx_model_path):
-            logging.info(f"'{onnx_model_path}' ONNX 파일 평가를 위해 PyTorch 모델 생성을 건너뜁니다.")
+        # onnx_inference_path가 지정된 경우, model 객체는 필요 없으므로 None을 전달합니다.
+        onnx_inference_path = getattr(run_cfg, 'onnx_inference_path', None)
+        if onnx_inference_path and os.path.exists(onnx_inference_path):
+            logging.info(f"'{onnx_inference_path}' ONNX 파일 평가를 위해 PyTorch 모델 생성을 건너뜁니다.")
             inference(run_cfg, model_cfg, None, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
         else:
             # 모델 생성 후 파라미터 수 로깅

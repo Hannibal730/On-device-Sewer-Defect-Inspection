@@ -205,7 +205,7 @@ def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name,
 def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
-    model_path = os.path.join(run_dir_path, run_cfg.model_path)
+    model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
 
     # --- 손실 함수 설정 ---
     loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
@@ -345,15 +345,15 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
     """저장된 모델로 추론 및 성능 평가를 수행합니다."""
     
     # --- ONNX 모델 직접 평가 분기 ---
-    onnx_model_path = getattr(run_cfg, 'onnx_model_path', None)
-    if onnx_model_path and os.path.exists(onnx_model_path):
+    onnx_inference_path = getattr(run_cfg, 'onnx_inference_path', None)
+    if onnx_inference_path and os.path.exists(onnx_inference_path):
         logging.info("="*50)
-        logging.info(f"ONNX 모델 직접 평가를 시작합니다: '{onnx_model_path}'")
+        logging.info(f"ONNX 모델 직접 평가를 시작합니다: '{onnx_inference_path}'")
         if not onnxruntime:
             logging.error("ONNX Runtime이 설치되지 않았습니다. 'pip install onnxruntime'으로 설치해주세요.")
             return None
         try:
-            onnx_session = onnxruntime.InferenceSession(onnx_model_path)
+            onnx_session = onnxruntime.InferenceSession(onnx_inference_path)
             dummy_input, _, _ = next(iter(data_loader))
             measure_onnx_performance(onnx_session, dummy_input)
             evaluate_onnx(run_cfg, onnx_session, data_loader, desc=f"[{mode_name} (ONNX)]", class_names=class_names, log_class_metrics=True)
@@ -368,7 +368,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
     # main 함수에서 이미 압축된 모델 객체를 전달했으므로, 여기서는 가중치를 다시 로드할 필요가 없습니다.
     # 하지만, 만약 'inference' 모드로만 실행될 경우를 대비하여 로드 로직을 유지하되, 올바른 파일을 선택하도록 합니다.
     pruned_model_path = os.path.join(run_dir_path, 'pruned_model.pth')
-    best_model_path = os.path.join(run_dir_path, run_cfg.model_path)
+    best_model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
 
     # 'pruned_model.pth'가 존재하면 그것을 우선적으로 사용합니다.
     model_to_load = pruned_model_path if os.path.exists(pruned_model_path) else best_model_path
@@ -546,9 +546,9 @@ def main():
     if run_cfg.mode == 'train':
         run_dir_path, timestamp = setup_logging(run_cfg, data_dir_name, baseline_model_name)
     elif run_cfg.mode == 'inference':
-        run_dir_path = getattr(run_cfg, 'only_inference_dir', None)
+        run_dir_path = getattr(run_cfg, 'pth_inference_dir', None)
         if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
-            logging.error("추론 모드에서는 'config.yaml'에 'only_inference_dir'를 올바르게 설정해야 합니다.")
+            logging.error("추론 모드에서는 'config.yaml'에 'pth_inference_dir'를 올바르게 설정해야 합니다.")
             exit()
         _, timestamp = setup_logging(run_cfg, data_dir_name, baseline_model_name)
     
@@ -776,7 +776,7 @@ def main():
             logging.info("Pruning된 모델을 Export합니다 (가중치를 영구적으로 제거).")
             
             # 1. 훈련 중 가장 성능이 좋았던 모델의 가중치와 마스크 정보를 불러옵니다.
-            model.load_state_dict(torch.load(os.path.join(run_dir_path, run_cfg.model_path), map_location=device))
+            model.load_state_dict(torch.load(os.path.join(run_dir_path, run_cfg.pth_best_name), map_location=device))
             
             # 2. 모델을 감싸고 있던 Wrapper를 제거하여 순수한 Pytorch 모델로 되돌립니다.
             pruner.unwrap_model()
@@ -838,10 +838,10 @@ def main():
             plot_and_save_compiled_graph(run_dir_path, timestamp)
 
     elif run_cfg.mode == 'inference':
-        # onnx_model_path가 지정된 경우, model 객체는 필요 없으므로 None을 전달합니다.
-        onnx_model_path = getattr(run_cfg, 'onnx_model_path', None)
-        if onnx_model_path and os.path.exists(onnx_model_path):
-            logging.info(f"'{onnx_model_path}' ONNX 파일 평가를 위해 PyTorch 모델 생성을 건너뜁니다.")
+        # onnx_inference_path가 지정된 경우, model 객체는 필요 없으므로 None을 전달합니다.
+        onnx_inference_path = getattr(run_cfg, 'onnx_inference_path', None)
+        if onnx_inference_path and os.path.exists(onnx_inference_path):
+            logging.info(f"'{onnx_inference_path}' ONNX 파일 평가를 위해 PyTorch 모델 생성을 건너뜁니다.")
             inference(run_cfg, model_cfg, None, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
         else:
             log_model_parameters(model)
