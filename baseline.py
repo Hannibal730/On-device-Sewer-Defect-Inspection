@@ -27,12 +27,6 @@ except ImportError:
 from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph, plot_and_save_compiled_graph
 
 # =============================================================================
-# [최종 수정] NNI 유틸리티 모듈을 전역 범위에서 import
-# =============================================================================
-# train 함수에서 TorchEvaluator를 사용하므로, main 함수 밖에서 import 해야 합니다.
-from nni.compression.utils import TorchEvaluator
-
-# =============================================================================
 # 1. 로깅 및 모델 설정
 # =============================================================================
 def setup_logging(run_cfg, data_dir_name, baseline_model_name):
@@ -202,7 +196,7 @@ def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name,
         'preds': all_preds
     }
 
-def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, quantizer=None):
+def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
     model_path = os.path.join(run_dir_path, run_cfg.model_path)
@@ -242,9 +236,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         logging.info(f"손실 함수: CrossEntropyLoss (label_smoothing: {label_smoothing})")
     else: # 'crossentropyloss' 또는 기본값
-        # [최종 수정] QAT 모드에서는 main 함수에서 criterion을 미리 생성하므로, train 함수에서는 오류를 발생시키지 않습니다.
-        # raise ValueError(f"baseline.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
-        pass
+        raise ValueError(f"baseline.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
 
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
     best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
@@ -292,7 +284,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             optimizer.zero_grad()
 
-            # [최종 수정] QAT 훈련은 NNI의 Evaluator가 제어하므로, train 함수는 일반적인 훈련 로직만 수행합니다.
             outputs = model(images)
             if loss_function_name == 'bcewithlogitsloss':
                 loss = criterion(outputs[:, 1].unsqueeze(1), labels.float().unsqueeze(1))
@@ -301,7 +292,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             loss.backward()
             optimizer.step()
 
-            # loss가 텐서일 수 있으므로 .item()으로 값을 가져옵니다.
             loss_val = loss.item() if isinstance(loss, torch.Tensor) else loss
             running_loss += loss_val
 
@@ -484,8 +474,6 @@ def main():
     # =============================================================================
     from nni.compression.pruning import L1NormPruner
     from nni.compression.speedup import ModelSpeedup
-    from nni.compression.quantization import QATQuantizer # QATQuantizer만 import
-    import nni # nni.trace를 사용하기 위해 import
     """메인 실행 함수"""
     parser = argparse.ArgumentParser(description="YAML 설정을 이용한 Baseline 모델 분류기")
     parser.add_argument('--config', type=str, default='config.yaml', help="설정 파일 경로. 기본값: 'config.yaml'")
@@ -629,9 +617,9 @@ def main():
         logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
         logging.info("="*50)
 
-    # --- 모드에 따라 실행 ---
+    # --- 옵티마이저 및 스케줄러 설정 ---
+    optimizer, scheduler = None, None
     if run_cfg.mode == 'train':
-        # --- 옵티마이저 및 스케줄러 설정 ---
         optimizer_name = getattr(train_cfg, 'optimizer', 'adamw').lower()
         logging.info("="*50)
         if optimizer_name == 'sgd':
@@ -655,108 +643,30 @@ def main():
         else:
             weight_decay = getattr(train_cfg, 'weight_decay', 0.01)
             logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={weight_decay})")
-            optimizer = nni.trace(optim.AdamW)(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
+            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
 
+        # scheduler_params가 없으면 빈 객체로 초기화
         scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
+
         scheduler_name = getattr(train_cfg, 'scheduler', 'none').lower()
         if scheduler_name == 'multisteplr':
             milestones = getattr(train_cfg, 'milestones', [])
             gamma = getattr(train_cfg, 'gamma', 0.1)
             logging.info(f"스케줄러: MultiStepLR (milestones={milestones}, gamma={gamma})")
-            scheduler = nni.trace(optim.lr_scheduler.MultiStepLR)(optimizer, milestones=milestones, gamma=gamma)
+            scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
         elif scheduler_name == 'cosineannealinglr':
             T_max = getattr(scheduler_params, 'T_max', train_cfg.epochs)
             eta_min = getattr(scheduler_params, 'eta_min', 0.0)
             logging.info(f"스케줄러: CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
-            scheduler = nni.trace(optim.lr_scheduler.CosineAnnealingLR)(optimizer, T_max=T_max, eta_min=eta_min)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
         else:
-            scheduler = None
             logging.info("스케줄러를 사용하지 않습니다.")
         logging.info("="*50)
 
-        # --- [최종 수정] QAT Quantizer 설정 로직 이동 ---
-        # Quantizer는 Evaluator를 필요로 하고, Evaluator는 optimizer와 criterion을 필요로 하므로,
-        # optimizer와 criterion을 먼저 정의한 후 Quantizer를 설정합니다.
-        quantizer = None
-        if getattr(baseline_cfg, 'use_qat_quantization', False):
-            logging.info("="*50)
-            logging.info("QAT Quantization을 설정합니다...")
-            quant_start_step = getattr(baseline_cfg, 'quant_start_step', 0)
-            quant_bits = getattr(baseline_cfg, 'quant_bits', 8) # config.yaml에서 비트 수 읽기
-            quant_dtype_str = f'int{quant_bits}' # 'int8', 'int4' 등 문자열로 변환
-
-            quantizer_config_list = [{
-                'op_types': ['Conv2d', 'Linear'],
-                'target_names': ['_input_', 'weight', '_output_'],
-                'quant_dtype': quant_dtype_str, # 설정된 비트 수 적용
-                'quant_scheme': 'affine'
-            }]
-
-            # 1. QAT에 필요한 손실 함수를 여기서 먼저 정의합니다.
-            loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
-            if loss_function_name == 'crossentropyloss':
-                label_smoothing = getattr(train_cfg, 'label_smoothing', 0.0)
-                criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-            else:
-                # 다른 손실 함수가 필요하면 여기에 추가합니다.
-                raise ValueError(f"QAT 모드에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
-
-            # 2. QAT를 위한 training_step 함수를 정의합니다.
-            def training_step(batch):
-                images, labels, _ = batch
-                outputs = model(images.to(device))
-                return criterion(outputs, labels.to(device))
-
-            # 3. optimizer와 training_step을 사용하여 TorchEvaluator를 생성합니다.
-            # [최종 수정] TorchEvaluator는 training_func를 정해진 인자로만 호출합니다.
-            # training_func는 6개의 인자를 받도록 정의하고, 그 인자들을 사용하여 train 함수를 호출합니다.
-            # NNI가 전달하는 model, optimizer, scheduler를 사용하고, 나머지는 main 함수의 변수를 사용합니다.
-            training_func_for_evaluator = lambda model, optimizer, training_step, scheduler, max_steps, max_epochs: \
-                train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, quantizer=quantizer)
-            evaluator = TorchEvaluator(training_func_for_evaluator, optimizer, training_step)
-
-            # 4. 완성된 evaluator를 사용하여 QATQuantizer를 생성합니다.
-            quantizer = QATQuantizer(model, quantizer_config_list, evaluator, quant_start_step=quant_start_step)
-
-            # [최종 수정] compress()는 max_steps와 max_epochs를 필수로 요구합니다.
-            # 훈련 에포크 수를 전달하여 양자화 훈련을 얼마나 수행할지 알려줍니다.
-            # 또한, compress()는 보정 설정을 반환하므로 이를 변수에 저장합니다.
-            _, calibration_config = quantizer.compress(max_steps=None, max_epochs=train_cfg.epochs)
-            logging.info(f"QAT Quantization ({quant_dtype_str}) 설정 완료. 훈련 스텝 {quant_start_step}부터 적용됩니다.")
-            logging.info("="*50)
-            
-            # --- [최종 수정] QAT 훈련 완료 후 모델 및 보정 설정 저장 ---
-            logging.info("="*50)
-            logging.info("QAT 훈련 완료. 양자화된 모델을 Export합니다.")
-
-            # QAT 훈련 후 모델은 이미 양자화 시뮬레이션이 적용된 상태입니다.
-            # 이 모델의 state_dict를 저장합니다.
-            quantized_model_path = os.path.join(run_dir_path, 'quantized_model.pth')
-            torch.save(model.state_dict(), quantized_model_path)
-
-            # compress()가 반환한 보정 설정을 json 파일로 저장합니다.
-            calibration_path = os.path.join(run_dir_path, 'calibration.json')
-            import json
-
-            # [최종 수정] JSON 직렬화를 위해 텐서를 리스트로 변환하는 헬퍼 함수
-            def convert_tensors_to_list(obj):
-                if isinstance(obj, dict):
-                    return {k: convert_tensors_to_list(v) for k, v in obj.items()}
-                elif isinstance(obj, list):
-                    return [convert_tensors_to_list(elem) for elem in obj]
-                elif isinstance(obj, torch.Tensor):
-                    return obj.tolist()
-                return obj
-            
-            with open(calibration_path, 'w') as f:
-                json.dump(convert_tensors_to_list(calibration_config), f, indent=4)
-            logging.info(f"양자화된 모델이 '{quantized_model_path}'에 저장되었습니다.")
-            logging.info(f"보정 설정이 '{calibration_path}'에 저장되었습니다.")
-        else:
-            # QAT가 비활성화된 경우에만 기존의 train() 함수를 호출합니다.
-            train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
-
-
+    # --- 모드에 따라 실행 ---
+    if run_cfg.mode == 'train':
+        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+        
         # --- [수정] 훈련 완료 후 Pruning 모델 Export 및 저장 ---
         if pruner:
             logging.info("="*50)
