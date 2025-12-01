@@ -200,5 +200,6 @@ baseline:
 
   # --- 경량화 옵션 ---
   use_l1_pruning: false      # L1 Norm Pruning 적용 여부
-  use_l2_pruning: true      # L2 Norm Pruning 적용 여부
+  use_l2_pruning: false     # L2 Norm Pruning 적용 여부
+  use_fpgm_pruning: true     # FPGM Pruning 적용 여부
   pruning_sparsity: 0.3      # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)

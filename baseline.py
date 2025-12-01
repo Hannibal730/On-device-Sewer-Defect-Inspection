@@ -472,7 +472,7 @@ def main():
     # =============================================================================
     # [최종 수정] NNI 모듈을 main 함수 내부에서 필요할 때 import 하도록 변경
     # =============================================================================
-    from nni.compression.pruning import L1NormPruner, L2NormPruner
+    from nni.compression.pruning import L1NormPruner, L2NormPruner, FPGMPruner
     from nni.compression.speedup import ModelSpeedup
     """메인 실행 함수"""
     parser = argparse.ArgumentParser(description="YAML 설정을 이용한 Baseline 모델 분류기")
@@ -577,7 +577,7 @@ def main():
 
     # --- 경량화 적용 (config.yaml 설정에 따라) ---
     # 1. Pruning (가지치기) 적용
-    if getattr(baseline_cfg, 'use_l1_pruning', False) and not getattr(baseline_cfg, 'use_l2_pruning', False):
+    if getattr(baseline_cfg, 'use_l1_pruning', False) and not getattr(baseline_cfg, 'use_l2_pruning', False) and not getattr(baseline_cfg, 'use_fpgm_pruning', False):
         logging.info("="*50)
         logging.info("L1 Norm Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
@@ -616,8 +616,8 @@ def main():
         
         logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
         logging.info("="*50)
-    elif getattr(baseline_cfg, 'use_l2_pruning', False):
-        if getattr(baseline_cfg, 'use_l1_pruning', False):
+    elif getattr(baseline_cfg, 'use_l2_pruning', False) and not getattr(baseline_cfg, 'use_fpgm_pruning', False):
+        if getattr(baseline_cfg, 'use_l1_pruning', False) or getattr(baseline_cfg, 'use_fpgm_pruning', False):
             logging.warning("use_l1_pruning과 use_l2_pruning이 모두 true로 설정되었습니다. L2 Norm Pruning을 우선 적용합니다.")
         
         logging.info("="*50)
@@ -649,6 +649,40 @@ def main():
         model, masks = pruner.compress() # 모델에 마스크가 적용되고, masks를 반환받음
         
         logging.info("L2 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
+        logging.info("="*50)
+    elif getattr(baseline_cfg, 'use_fpgm_pruning', False):
+        if getattr(baseline_cfg, 'use_l1_pruning', False) or getattr(baseline_cfg, 'use_l2_pruning', False):
+            logging.warning("여러 Pruning 옵션이 활성화되었습니다. FPGM Pruning을 우선 적용합니다.")
+
+        logging.info("="*50)
+        logging.info("FPGM Pruning을 시작합니다...")
+        pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
+
+        # --- [수정] 마지막 분류 레이어를 제외한 모든 Conv2d와 Linear 레이어의 이름을 찾습니다. ---
+        target_op_names = []
+        last_linear_name = None
+        for name, module in model.named_modules():
+            if name.startswith('classifier') or name.startswith('conv_head') or name.startswith('norm_head'):
+                if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
+                    logging.info(f"분류기 헤드 블록 '{name}'을(를) Pruning 대상에서 제외합니다.")
+                continue
+
+            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
+                target_op_names.append(name)
+
+        # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
+        pruner_config_list = [{
+            'op_names': target_op_names,
+            'sparsity': pruning_sparsity
+        }]
+
+        logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
+
+        # Pruner 생성 및 모델 압축
+        pruner = FPGMPruner(model, pruner_config_list)
+        model, masks = pruner.compress() # 모델에 마스크가 적용되고, masks를 반환받음
+
+        logging.info("FPGM Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
         logging.info("="*50)
 
     # --- 옵티마이저 및 스케줄러 설정 ---
