@@ -30,6 +30,12 @@ try:
 except ImportError:
     profile = None
 
+try:
+    import onnxruntime
+    from onnx_utils import evaluate_onnx, measure_onnx_performance, measure_model_flops
+except ImportError:
+    onnxruntime = None
+
 from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_attention_maps, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph, plot_and_save_compiled_graph
 
 # =============================================================================
@@ -408,30 +414,10 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
     model.eval()
 
-    # --- FLOPS 측정 ---
-    # 모델의 입력 크기를 확인하기 위해 샘플 이미지를 하나 가져옵니다.
-    # test_loader.dataset은 Subset일 수 있으므로 .dataset으로 원본 데이터셋에 접근합니다.
-    gflops_per_sample = 0.0 # 샘플 당 연산량 (FLOPs)
-    try:
-        sample_image, _, _ = data_loader.dataset.dataset[0] if isinstance(data_loader.dataset, Subset) else data_loader.dataset[0]
-        dummy_input = sample_image.unsqueeze(0).to(device)
-
-        if profile:
-            # thop.profile은 MACs를 반환합니다. FLOPs는 보통 MACs * 2 입니다.
-            macs, params = profile(model, inputs=(dummy_input,), verbose=False)
-            gmacs = macs / 1e9
-            logging.info(f"연산량 (MACs): {gmacs:.2f} GMACs per sample")
-            # GFLOPS (Giga Floating Point Operations) 단위로 변환
-            gflops_per_sample = (macs * 2) / 1e9
-            logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
-        else:
-            logging.info("연산량 (FLOPs): N/A (thop 라이브러리가 설치되지 않아 측정을 건너뜁니다.)")
-            logging.info("  - FLOPS를 측정하려면 'pip install thop'을 실행하세요.")
-    except Exception as e:
-        logging.error(f"FLOPS 측정 중 오류 발생: {e}")
+    # --- PyTorch 모델 성능 지표 측정 (FLOPS 및 더미 입력 생성) ---
+    dummy_input = measure_model_flops(model, device, data_loader)
 
     # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
-    # FLOPs 측정에 사용된 더미 입력을 재사용합니다.
     avg_inference_time_per_sample = 0.0
     logging.info("GPU 캐시를 비우고, 샘플 당 Forward Pass 시간 및 최대 GPU 메모리 사용량 측정을 시작합니다...")
     if device.type == 'cuda' and torch.cuda.is_available():
@@ -513,6 +499,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         # 순수 추론 모드: 예측 결과만 생성하고 CSV로 저장
         all_filenames = []
         all_predictions = []
+        all_attention_maps = []
         all_confidences = []
         show_log = getattr(run_cfg, 'show_log', True)
         progress_bar = tqdm(data_loader, desc=f"[{mode_name}]", leave=False, disable=not show_log)
@@ -530,6 +517,10 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                 all_filenames.extend(filenames)
                 all_predictions.extend([class_names[p] for p in predicted_indices.cpu().numpy()])
                 all_confidences.extend(confidences.cpu().numpy())
+
+                # 어텐션 맵 저장 (시각화를 위해)
+                if model_cfg.save_attention:
+                    all_attention_maps.append(model.decoder.embedding4decoder.decoder.layers[-1].attn.cpu())
         
         # 결과를 DataFrame으로 만들어 CSV 파일로 저장
         results_df = pd.DataFrame({
@@ -545,10 +536,14 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
     else:
         # 평가 모드: 기존 evaluate 함수 호출
+        # 어텐션 맵을 저장하기 위해 evaluate 함수를 직접 호출하는 대신, 루프를 여기서 실행합니다.
         eval_results = evaluate(run_cfg, model, data_loader, device, nn.CrossEntropyLoss(), 'crossentropyloss', desc=f"[{mode_name}]", class_names=class_names, log_class_metrics=True)
         final_acc = eval_results['accuracy']
 
         # 3. 혼동 행렬 생성 및 저장 (최종 평가 시에만)
+        # evaluate 함수가 이미 혼동 행렬에 필요한 labels와 preds를 반환하므로, 이를 사용합니다.
+        # 단, 어텐션 맵 시각화를 위해 data_loader를 다시 순회해야 합니다.
+        # 여기서는 기존 로직을 유지하고, 어텐션 맵 시각화 부분에서만 수정합니다.
         if eval_results['labels'] and eval_results['preds']:
             plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, run_dir_path, timestamp)
 
@@ -562,7 +557,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             num_to_save = min(getattr(model_cfg, 'num_plot_attention', 10), len(data_loader.dataset))
             logging.info(f"어텐션 맵 시각화를 시작합니다 ({num_to_save}개 샘플, 저장 위치: '{attn_save_dir}').")
 
-            saved_count = 0 # 어텐션 맵을 저장할 전용 폴더 생성
+            saved_count = 0
             # 데이터 로더를 순회하며 num_to_save 개수만큼 시각화
             for sample_images, sample_labels, sample_filenames in data_loader:
                 if saved_count >= num_to_save:
@@ -576,7 +571,10 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                     outputs = model(sample_images)
 
                 _, predicted_indices = torch.max(outputs.data, 1)
-                attention_maps = model.decoder.embedding4decoder.decoder.layers[-1].attn
+                
+                # 모델 실행 후 저장된 어텐션 맵을 가져옵니다.
+                # 이 값은 배치 단위의 어텐션 맵입니다.
+                batch_attention_maps = model.decoder.embedding4decoder.decoder.layers[-1].attn
 
                 # 현재 배치에서 저장해야 할 샘플 수만큼 반복
                 for i in range(batch_size):
@@ -589,7 +587,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                     actual_class = "Unknown" if only_inference_mode else class_names[sample_labels[i].item()]
 
                     plot_and_save_attention_maps(
-                        attention_maps, sample_images, attn_save_dir, model_cfg.img_size, model_cfg,
+                        batch_attention_maps, sample_images, attn_save_dir, model_cfg.img_size, model_cfg,
                         sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class
                     )
                     saved_count += 1
@@ -597,7 +595,33 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             logging.info(f"어텐션 맵 {saved_count}개 저장 완료.")
         except Exception as e:
             logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
+    # --- ONNX 변환 및 평가 (config.yaml 설정에 따라) ---
+    evaluate_onnx_flag = getattr(run_cfg, 'evaluate_onnx', False)
+    if evaluate_onnx_flag and onnxruntime and dummy_input is not None:
+        logging.info("="*50)
+        logging.info("ONNX 변환 및 평가를 시작합니다...")
+        onnx_path = os.path.join(run_dir_path, f'model_{timestamp}.onnx')
+        try:
+            # 모델을 CPU로 이동하여 ONNX로 변환 (일반적으로 더 안정적)
+            model.to('cpu')
+            torch.onnx.export(model, dummy_input.to('cpu'), onnx_path,
+                              export_params=True, opset_version=12,
+                              do_constant_folding=True,
+                              input_names=['input'], output_names=['output'],
+                              dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
+            model.to(device) # 모델을 원래 장치로 복원
+            logging.info(f"모델이 ONNX 형식으로 변환되어 '{onnx_path}'에 저장되었습니다.")
+
+            # ONNX 런타임 세션 생성 및 평가
+            onnx_session = onnxruntime.InferenceSession(onnx_path)
+            measure_onnx_performance(onnx_session, dummy_input)
+            evaluate_onnx(run_cfg, onnx_session, data_loader, desc=f"[{mode_name} (ONNX)]", class_names=class_names, log_class_metrics=True)
+
+        except Exception as e:
+            logging.error(f"ONNX 변환 또는 평가 중 오류 발생: {e}")
+
     return final_acc
+
 
 def main():
     """메인 실행 함수"""
