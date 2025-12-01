@@ -73,23 +73,25 @@ def measure_onnx_performance(onnx_session, dummy_input):
     logging.info("ONNX 런타임의 샘플 당 Forward Pass 시간 측정을 시작합니다...")
     
     input_name = onnx_session.get_inputs()[0].name
-    dummy_input_np = dummy_input.cpu().numpy()
+    # 배치 입력에서 첫 번째 이미지만을 사용하여 단일 샘플 추론 시간을 측정합니다.
+    single_dummy_input_np = dummy_input[0].unsqueeze(0).cpu().numpy()
 
     # CPU 시간 측정을 위한 예열(warm-up)
     for _ in range(10):
-        _ = onnx_session.run(None, {input_name: dummy_input_np})
+        _ = onnx_session.run(None, {input_name: single_dummy_input_np})
 
     # 실제 시간 측정
     num_iterations = 100
     total_time = 0.0
     for _ in range(num_iterations):
         start_time = time.time()
-        _ = onnx_session.run(None, {input_name: dummy_input_np})
+        _ = onnx_session.run(None, {input_name: single_dummy_input_np})
         end_time = time.time()
         total_time += (end_time - start_time) * 1000 # ms
 
+    # 단일 이미지 추론을 반복했으므로, 총 시간을 반복 횟수로 나누면 샘플 당 평균 시간이 됩니다.
     avg_inference_time_per_sample = total_time / num_iterations
-    logging.info(f"샘플 당 평균 Forward Pass 시간 (ONNX, CPU): {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
+    logging.info(f"샘플 당 평균 Forward Pass 시간 (ONNX, CPU): {avg_inference_time_per_sample:.2f}ms (1개 샘플 x {num_iterations}회 반복)")
     logging.info("ONNX 런타임의 CPU 메모리 사용량 측정은 지원되지 않습니다.")
 
 def measure_model_flops(model, device, data_loader):

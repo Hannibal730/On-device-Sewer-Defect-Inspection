@@ -343,6 +343,24 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
 
 def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델로 추론 및 성능 평가를 수행합니다."""
+    
+    # --- ONNX 모델 직접 평가 분기 ---
+    onnx_model_path = getattr(run_cfg, 'onnx_model_path', None)
+    if onnx_model_path and os.path.exists(onnx_model_path):
+        logging.info("="*50)
+        logging.info(f"ONNX 모델 직접 평가를 시작합니다: '{onnx_model_path}'")
+        if not onnxruntime:
+            logging.error("ONNX Runtime이 설치되지 않았습니다. 'pip install onnxruntime'으로 설치해주세요.")
+            return None
+        try:
+            onnx_session = onnxruntime.InferenceSession(onnx_model_path)
+            dummy_input, _, _ = next(iter(data_loader))
+            measure_onnx_performance(onnx_session, dummy_input)
+            evaluate_onnx(run_cfg, onnx_session, data_loader, desc=f"[{mode_name} (ONNX)]", class_names=class_names, log_class_metrics=True)
+        except Exception as e:
+            logging.error(f"ONNX 모델 평가 중 오류 발생: {e}")
+        return None # ONNX 직접 평가 후 종료
+
     logging.info(f"{mode_name} 모드를 시작합니다.")
 
     # --- [수정] Pruning된 모델과 일반 모델에 맞는 가중치 파일을 선택적으로 로드 ---
@@ -369,10 +387,11 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
     # --- PyTorch 모델 성능 지표 측정 (FLOPS 및 더미 입력 생성) ---
     dummy_input = measure_model_flops(model, device, data_loader)
+    single_dummy_input = dummy_input[0].unsqueeze(0) if dummy_input.shape[0] > 1 else dummy_input
 
     # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
     avg_inference_time_per_sample = 0.0
-    logging.info("GPU 캐시를 비우고, 샘플 당 Forward Pass 시간 및 최대 GPU 메모리 사용량 측정을 시작합니다...")
+    logging.info("GPU 캐시를 비우고, 단일 샘플에 대한 Forward Pass 시간 및 최대 GPU 메모리 사용량 측정을 시작합니다...")
     if device.type == 'cuda' and torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
@@ -380,7 +399,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         # 시간 측정을 위한 예열(warm-up)
         with torch.no_grad():
             for _ in range(10):
-                _ = model(dummy_input)
+                _ = model(single_dummy_input)
 
         # 실제 시간 측정
         num_iterations = 100
@@ -390,16 +409,15 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                 start_event = torch.cuda.Event(enable_timing=True)
                 end_event = torch.cuda.Event(enable_timing=True)
                 start_event.record()
-                _ = model(dummy_input)
+                _ = model(single_dummy_input)
                 end_event.record()
                 torch.cuda.synchronize()
                 total_time += start_event.elapsed_time(end_event) # ms
         
         avg_inference_time_per_sample = total_time / num_iterations
-
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
-        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
+        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms (1개 샘플 x {num_iterations}회 반복)")
         logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 CPU 추론 시간을 측정합니다.")
@@ -407,7 +425,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         # CPU 시간 측정을 위한 예열(warm-up)
         with torch.no_grad():
             for _ in range(10):
-                _ = model(dummy_input)
+                _ = model(single_dummy_input)
 
         # 실제 시간 측정
         num_iterations = 100
@@ -415,12 +433,12 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         with torch.no_grad():
             for _ in range(num_iterations):
                 start_time = time.time()
-                _ = model(dummy_input)
+                _ = model(single_dummy_input)
                 end_time = time.time()
                 total_time += (end_time - start_time) * 1000 # ms
 
         avg_inference_time_per_sample = total_time / num_iterations
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms ({num_iterations}회 반복)")
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (1개 샘플 x {num_iterations}회 반복)")
     # --- 평가 또는 순수 추론 ---
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
     only_inference_mode = getattr(run_cfg, 'only_inference', False)
@@ -820,7 +838,15 @@ def main():
             plot_and_save_compiled_graph(run_dir_path, timestamp)
 
     elif run_cfg.mode == 'inference':
-        inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
+        # onnx_model_path가 지정된 경우, model 객체는 필요 없으므로 None을 전달합니다.
+        onnx_model_path = getattr(run_cfg, 'onnx_model_path', None)
+        if onnx_model_path and os.path.exists(onnx_model_path):
+            logging.info(f"'{onnx_model_path}' ONNX 파일 평가를 위해 PyTorch 모델 생성을 건너뜁니다.")
+            inference(run_cfg, model_cfg, None, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
+        else:
+            log_model_parameters(model)
+            inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
+
 
 if __name__ == '__main__':
     main()
