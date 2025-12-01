@@ -24,6 +24,12 @@ try:
 except ImportError:
     profile = None
 
+try:
+    import onnxruntime
+    from onnx_utils import evaluate_onnx, measure_onnx_performance, measure_model_flops
+except ImportError:
+    onnxruntime = None
+
 from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accuracy_graph, plot_and_save_confusion_matrix, plot_and_save_f1_normal_graph, plot_and_save_loss_graph, plot_and_save_lr_graph, plot_and_save_compiled_graph
 
 # =============================================================================
@@ -361,22 +367,8 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
     model.eval()
 
-    # --- 성능 지표 측정 ---
-    gflops_per_sample = 0.0
-    try:
-        sample_image, _, _ = data_loader.dataset.dataset[0] if isinstance(data_loader.dataset, Subset) else data_loader.dataset[0]
-        dummy_input = sample_image.unsqueeze(0).to(device)
-
-        if profile:
-            macs, params = profile(model, inputs=(dummy_input,), verbose=False)
-            gmacs = macs / 1e9
-            gflops_per_sample = (macs * 2) / 1e9
-            logging.info(f"연산량 (MACs): {gmacs:.2f} GMACs per sample")
-            logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
-        else:
-            logging.info("연산량 (FLOPs): N/A (thop 라이브러리 미설치)")
-    except Exception as e:
-        logging.error(f"FLOPS 측정 중 오류 발생: {e}")
+    # --- PyTorch 모델 성능 지표 측정 (FLOPS 및 더미 입력 생성) ---
+    dummy_input = measure_model_flops(model, device, data_loader)
 
     # --- 샘플 당 Forward Pass 시간 및 메모리 사용량 측정 ---
     avg_inference_time_per_sample = 0.0
@@ -466,6 +458,31 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         if eval_results['labels'] and eval_results['preds']:
             plot_and_save_confusion_matrix(eval_results['labels'], eval_results['preds'], class_names, run_dir_path, timestamp)
     
+    # --- ONNX 변환 및 평가 ---
+    evaluate_onnx_flag = getattr(run_cfg, 'evaluate_onnx', False)
+    if evaluate_onnx_flag and onnxruntime and dummy_input is not None:
+        logging.info("="*50)
+        logging.info("ONNX 변환 및 평가를 시작합니다...")
+        onnx_path = os.path.join(run_dir_path, f'model_{timestamp}.onnx')
+        try:
+            # 모델을 CPU로 이동하여 ONNX로 변환 (일반적으로 더 안정적)
+            model.to('cpu')
+            torch.onnx.export(model, dummy_input.to('cpu'), onnx_path,
+                              export_params=True, opset_version=12,
+                              do_constant_folding=True,
+                              input_names=['input'], output_names=['output'],
+                              dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
+            model.to(device) # 모델을 원래 장치로 복원
+            logging.info(f"모델이 ONNX 형식으로 변환되어 '{onnx_path}'에 저장되었습니다.")
+
+            # ONNX 런타임 세션 생성 및 평가
+            onnx_session = onnxruntime.InferenceSession(onnx_path)
+            measure_onnx_performance(onnx_session, dummy_input)
+            evaluate_onnx(run_cfg, onnx_session, data_loader, desc=f"[{mode_name} (ONNX)]", class_names=class_names, log_class_metrics=True)
+
+        except Exception as e:
+            logging.error(f"ONNX 변환 또는 평가 중 오류 발생: {e}")
+
     return final_acc
 
 def main():
