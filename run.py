@@ -506,7 +506,8 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                 total_time += (end_time - start_time) * 1000 # ms
 
         avg_inference_time_per_sample = total_time / num_iterations
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (1개 샘플 x {num_iterations}회 반복)")
+        fps = 1000 / avg_inference_time_per_sample if avg_inference_time_per_sample > 0 else 0
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms, FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
 
     # 2. 테스트셋 성능 평가
     logging.info("="*50)
