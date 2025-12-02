@@ -865,6 +865,16 @@ def main():
             # 생성된 그래프(graph_module)를 사용하여 ModelSpeedup을 초기화합니다.
             speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module, customized_replacers=[IdentityReplacer()])
             model = speedup.speedup_model()
+
+            # [해결] Speedup 이후, 변경된 채널 수에 맞춰 최종 분류기(classifier)를 수동으로 재생성합니다.
+            # mobilenet_v4의 conv_head 출력 채널 수를 가져옵니다.
+            new_in_features = model.conv_head.out_channels
+            # 기존 classifier의 출력 채널 수(num_labels)를 가져옵니다.
+            num_classes = model.classifier.out_features
+            # 새로운 in_features로 classifier를 다시 만듭니다.
+            model.classifier = nn.Linear(new_in_features, num_classes).to(device)
+            logging.info(f"최종 분류기(classifier)를 새로운 입력 채널 수({new_in_features})에 맞춰 재생성했습니다.")
+
             logging.info("ModelSpeedup 완료. 모델 구조가 영구적으로 변경 및 압축되었습니다.")
 
             # 4. 압축된 모델의 state_dict를 새로운 파일로 저장합니다.

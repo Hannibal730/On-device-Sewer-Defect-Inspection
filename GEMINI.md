@@ -7,3 +7,4 @@ Are Self-Attentions Effective for Time Series Forecasting.pdf 파일을 참고�
 그리고 논문에 대한 질문을 답할 때는 다음 명령을 따라. I'm writing a conference paper, which will be submitted to NeurIPS.
 Please revise and correct the paragraphs I will give you. Here is the first paragraph in Introduction, Please correct and revise it.
 ./에 위치한 run.py, models.py, baseline.py, dataloader.py는 config.yaml을 참조해. 나는 이 전체 과정을 논문으로 작성하고 싶어서 전체적인 흐름을 먼저 작성하고 싶어. On-device Sewer Detection을 위한 새로운 Transformer 제안"이 핵심이야. 논문 제목은 Low Cost Sewer Defect Diagnosis Transformer for On-Device Processing 이야. 
+오류 코드를 제공받으면, 오류코드를 분석하여 문제원인을 파악하고 오류해결에 객관적으로 접근해.
