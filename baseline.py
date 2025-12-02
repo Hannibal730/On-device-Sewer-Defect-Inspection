@@ -353,6 +353,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             logging.error("ONNX Runtime이 설치되지 않았습니다. 'pip install onnxruntime'으로 설치해주세요.")
             return None
         try:
+            logging.info(f"ONNX Runtime (v{onnxruntime.__version__})으로 평가를 시작합니다.")
             onnx_session = onnxruntime.InferenceSession(onnx_inference_path)
             dummy_input, _, _ = next(iter(data_loader))
             measure_onnx_performance(onnx_session, dummy_input)
