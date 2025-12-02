@@ -120,8 +120,8 @@ def measure_model_flops(model, device, data_loader):
             macs, params = profile(model, inputs=(dummy_input,), verbose=False)
             gmacs = macs / 1e9
             gflops_per_sample = (macs * 2) / 1e9
-            logging.info(f"연산량 (MACs): {gmacs:.2f} GMACs per sample")
-            logging.info(f"연산량 (FLOPs): {gflops_per_sample:.2f} GFLOPs per sample")
+            logging.info(f"연산량 (MACs): {gmacs:.4f} GMACs per sample")
+            logging.info(f"연산량 (FLOPs): {gflops_per_sample:.4f} GFLOPs per sample")
         else:
             logging.info("연산량 (FLOPs): N/A (thop 라이브러리 미설치)")
         
