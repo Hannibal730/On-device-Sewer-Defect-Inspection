@@ -623,7 +623,11 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         try:
             # 모델을 CPU로 이동하여 ONNX로 변환 (일반적으로 더 안정적)
             model.to('cpu')
-            torch.onnx.export(model, dummy_input.to('cpu'), onnx_path,
+            # --- ONNX 런타임 세션 옵션 설정 ---
+            sess_options = onnxruntime.SessionOptions()
+            sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+            torch.onnx.export(model, dummy_input.to('cpu'), onnx_path, 
                               export_params=True, opset_version=12,
                               do_constant_folding=True,
                               input_names=['input'], output_names=['output'],
@@ -632,7 +636,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             logging.info(f"모델이 ONNX 형식으로 변환되어 '{onnx_path}'에 저장되었습니다.")
 
             # ONNX 런타임 세션 생성 및 평가
-            onnx_session = onnxruntime.InferenceSession(onnx_path)
+            onnx_session = onnxruntime.InferenceSession(onnx_path, sess_options=sess_options)
             measure_onnx_performance(onnx_session, dummy_input)
             evaluate_onnx(run_cfg, onnx_session, data_loader, desc=f"[{mode_name} (ONNX)]", class_names=class_names, log_class_metrics=True)
 
