@@ -633,23 +633,36 @@ def main():
         logging.info("L1 Norm Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
         
-        # --- [수정] 마지막 분류 레이어를 Pruning 대상에서 명시적으로 제외합니다. ---
         target_op_names = []
-        # 모델의 마지막 분류 레이어 이름을 직접 확인하고 리스트에 추가합니다.
-        # ResNet 계열은 'fc', EfficientNet/MobileNetV4는 'classifier', ViT는 'head' 등 모델마다 다릅니다.
-        excluded_layers = ['fc', 'classifier', 'head'] 
+        final_classifier_name = None
 
+        # 모델 타입에 따라 최종 분류 레이어의 이름을 식별합니다.
+        if baseline_model_name == 'resnet18':
+            final_classifier_name = 'fc'
+        elif baseline_model_name == 'efficientnet_b0':
+            final_classifier_name = 'classifier.1' # EfficientNet의 최종 Linear 레이어
+        elif baseline_model_name == 'mobilenet_v4':
+            final_classifier_name = 'classifier' # MobileNetV4의 최종 Linear 레이어
+        elif baseline_model_name == 'xie2019':
+            final_classifier_name = 'classifier.6' # Xie2019의 최종 Linear 레이어
+        elif baseline_model_name == 'vit':
+            final_classifier_name = 'head' # ViT의 최종 Linear 레이어
+        else:
+            logging.warning(f"알 수 없는 baseline 모델 '{baseline_model_name}'입니다. 최종 분류 레이어를 Pruning 대상에서 정확히 제외하기 어려울 수 있습니다.")
+
+        # 모든 모듈을 순회하며 Pruning 대상 레이어를 결정합니다.
         for name, module in model.named_modules():
-            # Pruning 대상에서 제외할 레이어 이름인지 확인합니다.
-            if name in excluded_layers:
+            # 식별된 최종 분류 레이어는 Pruning 대상에서 제외합니다.
+            if name == final_classifier_name:
                 logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
                 continue
 
-            # Conv2d, Linear, BatchNorm2d 레이어를 Pruning 대상으로 추가합니다.
+            # Conv2d, Linear, BatchNorm2d 레이어만 Pruning 대상으로 추가합니다.
             if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
                 target_op_names.append(name)
         
         # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
+        # target_op_names가 비어있지 않은 경우에만 Pruning을 시도합니다.
         pruner_config_list = [{
             'op_names': target_op_names,
             'sparsity': pruning_sparsity
@@ -658,7 +671,10 @@ def main():
         logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
         
         # Pruner 생성 및 모델 압축
-        pruner = L1NormPruner(model, pruner_config_list)
+        if target_op_names: # Pruning 대상이 있을 때만 Pruner 생성
+            pruner = L1NormPruner(model, pruner_config_list)
+        else: # Pruning 대상이 없으면 Pruner를 생성하지 않고 건너뜁니다.
+            logging.info("Pruning 대상 레이어가 없어 L1 Norm Pruning을 건너뜁니다.")
         model, masks = pruner.compress() # 모델에 마스크가 적용되고, masks를 반환받음
         
         logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
@@ -671,17 +687,30 @@ def main():
         logging.info("L2 Norm Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
         
-        # --- [수정] 마지막 분류 레이어를 Pruning 대상에서 명시적으로 제외합니다. ---
         target_op_names = []
-        excluded_layers = ['fc', 'classifier', 'head']
+        final_classifier_name = None
 
+        # 모델 타입에 따라 최종 분류 레이어의 이름을 식별합니다.
+        if baseline_model_name == 'resnet18':
+            final_classifier_name = 'fc'
+        elif baseline_model_name == 'efficientnet_b0':
+            final_classifier_name = 'classifier.1'
+        elif baseline_model_name == 'mobilenet_v4':
+            final_classifier_name = 'classifier'
+        elif baseline_model_name == 'xie2019':
+            final_classifier_name = 'classifier.6'
+        elif baseline_model_name == 'vit':
+            final_classifier_name = 'head'
+        else:
+            logging.warning(f"알 수 없는 baseline 모델 '{baseline_model_name}'입니다. 최종 분류 레이어를 Pruning 대상에서 정확히 제외하기 어려울 수 있습니다.")
+
+        # 모든 모듈을 순회하며 Pruning 대상 레이어를 결정합니다.
         for name, module in model.named_modules():
-            if name in excluded_layers:
+            if name == final_classifier_name:
                 logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
                 continue
 
-            # Conv2d, Linear, BatchNorm2d 레이어를 Pruning 대상으로 추가합니다.
-            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)): # BatchNorm도 Pruning 대상에 포함하여 채널 수를 일관성 있게 유지
+            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
                 target_op_names.append(name)
 
         # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
@@ -689,7 +718,6 @@ def main():
             'op_names': target_op_names,
             'sparsity': pruning_sparsity
         }]
-        
         logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
         
         # Pruner 생성 및 모델 압축
@@ -706,17 +734,30 @@ def main():
         logging.info("FPGM Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
 
-        # --- [수정] 마지막 분류 레이어를 Pruning 대상에서 명시적으로 제외합니다. ---
         target_op_names = []
-        excluded_layers = ['fc', 'classifier', 'head']
+        final_classifier_name = None
 
+        # 모델 타입에 따라 최종 분류 레이어의 이름을 식별합니다.
+        if baseline_model_name == 'resnet18':
+            final_classifier_name = 'fc'
+        elif baseline_model_name == 'efficientnet_b0':
+            final_classifier_name = 'classifier.1'
+        elif baseline_model_name == 'mobilenet_v4':
+            final_classifier_name = 'classifier'
+        elif baseline_model_name == 'xie2019':
+            final_classifier_name = 'classifier.6'
+        elif baseline_model_name == 'vit':
+            final_classifier_name = 'head'
+        else:
+            logging.warning(f"알 수 없는 baseline 모델 '{baseline_model_name}'입니다. 최종 분류 레이어를 Pruning 대상에서 정확히 제외하기 어려울 수 있습니다.")
+
+        # 모든 모듈을 순회하며 Pruning 대상 레이어를 결정합니다.
         for name, module in model.named_modules():
-            if name in excluded_layers:
+            if name == final_classifier_name:
                 logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
                 continue
 
-            # Conv2d, Linear, BatchNorm2d 레이어를 Pruning 대상으로 추가합니다.
-            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)): # BatchNorm도 Pruning 대상에 포함하여 채널 수를 일관성 있게 유지
+            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
                 target_op_names.append(name)
 
         # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
@@ -724,7 +765,6 @@ def main():
             'op_names': target_op_names,
             'sparsity': pruning_sparsity
         }]
-
         logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
 
         # Pruner 생성 및 모델 압축
