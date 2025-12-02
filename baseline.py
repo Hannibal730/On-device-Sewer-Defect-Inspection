@@ -633,25 +633,21 @@ def main():
         logging.info("L1 Norm Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
         
-        # --- [수정] 마지막 분류 레이어를 제외한 모든 Conv2d와 Linear 레이어의 이름을 찾습니다. ---
+        # --- [수정] 마지막 분류 레이어를 Pruning 대상에서 명시적으로 제외합니다. ---
         target_op_names = []
-        last_linear_name = None
+        # 모델의 마지막 분류 레이어 이름을 직접 확인하고 리스트에 추가합니다.
+        # ResNet 계열은 'fc', EfficientNet/MobileNetV4는 'classifier', ViT는 'head' 등 모델마다 다릅니다.
+        excluded_layers = ['fc', 'classifier', 'head'] 
+
         for name, module in model.named_modules():
-            # [최종 수정] 마지막 분류기와 직접 연결된 헤드 블록(conv_head, norm_head)을 Pruning 대상에서 제외합니다.
-            # 이 레이어들이 Pruning되면 최종 분류기의 입력 차원과 불일치가 발생합니다.
-            if name.startswith('classifier') or name.startswith('conv_head') or name.startswith('norm_head'):
-                if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
-                    logging.info(f"분류기 헤드 블록 '{name}'을(를) Pruning 대상에서 제외합니다.")
+            # Pruning 대상에서 제외할 레이어 이름인지 확인합니다.
+            if name in excluded_layers:
+                logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
                 continue
 
+            # Conv2d, Linear, BatchNorm2d 레이어를 Pruning 대상으로 추가합니다.
             if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
                 target_op_names.append(name)
-
-        # 이전 로직(마지막 linear 레이어 이름으로 제외)은 더 이상 필요하지 않습니다.
-        # last_linear_name = 'classifier'
-        if last_linear_name:
-            logging.info(f"마지막 분류 레이어 '{last_linear_name}'를 Pruning 대상에서 제외합니다.")
-            target_op_names.remove(last_linear_name)
         
         # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
         pruner_config_list = [{
@@ -675,16 +671,17 @@ def main():
         logging.info("L2 Norm Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
         
-        # --- [수정] 마지막 분류 레이어를 제외한 모든 Conv2d와 Linear 레이어의 이름을 찾습니다. ---
+        # --- [수정] 마지막 분류 레이어를 Pruning 대상에서 명시적으로 제외합니다. ---
         target_op_names = []
-        last_linear_name = None
+        excluded_layers = ['fc', 'classifier', 'head']
+
         for name, module in model.named_modules():
-            if name.startswith('classifier') or name.startswith('conv_head') or name.startswith('norm_head'):
-                if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
-                    logging.info(f"분류기 헤드 블록 '{name}'을(를) Pruning 대상에서 제외합니다.")
+            if name in excluded_layers:
+                logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
                 continue
 
-            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
+            # Conv2d, Linear, BatchNorm2d 레이어를 Pruning 대상으로 추가합니다.
+            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)): # BatchNorm도 Pruning 대상에 포함하여 채널 수를 일관성 있게 유지
                 target_op_names.append(name)
 
         # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
@@ -709,16 +706,17 @@ def main():
         logging.info("FPGM Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
 
-        # --- [수정] 마지막 분류 레이어를 제외한 모든 Conv2d와 Linear 레이어의 이름을 찾습니다. ---
+        # --- [수정] 마지막 분류 레이어를 Pruning 대상에서 명시적으로 제외합니다. ---
         target_op_names = []
-        last_linear_name = None
+        excluded_layers = ['fc', 'classifier', 'head']
+
         for name, module in model.named_modules():
-            if name.startswith('classifier') or name.startswith('conv_head') or name.startswith('norm_head'):
-                if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
-                    logging.info(f"분류기 헤드 블록 '{name}'을(를) Pruning 대상에서 제외합니다.")
+            if name in excluded_layers:
+                logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
                 continue
 
-            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
+            # Conv2d, Linear, BatchNorm2d 레이어를 Pruning 대상으로 추가합니다.
+            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)): # BatchNorm도 Pruning 대상에 포함하여 채널 수를 일관성 있게 유지
                 target_op_names.append(name)
 
         # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
