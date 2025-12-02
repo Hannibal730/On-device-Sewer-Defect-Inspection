@@ -682,12 +682,17 @@ def main():
         # 훈련 모드: 새로운 실행 디렉토리 생성
         run_dir_path, timestamp = setup_logging(run_cfg, data_dir_name) # 여기서 run_dir_path와 timestamp가 반환됨
     elif run_cfg.mode == 'inference':
-        # 추론 모드: 지정된 실행 디렉토리 사용
-        run_dir_path = getattr(run_cfg, 'pth_inference_dir', None)
-        if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
-            logging.error("추론 모드에서는 'config.yaml'에 'pth_inference_dir'를 올바르게 설정해야 합니다.")
-            exit()
-        # 로깅 설정은 하지만, run_dir_path는 yaml에서 읽은 값을 사용
+        # ONNX 직접 추론 경로가 설정되었는지 확인
+        onnx_inference_path = getattr(run_cfg, 'onnx_inference_path', None)
+        if not (onnx_inference_path and os.path.exists(onnx_inference_path)):
+            # ONNX 경로가 없는 경우에만 pth_inference_dir 경로를 검사합니다.
+            run_dir_path = getattr(run_cfg, 'pth_inference_dir', None)
+            if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
+                logging.error("추론 모드에서는 'config.yaml'에 'pth_inference_dir'를 올바르게 설정해야 합니다.")
+                exit()
+        else:
+            # ONNX 경로가 있으면 pth_inference_dir은 무시하고 현재 디렉토리를 임시로 사용합니다.
+            run_dir_path = '.'
         _, timestamp = setup_logging(run_cfg, data_dir_name)
     
     # --- 설정 파일 내용 로깅 ---

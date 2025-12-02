@@ -546,10 +546,17 @@ def main():
     if run_cfg.mode == 'train':
         run_dir_path, timestamp = setup_logging(run_cfg, data_dir_name, baseline_model_name)
     elif run_cfg.mode == 'inference':
-        run_dir_path = getattr(run_cfg, 'pth_inference_dir', None)
-        if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
-            logging.error("추론 모드에서는 'config.yaml'에 'pth_inference_dir'를 올바르게 설정해야 합니다.")
-            exit()
+        # ONNX 직접 추론 경로가 설정되었는지 확인
+        onnx_inference_path = getattr(run_cfg, 'onnx_inference_path', None)
+        if not (onnx_inference_path and os.path.exists(onnx_inference_path)):
+            # ONNX 경로가 없는 경우에만 pth_inference_dir 경로를 검사합니다.
+            run_dir_path = getattr(run_cfg, 'pth_inference_dir', None)
+            if getattr(run_cfg, 'show_log', True) and (not run_dir_path or not os.path.isdir(run_dir_path)):
+                logging.error("추론 모드에서는 'config.yaml'에 'pth_inference_dir'를 올바르게 설정해야 합니다.")
+                exit()
+        else:
+            # ONNX 경로가 있으면 pth_inference_dir은 무시하고 현재 디렉토리를 임시로 사용합니다.
+            run_dir_path = '.'
         _, timestamp = setup_logging(run_cfg, data_dir_name, baseline_model_name)
     
     config_str = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
