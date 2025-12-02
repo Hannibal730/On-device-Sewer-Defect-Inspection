@@ -518,6 +518,14 @@ def main():
     # =============================================================================
     from nni.compression.pruning import L1NormPruner, L2NormPruner, FPGMPruner
     from nni.compression.speedup import ModelSpeedup
+    # [해결] ModelSpeedup의 안정성을 높이기 위해 torch.fx와 사용자 정의 Replacer를 import합니다.
+    from torch.fx import symbolic_trace
+    from nni.compression.speedup.replacer import Replacer
+    # [해결] timm의 복합 레이어를 분리하기 위해 타입을 import합니다.
+    try:
+        from timm.layers import BatchNormAct2d
+    except ImportError:
+        BatchNormAct2d = None
     """메인 실행 함수"""
     parser = argparse.ArgumentParser(description="YAML 설정을 이용한 Baseline 모델 분류기")
     parser.add_argument('--config', type=str, default='config.yaml', help="설정 파일 경로. 기본값: 'config.yaml'")
@@ -595,26 +603,20 @@ def main():
     # =============================================================================
     # timm 라이브러리 버전 문제와 상관없이 직접 복합 레이어를 표준 레이어로 교체하는 함수
     def fuse_timm_norm_act_layers(module):
-        """
-        timm의 복합 레이어(예: BatchNormAct2d)를 표준 nn.Sequential(nn.BatchNorm2d, nn.ReLU)로 교체합니다.
-        이 함수는 재귀적으로 모든 자식 모듈을 순회합니다.
-        """
-        # timm.layers.norm_act.BatchNormAct2d 타입을 동적으로 가져옵니다.
-        try:
-            from timm.layers import BatchNormAct2d
-        except ImportError:
-            # timm 버전이 다르거나 해당 모듈이 없는 경우, 함수를 조용히 종료합니다.
+        if BatchNormAct2d is None:
             return module
 
         for name, child in module.named_children():
             if isinstance(child, BatchNormAct2d):
-                # [최종 수정] BatchNormAct2d는 nn.BatchNorm2d를 상속하므로, child 자체가 BN 레이어입니다.
-                # BN 레이어에서 활성화 함수(act)만 분리하여 nn.Sequential로 재구성합니다.
-                bn_layer = nn.BatchNorm2d(child.num_features, child.eps, child.momentum, child.affine, child.track_running_stats).to(next(child.parameters()).device)
-                bn_layer.load_state_dict(child.state_dict())
-                new_module = nn.Sequential(bn_layer, child.act)
+                # BatchNormAct2d는 nn.BatchNorm2d를 상속합니다.
+                # 새로운 nn.BatchNorm2d를 만들고 state_dict를 복사합니다.
+                bn = nn.BatchNorm2d(child.num_features, child.eps, child.momentum, child.affine, child.track_running_stats)
+                bn.load_state_dict(child.state_dict())
+                # 활성화 함수(act)와 결합하여 nn.Sequential로 만듭니다.
+                # timm 모델은 device 정보가 없을 수 있으므로, to(device)를 추가합니다.
+                new_module = nn.Sequential(bn, child.act).to(device)
                 setattr(module, name, new_module)
-                logging.info(f"  - 복합 레이어 '{name}'를 nn.Sequential(BatchNorm2d, ReLU)로 교체했습니다.")
+                logging.info(f"  - 복합 레이어 '{name}'를 nn.Sequential(BatchNorm2d, Activation)으로 교체했습니다.")
             else:
                 # 자식 모듈에 대해 재귀적으로 함수 호출
                 fuse_timm_norm_act_layers(child)
@@ -840,41 +842,38 @@ def main():
             #    이를 위해 모델에 입력될 더미 데이터가 필요합니다.
             dummy_input = torch.randn(1, 3, 224, 224).to(device) # config의 img_size를 사용하면 더 좋습니다.
 
-            # [최종 수정] NNI의 기본 추적 기능 대신, 안정적인 torch.fx.symbolic_trace를 사용하여
-            # 모델의 연산 그래프(GraphModule)를 명시적으로 생성합니다.
-            # 이렇게 생성된 그래프를 ModelSpeedup에 전달하면 추적 오류를 방지할 수 있습니다.
-            from torch.fx import symbolic_trace
-            # [최종 수정] symbolic_trace와 ModelSpeedup은 eval() 모드에서 실행해야 합니다.
+            # [해결] symbolic_trace와 ModelSpeedup은 eval() 모드에서 실행해야 합니다.
             # train() 모드에서 배치 크기가 1인 dummy_input을 사용하면 BatchNorm 레이어에서 오류가 발생합니다.
             model.eval()
+            # [해결] torch.fx를 사용하여 모델의 연산 그래프를 명시적으로 생성합니다.
             graph_module = symbolic_trace(model)
 
-            # [최종 수정] nn.Identity 모듈을 위한 사용자 정의 Replacer 클래스 정의
-            # ModelSpeedup이 Identity 레이어를 만났을 때 처리 방법을 몰라 경고를 발생시키고
-            # 채널 정보 전파에 실패하는 문제를 해결합니다.
-            from nni.compression.speedup.replacer import Replacer
+            # [해결] nn.Identity 모듈을 위한 사용자 정의 Replacer를 정의합니다.
+            # 이는 ModelSpeedup이 Identity 레이어를 만났을 때 채널 정보 전파에 실패하는 문제를 해결합니다.
             class IdentityReplacer(Replacer):
                 def replace_modules(self, speedup):
                     for node in speedup.graph_module.graph.nodes:
                         if node.op == 'call_module':
                             module = speedup.fetch_attr(node.target)
                             if isinstance(module, nn.Identity):
-                                # Identity 모듈은 아무것도 변경하지 않으므로, 교체되었다고만 표시합니다.
+                                # Identity 모듈은 아무것도 변경하지 않으므로, 교체되었다고만 표시하여
+                                # ModelSpeedup이 이 노드를 건너뛰도록 합니다.
                                 speedup.node_infos[node].replaced = True
 
-            # 생성된 그래프(graph_module)를 사용하여 ModelSpeedup을 초기화합니다.
+            # [해결] 생성된 그래프(graph_module)와 사용자 정의 replacer를 사용하여 ModelSpeedup을 초기화합니다.
             speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module, customized_replacers=[IdentityReplacer()])
             model = speedup.speedup_model()
-
-            # [해결] Speedup 이후, 변경된 채널 수에 맞춰 최종 분류기(classifier)를 수동으로 재생성합니다.
-            # mobilenet_v4의 conv_head 출력 채널 수를 가져옵니다.
-            new_in_features = model.conv_head.out_channels
-            # 기존 classifier의 출력 채널 수(num_labels)를 가져옵니다.
-            num_classes = model.classifier.out_features
-            # 새로운 in_features로 classifier를 다시 만듭니다.
-            model.classifier = nn.Linear(new_in_features, num_classes).to(device)
-            logging.info(f"최종 분류기(classifier)를 새로운 입력 채널 수({new_in_features})에 맞춰 재생성했습니다.")
-
+            
+            # [해결] 모델 아키텍처에 따라 Speedup 후처리 로직을 분기합니다.
+            if baseline_model_name == 'mobilenet_v4':
+                # mobilenet_v4의 경우, Speedup이 conv_head와 classifier 간의 차원 불일치를 해결하지 못하므로 수동으로 재생성합니다.
+                logging.info("mobilenet_v4 모델에 대한 Speedup 후처리를 수행합니다.")
+                new_in_features = model.conv_head.out_channels
+                num_classes = model.classifier.out_features
+                model.classifier = nn.Linear(new_in_features, num_classes).to(device)
+                logging.info(f"최종 분류기(classifier)를 새로운 입력 채널 수({new_in_features})에 맞춰 재생성했습니다.")
+            # 다른 모델(예: resnet18)은 ModelSpeedup이 최종 레이어를 올바르게 처리하므로 별도 처리가 필요 없습니다.
+            
             logging.info("ModelSpeedup 완료. 모델 구조가 영구적으로 변경 및 압축되었습니다.")
 
             # 4. 압축된 모델의 state_dict를 새로운 파일로 저장합니다.
