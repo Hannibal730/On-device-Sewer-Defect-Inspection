@@ -79,7 +79,10 @@ class Xie2019(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2,2)
         )
-        self.avgpool = nn.AdaptiveAvgPool2d((8, 8))
+        # [최종 수정] ONNX 변환 오류의 근본 원인인 AdaptiveAvgPool2d 업샘플링을
+        # ONNX가 지원하는 Upsample 레이어로 명시적으로 교체합니다.
+        # self.avgpool = nn.AdaptiveAvgPool2d((8, 8))
+        self.avgpool = nn.Upsample(size=(8, 8), mode='bilinear', align_corners=False)
         self.classifier = nn.Sequential(
             nn.Linear(128*8*8, 1024),
             nn.ReLU(inplace=True),
@@ -491,8 +494,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             # --- ONNX 런타임 세션 옵션 설정 ---
             sess_options = onnxruntime.SessionOptions()
             sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-
-            torch.onnx.export(model, dummy_input.to('cpu'), onnx_path, 
+            torch.onnx.export(model, dummy_input.to('cpu'), onnx_path,
                               export_params=True, opset_version=12,
                               do_constant_folding=True,
                               input_names=['input'], output_names=['output'],
