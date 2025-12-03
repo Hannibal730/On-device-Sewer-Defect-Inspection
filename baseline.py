@@ -407,7 +407,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
         # 실제 시간 측정
         num_iterations = 100
-        total_time = 0.0
+        iteration_times = []
         with torch.no_grad():
             for _ in range(num_iterations):
                 start_event = torch.cuda.Event(enable_timing=True)
@@ -416,13 +416,14 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                 _ = model(single_dummy_input)
                 end_event.record()
                 torch.cuda.synchronize()
-                total_time += start_event.elapsed_time(end_event) # ms
+                iteration_times.append(start_event.elapsed_time(end_event)) # ms
         
-        avg_inference_time_per_sample = total_time / num_iterations
+        avg_inference_time_per_sample = np.mean(iteration_times)
+        std_inference_time_per_sample = np.std(iteration_times)
         fps = 1000 / avg_inference_time_per_sample if avg_inference_time_per_sample > 0 else 0
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
-        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms, FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
+        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
         logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 CPU 추론 시간을 측정합니다.")
@@ -434,17 +435,18 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
         # 실제 시간 측정
         num_iterations = 100
-        total_time = 0.0
+        iteration_times = []
         with torch.no_grad():
             for _ in range(num_iterations):
                 start_time = time.time()
                 _ = model(single_dummy_input)
                 end_time = time.time()
-                total_time += (end_time - start_time) * 1000 # ms
+                iteration_times.append((end_time - start_time) * 1000) # ms
 
-        avg_inference_time_per_sample = total_time / num_iterations
+        avg_inference_time_per_sample = np.mean(iteration_times)
+        std_inference_time_per_sample = np.std(iteration_times)
         fps = 1000 / avg_inference_time_per_sample if avg_inference_time_per_sample > 0 else 0
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms, FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
     # --- 평가 또는 순수 추론 ---
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
     only_inference_mode = getattr(run_cfg, 'only_inference', False)

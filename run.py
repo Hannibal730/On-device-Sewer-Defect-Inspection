@@ -457,7 +457,8 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         classifier_end_event = torch.cuda.Event(enable_timing=True)
 
         num_iterations = 100
-        total_times = {'encoder': 0.0, 'decoder': 0.0, 'classifier': 0.0, 'total': 0.0}
+        # 각 반복의 시간을 저장하기 위한 리스트
+        iteration_times = {'encoder': [], 'decoder': [], 'classifier': [], 'total': []}
 
         with torch.no_grad():
             for _ in range(num_iterations):
@@ -473,19 +474,25 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                 classifier_end_event.record()
 
                 # 모든 이벤트가 기록된 후 동기화
-                torch.cuda.synchronize() 
-                total_times['encoder'] += start_event.elapsed_time(encoder_end_event)
-                total_times['decoder'] += encoder_end_event.elapsed_time(decoder_end_event)
-                total_times['classifier'] += decoder_end_event.elapsed_time(classifier_end_event)
-                total_times['total'] += start_event.elapsed_time(classifier_end_event)
+                torch.cuda.synchronize()
+                iteration_times['encoder'].append(start_event.elapsed_time(encoder_end_event))
+                iteration_times['decoder'].append(encoder_end_event.elapsed_time(decoder_end_event))
+                iteration_times['classifier'].append(decoder_end_event.elapsed_time(classifier_end_event))
+                iteration_times['total'].append(start_event.elapsed_time(classifier_end_event))
             
-        avg_inference_time_per_sample = total_times['total'] / num_iterations
+        # 평균 및 표준편차 계산
+        avg_total_time = np.mean(iteration_times['total'])
+        std_total_time = np.std(iteration_times['total'])
+        avg_encoder_time = np.mean(iteration_times['encoder'])
+        avg_decoder_time = np.mean(iteration_times['decoder'])
+        avg_classifier_time = np.mean(iteration_times['classifier'])
+
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
-        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms (1개 샘플 x {num_iterations}회 반복)")
-        logging.info(f"  - Encoder: {total_times['encoder'] / num_iterations:.2f}ms")
-        logging.info(f"  - Decoder: {total_times['decoder'] / num_iterations:.2f}ms")
-        logging.info(f"  - Classifier: {total_times['classifier'] / num_iterations:.2f}ms")
+        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_total_time:.2f}ms (std: {std_total_time:.2f}ms) (1개 샘플 x {num_iterations}회 반복)")
+        logging.info(f"  - Encoder: {avg_encoder_time:.2f}ms")
+        logging.info(f"  - Decoder: {avg_decoder_time:.2f}ms")
+        logging.info(f"  - Classifier: {avg_classifier_time:.2f}ms")
         logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 CPU 추론 시간을 측정합니다.")
@@ -497,17 +504,18 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
         # 실제 시간 측정
         num_iterations = 100
-        total_time = 0.0
+        iteration_times = []
         with torch.no_grad():
             for _ in range(num_iterations):
                 start_time = time.time()
                 _ = model(single_dummy_input)
                 end_time = time.time()
-                total_time += (end_time - start_time) * 1000 # ms
+                iteration_times.append((end_time - start_time) * 1000) # ms
 
-        avg_inference_time_per_sample = total_time / num_iterations
+        avg_inference_time_per_sample = np.mean(iteration_times)
+        std_inference_time_per_sample = np.std(iteration_times)
         fps = 1000 / avg_inference_time_per_sample if avg_inference_time_per_sample > 0 else 0
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms, FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
 
     # 2. 테스트셋 성능 평가
     logging.info("="*50)
