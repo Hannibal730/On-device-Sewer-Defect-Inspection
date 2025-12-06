@@ -222,7 +222,7 @@ def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name,
         'preds': all_preds
     }
 
-def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, epoch_offset=0):
+def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, epoch_offset=0, best_metric=None):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
     model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
@@ -265,7 +265,10 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
         raise ValueError(f"baseline.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
 
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
-    best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
+    # [수정] best_metric이 인자로 전달되지 않은 경우에만 초기화합니다.
+    if best_metric is None:
+        best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
+        logging.info(f"Best metric을 초기값({best_metric})으로 설정합니다.")
     is_best_saved = False # 베스트 모델이 저장되었는지 확인하는 플래그
 
     # --- Warmup 설정 ---
@@ -383,7 +386,7 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
     if not is_best_saved:
         torch.save(model.state_dict(), model_path)
         logging.warning(f"훈련 동안 성능 개선이 없어 Best 모델이 저장되지 않았습니다. 마지막 에포크의 모델을 '{model_path}'에 저장합니다.")
-
+    return best_metric
 
 def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델로 추론 및 성능 평가를 수행합니다."""
@@ -890,7 +893,7 @@ def main():
         logging.info("="*80)
         
         optimizer, scheduler = create_optimizer_and_scheduler(train_cfg, model)
-        train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+        best_metric_from_pretrain = train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
         
         # --- 2단계: Pruning 및 미세 조정 (Fine-tuning) ---
         if use_pruning:
@@ -954,7 +957,8 @@ def main():
                 finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
                 
                 # 미세 조정 훈련 실행
-                train(run_cfg, finetune_cfg, baseline_cfg, config, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, epoch_offset=train_cfg.epochs)
+                # [수정] best_metric을 None으로 전달하여 미세 조정 시점에서 초기화하도록 합니다.
+                train(run_cfg, finetune_cfg, baseline_cfg, config, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, epoch_offset=train_cfg.epochs, best_metric=None)
             else:
                 logging.info("활성화된 Pruning 방법이 없어 미세 조정을 건너뜁니다.")
 
