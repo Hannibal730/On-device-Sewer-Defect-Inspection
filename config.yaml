@@ -41,9 +41,9 @@ run:
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
-    train: 1.0
-    valid: 1.0
-    test: 1.0
+    train: 0.001
+    valid: 0.001
+    test: 0.001
   num_workers: 16 # 데이터 로딩 시 사용할 CPU 프로세스 수. 0이면 메인 프로세스만 사용. (시스템 권장값으로 수정)
 
 # =============================================================================
@@ -128,7 +128,7 @@ training_baseline:
   scheduler: 'cosineannealinglr' # 옵션: 'multisteplr', 'cosineannealinglr', 'none'
   scheduler_params:
     # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
-    T_max: 50
+    T_max: 10
     eta_min: 0.0001
   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
@@ -139,7 +139,7 @@ finetuning_pruned:
   epochs: 40                     # Pruning 후 성능 복구를 위해 추가 훈련할 에포크 수.
   batch_size: 256                # 미세 조정 시 사용할 배치 크기.
   optimizer: 'adamw'             # 사용할 옵티마이저.
-  lr: 0.0001                     # 미세 조정 시에는 사전 훈련보다 낮은 학습률을 사용하는 것이 일반적입니다.
+  lr: 0.001                     # 미세 조정 시에는 사전 훈련보다 낮은 학습률을 사용하는 것이 일반적입니다.
   weight_decay: 0.0001           # 가중치 감쇠 값.
   loss_function: 'CrossEntropyLoss' # 손실 함수.
   label_smoothing: 0.1           # 레이블 스무딩 값.
@@ -227,7 +227,8 @@ baseline:
   model_name: 'efficientnet_b0'
 
   # --- 경량화 옵션 ---
-  use_l1_pruning: true   # L1 Norm Pruning 적용 여부
+  use_l1_pruning: false   # L1 Norm Pruning 적용 여부
   use_l2_pruning: false     # L2 Norm Pruning 적용 여부
-  use_fpgm_pruning: false     # FPGM Pruning 적용 여부
+  use_fpgm_pruning: false # FPGM Pruning 적용 여부
+  use_depgraph_pruning: true # DepGraph Pruning (torch-pruning 라이브러리 사용) 적용 여부
   pruning_sparsity: 0.812     # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)

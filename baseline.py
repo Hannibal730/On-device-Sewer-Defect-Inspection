@@ -538,8 +538,11 @@ def main():
     # [해결] timm의 복합 레이어를 분리하기 위해 타입을 import합니다.
     try:
         from timm.layers import BatchNormAct2d
+        # [추가] torch-pruning 라이브러리를 main 함수 내부에서 import 합니다.
+        import torch_pruning as tp
     except ImportError:
         BatchNormAct2d = None
+        tp = None
     """메인 실행 함수"""
     parser = argparse.ArgumentParser(description="YAML 설정을 이용한 Baseline 모델 분류기")
     parser.add_argument('--config', type=str, default='config.yaml', help="설정 파일 경로. 기본값: 'config.yaml'")
@@ -651,11 +654,19 @@ def main():
     # --- Pruning 적용 여부 확인 ---
     use_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
                   getattr(baseline_cfg, 'use_l2_pruning', False) or \
-                  getattr(baseline_cfg, 'use_fpgm_pruning', False)
+                  getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
+                  getattr(baseline_cfg, 'use_depgraph_pruning', False)
 
     def create_pruner(model, baseline_cfg, baseline_model_name):
         """Pruning 설정을 기반으로 Pruner 객체를 생성하고 모델에 적용합니다."""
-        logging.info("L1 Norm Pruning을 시작합니다...")
+        pruner_type = None
+        if getattr(baseline_cfg, 'use_l1_pruning', False):
+            pruner_type = 'l1'
+            logging.info("L1 Norm Pruning을 시작합니다...")
+        elif getattr(baseline_cfg, 'use_l2_pruning', False):
+            pruner_type = 'l2'
+            logging.info("L2 Norm Pruning을 시작합니다...")
+
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
         
         target_op_names = []
@@ -697,7 +708,12 @@ def main():
         
         # Pruner 생성 및 모델 압축
         if target_op_names: # Pruning 대상이 있을 때만 Pruner 생성
-            created_pruner = L1NormPruner(model, pruner_config_list)
+            if pruner_type == 'l1':
+                created_pruner = L1NormPruner(model, pruner_config_list)
+            elif pruner_type == 'l2':
+                created_pruner = L2NormPruner(model, pruner_config_list)
+            else:
+                created_pruner = None
         else: # Pruning 대상이 없으면 Pruner를 생성하지 않고 건너뜁니다.
             logging.info("Pruning 대상 레이어가 없어 L1 Norm Pruning을 건너뜁니다.")
             return None, model, None
@@ -705,6 +721,53 @@ def main():
         model, returned_masks = created_pruner.compress()
         logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
         return created_pruner, model, returned_masks
+
+    def run_depgraph_pruning(model, baseline_cfg, model_cfg, device):
+        """torch-pruning 라이브러리를 사용하여 DepGraph 기반 Pruning을 수행합니다."""
+        if tp is None:
+            logging.error("DepGraph Pruning을 사용하려면 'torch-pruning' 라이브러리를 설치해야 합니다. (pip install torch-pruning)")
+            return model
+
+        logging.info("="*50)
+        logging.info("DepGraph Pruning (torch-pruning)을 시작합니다...")
+        
+        pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
+        dummy_input = torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device)
+
+        # 1. 중요도(Importance) 기준 설정: L1 Norm
+        imp = tp.importance.MagnitudeImportance(p=1)
+
+        # 2. 무시할 레이어(Ignored Layers) 설정
+        # 최종 분류 레이어는 Pruning하지 않도록 설정합니다.
+        ignored_layers = []
+        last_layer = None
+        if hasattr(model, 'fc'): # ResNet
+            last_layer = model.fc
+        elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential): # EfficientNet
+            last_layer = model.classifier[-1]
+        elif hasattr(model, 'classifier'): # MobileNetV4, Xie2019
+            last_layer = model.classifier
+        elif hasattr(model, 'head'): # ViT
+            last_layer = model.head
+        
+        if last_layer:
+            ignored_layers.append(last_layer)
+            logging.info(f"분류 레이어 '{type(last_layer).__name__}'을(를) Pruning 대상에서 제외합니다.")
+
+        # 3. Pruner 생성
+        pruner = tp.pruner.MagnitudePruner(
+            model,
+            dummy_input,
+            importance=imp,
+            pruning_ratio=pruning_sparsity, # 전체 파라미터 중 제거할 비율
+            ignored_layers=ignored_layers,
+        )
+
+        # 4. Pruning 실행 (모델 구조가 직접 변경됨)
+        pruner.step()
+        logging.info(f"DepGraph Pruning 완료. 모델 구조가 희소도({pruning_sparsity})에 맞춰 변경되었습니다.")
+        logging.info("="*50)
+        return model
 
     # --- 옵티마이저 및 스케줄러 생성 함수 ---
     def create_optimizer_and_scheduler(cfg, model):
@@ -760,19 +823,27 @@ def main():
             logging.info(f"사전 훈련된 모델 '{best_model_path}'을(를) 불러왔습니다.")
 
             # Pruning 적용
-            if getattr(baseline_cfg, 'use_l1_pruning', False):
+            if getattr(baseline_cfg, 'use_depgraph_pruning', False):
+                # DepGraph Pruning은 모델을 직접 수정하므로, 반환된 모델을 사용합니다.
+                model = run_depgraph_pruning(model, baseline_cfg, model_cfg, device)
+                log_model_parameters(model) # Pruning 후 파라미터 수 확인
+                pruner = None # DepGraph는 NNI pruner 객체를 사용하지 않음
+            elif getattr(baseline_cfg, 'use_l1_pruning', False):
                 pruner, model, masks = create_pruner(model, baseline_cfg, baseline_model_name)
             # (여기에 L2, FPGM Pruner 생성 로직 추가 가능)
             
-            # 미세 조정을 위한 새로운 옵티마이저 및 스케줄러 생성
-            logging.info("미세 조정을 위한 새로운 옵티마이저와 스케줄러를 생성합니다.")
-            finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
-            
-            # 미세 조정 훈련 실행
-            train(run_cfg, finetune_cfg, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+            if pruner is not None or getattr(baseline_cfg, 'use_depgraph_pruning', False):
+                # 미세 조정을 위한 새로운 옵티마이저 및 스케줄러 생성
+                logging.info("미세 조정을 위한 새로운 옵티마이저와 스케줄러를 생성합니다.")
+                finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
+                
+                # 미세 조정 훈련 실행
+                train(run_cfg, finetune_cfg, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+            else:
+                logging.info("활성화된 Pruning 방법이 없어 미세 조정을 건너뜁니다.")
 
         # --- 최종 단계: 모델 압축(Speedup) 및 평가 ---
-        if pruner:
+        if pruner and masks: # NNI Pruning이 적용된 경우에만 Speedup 실행
             logging.info("="*50)
             logging.info("Pruning된 모델을 Export합니다 (가중치를 영구적으로 제거).")
             
