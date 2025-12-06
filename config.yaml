@@ -50,7 +50,7 @@ run:
 # 2. 훈련 하이퍼파라미터 (run.py 전용)
 # =============================================================================
 training_run:
-  epochs: 50                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
+  epochs: 90                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
   batch_size: 256                # 훈련 및 평가 시 사용할 배치 크기. 라즈베리파이 환경에 맞춰 줄임.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd', 'nadam', 'radam', 'rmsprop'
@@ -72,7 +72,7 @@ training_run:
   scheduler: 'cosineannealinglr' # 옵션: 'multisteplr', 'cosineannealinglr', 'none'
   scheduler_params:
     # CosineAnnealingLR: T_max (주기, 보통 epochs), eta_min (최소 학습률)
-    T_max: 50
+    T_max: 90
     eta_min: 0.0001
   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
