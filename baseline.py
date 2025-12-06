@@ -36,17 +36,33 @@ from plot import plot_and_save_train_val_accuracy_graph, plot_and_save_val_accur
 # =============================================================================
 # 1. 로깅 및 모델 설정
 # =============================================================================
-def setup_logging(run_cfg, data_dir_name, baseline_model_name):
+def setup_logging(run_cfg, data_dir_name, baseline_model_name, baseline_cfg):
     """로그 파일을 log 폴더에 생성하고, 콘솔에도 함께 출력하도록 설정합니다."""
     show_log = getattr(run_cfg, 'show_log', True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # --- [수정] 경량화 옵션 이름을 폴더명에 추가 ---
+    lightweight_option_names = []
+    pruning_options = [
+        'use_l1_pruning', 'use_l2_pruning', 'use_depgraph_pruning', 
+        'use_lamp_pruning', 'use_slimming_pruning', 'use_taylor_pruning'
+    ]
+    for option in pruning_options:
+        if getattr(baseline_cfg, option, False):
+            # 'use_'와 '_pruning'을 제거하여 이름 생성 (예: 'l1')
+            name = option.replace('use_', '').replace('_pruning', '')
+            lightweight_option_names.append(name)
+
     if not show_log:
         logging.disable(logging.CRITICAL)
-        return '.', timestamp
+        return '.', timestamp, lightweight_option_names
 
     # 각 실행을 위한 고유한 디렉토리 생성 (baseline 모델 이름 포함)
-    run_dir_name = f"baseline_{baseline_model_name}_{timestamp}"
+    lightweight_str = ""
+    if lightweight_option_names:
+        lightweight_str = "_" + "-".join(lightweight_option_names)
+
+    run_dir_name = f"baseline_{baseline_model_name}{lightweight_str}_{timestamp}"
     run_dir_path = os.path.join("log", data_dir_name, run_dir_name)
     os.makedirs(run_dir_path, exist_ok=True)
     
@@ -62,7 +78,7 @@ def setup_logging(run_cfg, data_dir_name, baseline_model_name):
         force=True
     )
     logging.info(f"로그 파일이 '{log_filename}'에 저장됩니다.")
-    return run_dir_path, timestamp
+    return run_dir_path, timestamp, lightweight_option_names
 
 class Xie2019(nn.Module):
     def __init__(self, num_classes, dropout_rate = 0.6):
@@ -445,10 +461,14 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         
         avg_inference_time_per_sample = np.mean(iteration_times)
         std_inference_time_per_sample = np.std(iteration_times)
-        fps = 1000 / avg_inference_time_per_sample if avg_inference_time_per_sample > 0 else 0
+        # FPS 계산 및 통계
+        fps_per_iteration = [1000 / t for t in iteration_times if t > 0]
+        avg_fps = np.mean(fps_per_iteration) if fps_per_iteration else 0
+        std_fps = np.std(fps_per_iteration) if fps_per_iteration else 0
+
         peak_memory_bytes = torch.cuda.max_memory_allocated(device)
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
-        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
+        logging.info(f"샘플 당 평균 Forward Pass 시간: {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {avg_fps:.2f} (std: {std_fps:.2f}) (1개 샘플 x {num_iterations}회 반복)")
         logging.info(f"샘플 당 Forward Pass 시 최대 GPU 메모리 사용량: {peak_memory_mb:.2f} MB")
     else:
         logging.info("CUDA를 사용할 수 없어 CPU 추론 시간을 측정합니다.")
@@ -470,8 +490,14 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
         avg_inference_time_per_sample = np.mean(iteration_times)
         std_inference_time_per_sample = np.std(iteration_times)
-        fps = 1000 / avg_inference_time_per_sample if avg_inference_time_per_sample > 0 else 0
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
+
+        # FPS 계산 및 통계
+        fps_per_iteration = [1000 / t for t in iteration_times if t > 0]
+        avg_fps = np.mean(fps_per_iteration) if fps_per_iteration else 0
+        std_fps = np.std(fps_per_iteration) if fps_per_iteration else 0
+
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {avg_fps:.2f} (std: {std_fps:.2f}) (1개 샘플 x {num_iterations}회 반복)")
+
     # --- 평가 또는 순수 추론 ---
     logging.info("테스트 데이터셋에 대한 추론을 시작합니다...")
     only_inference_mode = getattr(run_cfg, 'only_inference', False)
@@ -590,7 +616,7 @@ def main():
     # --- 로깅 및 디렉토리 설정 ---
     data_dir_name = run_cfg.dataset.name
     if run_cfg.mode == 'train':
-        run_dir_path, timestamp = setup_logging(run_cfg, data_dir_name, baseline_model_name)
+        run_dir_path, timestamp, lightweight_option_names = setup_logging(run_cfg, data_dir_name, baseline_model_name, baseline_cfg)
     elif run_cfg.mode == 'inference':
         # ONNX 직접 추론 경로가 설정되었는지 확인
         onnx_inference_path = getattr(run_cfg, 'onnx_inference_path', None)
@@ -603,7 +629,7 @@ def main():
         else:
             # ONNX 경로가 있으면 pth_inference_dir은 무시하고 현재 디렉토리를 임시로 사용합니다.
             run_dir_path = '.'
-        _, timestamp = setup_logging(run_cfg, data_dir_name, baseline_model_name)
+        _, timestamp, lightweight_option_names = setup_logging(run_cfg, data_dir_name, baseline_model_name, baseline_cfg)
     
     config_str = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
     logging.info("="*50)
@@ -784,7 +810,7 @@ def main():
         dummy_input = torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device)
 
         # 이진 탐색 반복 (20회 정도면 충분한 정밀도 확보 가능)
-        for i in range(20):
+        for i in range(100):
             current_sparsity = (low_sparsity + high_sparsity) / 2
             
             # 임시 모델에 현재 희소도로 Pruning 적용

@@ -514,8 +514,14 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
         avg_inference_time_per_sample = np.mean(iteration_times)
         std_inference_time_per_sample = np.std(iteration_times)
-        fps = 1000 / avg_inference_time_per_sample if avg_inference_time_per_sample > 0 else 0
-        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms), FPS: {fps:.2f} (1개 샘플 x {num_iterations}회 반복)")
+        
+        # FPS 계산 및 통계
+        fps_per_iteration = [1000 / t for t in iteration_times if t > 0]
+        avg_fps = np.mean(fps_per_iteration) if fps_per_iteration else 0
+        std_fps = np.std(fps_per_iteration) if fps_per_iteration else 0
+
+        logging.info(f"샘플 당 평균 Forward Pass 시간 (CPU): {avg_inference_time_per_sample:.2f}ms (std: {std_inference_time_per_sample:.2f}ms)")
+        logging.info(f"샘플 당 평균 FPS (CPU): {avg_fps:.2f} FPS (std: {std_fps:.2f}) (1개 샘플 x {num_iterations}회 반복)")
 
     # 2. 테스트셋 성능 평가
     logging.info("="*50)
