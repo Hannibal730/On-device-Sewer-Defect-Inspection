@@ -556,7 +556,11 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                               input_names=['input'], output_names=['output'],
                               dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
             model.to(device) # 모델을 원래 장치로 복원
-            logging.info(f"모델이 ONNX 형식으로 변환되어 '{onnx_path}'에 저장되었습니다.")
+
+            # [추가] ONNX 파일 크기 로깅
+            onnx_file_size_bytes = os.path.getsize(onnx_path)
+            onnx_file_size_mb = onnx_file_size_bytes / (1024 * 1024)
+            logging.info(f"모델이 ONNX 형식으로 변환되어 '{onnx_path}'에 저장되었습니다. (크기: {onnx_file_size_mb:.2f} MB)")
 
             # ONNX 런타임 세션 생성 및 평가
             onnx_session = onnxruntime.InferenceSession(onnx_path, sess_options=sess_options)
