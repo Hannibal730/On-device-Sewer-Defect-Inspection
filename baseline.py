@@ -655,7 +655,9 @@ def main():
     use_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
                   getattr(baseline_cfg, 'use_l2_pruning', False) or \
                   getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
-                  getattr(baseline_cfg, 'use_depgraph_pruning', False)
+                  getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
+                  getattr(baseline_cfg, 'use_lamp_pruning', False) or \
+                  getattr(baseline_cfg, 'use_slimming_pruning', False)
 
     def create_pruner(model, baseline_cfg, baseline_model_name):
         """Pruning 설정을 기반으로 Pruner 객체를 생성하고 모델에 적용합니다."""
@@ -722,50 +724,64 @@ def main():
         logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
         return created_pruner, model, returned_masks
 
-    def run_depgraph_pruning(model, baseline_cfg, model_cfg, device):
+    def run_torch_pruning(model, baseline_cfg, model_cfg, device):
         """torch-pruning 라이브러리를 사용하여 DepGraph 기반 Pruning을 수행합니다."""
         if tp is None:
             logging.error("DepGraph Pruning을 사용하려면 'torch-pruning' 라이브러리를 설치해야 합니다. (pip install torch-pruning)")
             return model
-
-        logging.info("="*50)
-        logging.info("DepGraph Pruning (torch-pruning)을 시작합니다...")
         
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
         dummy_input = torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device)
 
-        # 1. 중요도(Importance) 기준 설정: L1 Norm
-        imp = tp.importance.MagnitudeImportance(p=1)
+        # --- Pruning 전략 선택 ---
+        pruner_class = None
+        pruner_kwargs = {}
+        if getattr(baseline_cfg, 'use_depgraph_pruning', False):
+            logging.info("DepGraph Pruning (Magnitude-based)을 시작합니다...")
+            imp = tp.importance.MagnitudeImportance(p=1)
+            pruner_class = tp.pruner.MagnitudePruner
+            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
+        elif getattr(baseline_cfg, 'use_lamp_pruning', False):
+            logging.info("LAMP Pruning을 시작합니다...")
+            # LAMP는 중요도 계산에 더 많은 반복이 필요할 수 있습니다.
+            imp = tp.importance.LAMPImportance(p=2, group_reduction="mean")
+            pruner_class = tp.pruner.MagnitudePruner
+            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
+        elif getattr(baseline_cfg, 'use_slimming_pruning', False):
+            logging.info("Network Slimming (BN-Scale) Pruning을 시작합니다...")
+            imp = tp.importance.BNScaleImportance()
+            pruner_class = tp.pruner.BNScalePruner
+            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
+        else:
+            logging.warning("활성화된 torch-pruning 기법이 없습니다.")
+            return model
 
-        # 2. 무시할 레이어(Ignored Layers) 설정
-        # 최종 분류 레이어는 Pruning하지 않도록 설정합니다.
+        # --- 무시할 레이어(Ignored Layers) 설정 ---
         ignored_layers = []
         last_layer = None
-        if hasattr(model, 'fc'): # ResNet
+        if hasattr(model, 'fc'):
             last_layer = model.fc
-        elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential): # EfficientNet
+        elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential):
             last_layer = model.classifier[-1]
-        elif hasattr(model, 'classifier'): # MobileNetV4, Xie2019
+        elif hasattr(model, 'classifier'):
             last_layer = model.classifier
-        elif hasattr(model, 'head'): # ViT
+        elif hasattr(model, 'head'):
             last_layer = model.head
         
         if last_layer:
             ignored_layers.append(last_layer)
             logging.info(f"분류 레이어 '{type(last_layer).__name__}'을(를) Pruning 대상에서 제외합니다.")
 
-        # 3. Pruner 생성
-        pruner = tp.pruner.MagnitudePruner(
+        # --- Pruner 생성 및 실행 ---
+        pruner = pruner_class(
             model,
             dummy_input,
-            importance=imp,
-            pruning_ratio=pruning_sparsity, # 전체 파라미터 중 제거할 비율
             ignored_layers=ignored_layers,
+            **pruner_kwargs
         )
 
-        # 4. Pruning 실행 (모델 구조가 직접 변경됨)
         pruner.step()
-        logging.info(f"DepGraph Pruning 완료. 모델 구조가 희소도({pruning_sparsity})에 맞춰 변경되었습니다.")
+        logging.info(f"torch-pruning 완료. 모델 구조가 희소도({pruning_sparsity})에 맞춰 변경되었습니다.")
         logging.info("="*50)
         return model
 
@@ -823,16 +839,21 @@ def main():
             logging.info(f"사전 훈련된 모델 '{best_model_path}'을(를) 불러왔습니다.")
 
             # Pruning 적용
-            if getattr(baseline_cfg, 'use_depgraph_pruning', False):
-                # DepGraph Pruning은 모델을 직접 수정하므로, 반환된 모델을 사용합니다.
-                model = run_depgraph_pruning(model, baseline_cfg, model_cfg, device)
+            use_torch_pruning = getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
+                                getattr(baseline_cfg, 'use_lamp_pruning', False) or \
+                                getattr(baseline_cfg, 'use_slimming_pruning', False)
+
+            if use_torch_pruning:
+                # torch-pruning 계열의 기법은 모델을 직접 수정합니다.
+                model = run_torch_pruning(model, baseline_cfg, model_cfg, device)
                 log_model_parameters(model) # Pruning 후 파라미터 수 확인
-                pruner = None # DepGraph는 NNI pruner 객체를 사용하지 않음
-            elif getattr(baseline_cfg, 'use_l1_pruning', False):
+                pruner = None # torch-pruning은 NNI pruner 객체를 사용하지 않음
+            elif getattr(baseline_cfg, 'use_l1_pruning', False) or getattr(baseline_cfg, 'use_l2_pruning', False):
+                # NNI 계열의 Pruning 기법
                 pruner, model, masks = create_pruner(model, baseline_cfg, baseline_model_name)
-            # (여기에 L2, FPGM Pruner 생성 로직 추가 가능)
+            # (여기에 FPGM Pruner 생성 로직 추가 가능)
             
-            if pruner is not None or getattr(baseline_cfg, 'use_depgraph_pruning', False):
+            if pruner is not None or use_torch_pruning:
                 # 미세 조정을 위한 새로운 옵티마이저 및 스케줄러 생성
                 logging.info("미세 조정을 위한 새로운 옵티마이저와 스케줄러를 생성합니다.")
                 finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)

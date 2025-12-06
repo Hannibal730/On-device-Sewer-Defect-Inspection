@@ -230,5 +230,7 @@ baseline:
   use_l1_pruning: false   # L1 Norm Pruning 적용 여부
   use_l2_pruning: false     # L2 Norm Pruning 적용 여부
   use_fpgm_pruning: false # FPGM Pruning 적용 여부
-  use_depgraph_pruning: true # DepGraph Pruning (torch-pruning 라이브러리 사용) 적용 여부
+  use_depgraph_pruning: false # DepGraph Pruning (torch-pruning 라이브러리 사용) 적용 여부
+  use_lamp_pruning: false     # LAMP Pruning (torch-pruning 라이브러리 사용) 적용 여부
+  use_slimming_pruning: true # Network Slimming (BN-Scale) Pruning (torch-pruning 라이브러리 사용) 적용 여부
   pruning_sparsity: 0.812     # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)
