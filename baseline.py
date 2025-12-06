@@ -657,72 +657,9 @@ def main():
                   getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
                   getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
                   getattr(baseline_cfg, 'use_lamp_pruning', False) or \
+                  getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
+                  getattr(baseline_cfg, 'use_lamp_pruning', False) or \
                   getattr(baseline_cfg, 'use_slimming_pruning', False)
-
-    def create_pruner(model, baseline_cfg, baseline_model_name):
-        """Pruning 설정을 기반으로 Pruner 객체를 생성하고 모델에 적용합니다."""
-        pruner_type = None
-        if getattr(baseline_cfg, 'use_l1_pruning', False):
-            pruner_type = 'l1'
-            logging.info("L1 Norm Pruning을 시작합니다...")
-        elif getattr(baseline_cfg, 'use_l2_pruning', False):
-            pruner_type = 'l2'
-            logging.info("L2 Norm Pruning을 시작합니다...")
-
-        pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
-        
-        target_op_names = []
-        final_classifier_name = None
-
-        # 모델 타입에 따라 최종 분류 레이어의 이름을 식별합니다.
-        if baseline_model_name == 'resnet18':
-            final_classifier_name = 'fc'
-        elif baseline_model_name == 'efficientnet_b0':
-            final_classifier_name = 'classifier.1' # EfficientNet의 최종 Linear 레이어
-        elif baseline_model_name == 'mobilenet_v4':
-            final_classifier_name = 'classifier' # MobileNetV4의 최종 Linear 레이어
-        elif baseline_model_name == 'xie2019':
-            final_classifier_name = 'classifier.6' # Xie2019의 최종 Linear 레이어
-        elif baseline_model_name == 'vit':
-            final_classifier_name = 'head' # ViT의 최종 Linear 레이어
-        else:
-            logging.warning(f"알 수 없는 baseline 모델 '{baseline_model_name}'입니다. 최종 분류 레이어를 Pruning 대상에서 정확히 제외하기 어려울 수 있습니다.")
-
-        # 모든 모듈을 순회하며 Pruning 대상 레이어를 결정합니다.
-        for name, module in model.named_modules():
-            # 식별된 최종 분류 레이어는 Pruning 대상에서 제외합니다.
-            if name == final_classifier_name:
-                logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
-                continue
-
-            # Conv2d, Linear, BatchNorm2d 레이어만 Pruning 대상으로 추가합니다.
-            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
-                target_op_names.append(name)
-        
-        # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
-        # target_op_names가 비어있지 않은 경우에만 Pruning을 시도합니다.
-        pruner_config_list = [{
-            'op_names': target_op_names,
-            'sparsity': pruning_sparsity
-        }]
-        
-        logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
-        
-        # Pruner 생성 및 모델 압축
-        if target_op_names: # Pruning 대상이 있을 때만 Pruner 생성
-            if pruner_type == 'l1':
-                created_pruner = L1NormPruner(model, pruner_config_list)
-            elif pruner_type == 'l2':
-                created_pruner = L2NormPruner(model, pruner_config_list)
-            else:
-                created_pruner = None
-        else: # Pruning 대상이 없으면 Pruner를 생성하지 않고 건너뜁니다.
-            logging.info("Pruning 대상 레이어가 없어 L1 Norm Pruning을 건너뜁니다.")
-            return None, model, None
-        
-        model, returned_masks = created_pruner.compress()
-        logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
-        return created_pruner, model, returned_masks
 
     def run_torch_pruning(model, baseline_cfg, model_cfg, device):
         """torch-pruning 라이브러리를 사용하여 DepGraph 기반 Pruning을 수행합니다."""
@@ -736,7 +673,17 @@ def main():
         # --- Pruning 전략 선택 ---
         pruner_class = None
         pruner_kwargs = {}
-        if getattr(baseline_cfg, 'use_depgraph_pruning', False):
+        if getattr(baseline_cfg, 'use_l1_pruning', False):
+            logging.info("torch-pruning을 사용한 L1 Norm Pruning을 시작합니다...")
+            imp = tp.importance.MagnitudeImportance(p=1)
+            pruner_class = tp.pruner.MagnitudePruner
+            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
+        elif getattr(baseline_cfg, 'use_l2_pruning', False):
+            logging.info("torch-pruning을 사용한 L2 Norm Pruning을 시작합니다...")
+            imp = tp.importance.MagnitudeImportance(p=2)
+            pruner_class = tp.pruner.MagnitudePruner
+            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
+        elif getattr(baseline_cfg, 'use_depgraph_pruning', False):
             logging.info("DepGraph Pruning (Magnitude-based)을 시작합니다...")
             imp = tp.importance.MagnitudeImportance(p=1)
             pruner_class = tp.pruner.MagnitudePruner
@@ -839,7 +786,10 @@ def main():
             logging.info(f"사전 훈련된 모델 '{best_model_path}'을(를) 불러왔습니다.")
 
             # Pruning 적용
-            use_torch_pruning = getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
+            # [수정] L1, L2 Pruning도 torch-pruning으로 통합
+            use_torch_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
+                                getattr(baseline_cfg, 'use_l2_pruning', False) or \
+                                getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
                                 getattr(baseline_cfg, 'use_lamp_pruning', False) or \
                                 getattr(baseline_cfg, 'use_slimming_pruning', False)
 
@@ -847,13 +797,9 @@ def main():
                 # torch-pruning 계열의 기법은 모델을 직접 수정합니다.
                 model = run_torch_pruning(model, baseline_cfg, model_cfg, device)
                 log_model_parameters(model) # Pruning 후 파라미터 수 확인
-                pruner = None # torch-pruning은 NNI pruner 객체를 사용하지 않음
-            elif getattr(baseline_cfg, 'use_l1_pruning', False) or getattr(baseline_cfg, 'use_l2_pruning', False):
-                # NNI 계열의 Pruning 기법
-                pruner, model, masks = create_pruner(model, baseline_cfg, baseline_model_name)
-            # (여기에 FPGM Pruner 생성 로직 추가 가능)
+                pruner = None # torch-pruning은 NNI pruner 객체를 사용하지 않음.
             
-            if pruner is not None or use_torch_pruning:
+            if use_torch_pruning: # [수정] torch-pruning이 사용된 경우에만 미세조정 실행
                 # 미세 조정을 위한 새로운 옵티마이저 및 스케줄러 생성
                 logging.info("미세 조정을 위한 새로운 옵티마이저와 스케줄러를 생성합니다.")
                 finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
@@ -863,50 +809,12 @@ def main():
             else:
                 logging.info("활성화된 Pruning 방법이 없어 미세 조정을 건너뜁니다.")
 
-        # --- 최종 단계: 모델 압축(Speedup) 및 평가 ---
-        if pruner and masks: # NNI Pruning이 적용된 경우에만 Speedup 실행
-            logging.info("="*50)
-            logging.info("Pruning된 모델을 Export합니다 (가중치를 영구적으로 제거).")
-            
-            # 미세 조정까지 완료된 최고 성능 모델 불러오기
-            best_model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
-            model.load_state_dict(torch.load(best_model_path, map_location=device))
-            
-            # 모델을 감싸고 있던 Wrapper를 제거
-            pruner.unwrap_model()
-            logging.info("Pruner.unwrap_model() 완료. 모델에서 Wrapper가 제거되었습니다.")
-
-            # ModelSpeedup을 사용하여 모델을 물리적으로 압축
-            dummy_input = torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device)
-            model.eval()
-            graph_module = symbolic_trace(model)
-
-            class IdentityReplacer(Replacer):
-                def replace_modules(self, speedup):
-                    for node in speedup.graph_module.graph.nodes:
-                        if node.op == 'call_module':
-                            module = speedup.fetch_attr(node.target)
-                            if isinstance(module, nn.Identity):
-                                speedup.node_infos[node].replaced = True
-
-            speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module, customized_replacers=[IdentityReplacer()])
-            model = speedup.speedup_model()
-            
-            if baseline_model_name == 'mobilenet_v4':
-                logging.info("mobilenet_v4 모델에 대한 Speedup 후처리를 수행합니다.")
-                new_in_features = model.conv_head.out_channels
-                num_classes = model.classifier.out_features
-                model.classifier = nn.Linear(new_in_features, num_classes).to(device)
-                logging.info(f"최종 분류기(classifier)를 새로운 입력 채널 수({new_in_features})에 맞춰 재생성했습니다.")
-            
-            logging.info("ModelSpeedup 완료. 모델 구조가 영구적으로 변경 및 압축되었습니다.")
-
+        # --- 최종 단계: Pruning된 모델 저장 및 평가 ---
+        # torch-pruning은 모델을 직접 수정하므로, 미세조정 후 최종 모델을 저장합니다.
+        if use_pruning:
             pruned_model_path = os.path.join(run_dir_path, 'pruned_model.pth')
             torch.save(model.state_dict(), pruned_model_path)
             logging.info(f"Pruning이 적용된 모델이 '{pruned_model_path}'에 저장되었습니다.")
-            
-            logging.info("Export된 Pruned 모델의 파라미터 수를 다시 확인합니다.")
-            log_model_parameters(model)
 
         logging.info("="*50)
         logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
