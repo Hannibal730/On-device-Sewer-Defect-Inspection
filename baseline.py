@@ -15,6 +15,7 @@ import argparse
 import yaml
 import logging
 from datetime import datetime
+import copy
 import random
 import time
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
@@ -205,7 +206,7 @@ def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name,
         'preds': all_preds
     }
 
-def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
+def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
     model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
@@ -302,6 +303,18 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             else: # crossentropyloss
                 loss = criterion(outputs, labels)
             loss.backward()
+
+            # --- [추가] Network Slimming을 위한 L1 정규화 손실 추가 ---
+            is_slimming_pretrain = getattr(baseline_cfg, 'use_slimming_pruning', False) and \
+                                   train_cfg.epochs == config.get('training_baseline', {}).get('epochs')
+
+            if is_slimming_pretrain:
+                l1_loss = torch.tensor(0., device=device)
+                slimming_l1_strength = 1e-4
+                for module in model.modules():
+                    if isinstance(module, nn.BatchNorm2d):
+                        l1_loss += torch.norm(module.weight, 1)
+                loss += slimming_l1_strength * l1_loss
 
             optimizer.step()
 
@@ -528,13 +541,6 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
 def main():
     # =============================================================================
-    # [최종 수정] NNI 모듈을 main 함수 내부에서 필요할 때 import 하도록 변경
-    # =============================================================================
-    from nni.compression.pruning import L1NormPruner, L2NormPruner, FPGMPruner
-    from nni.compression.speedup import ModelSpeedup
-    # [해결] ModelSpeedup의 안정성을 높이기 위해 torch.fx와 사용자 정의 Replacer를 import합니다.
-    from torch.fx import symbolic_trace
-    from nni.compression.speedup.replacer import Replacer
     # [해결] timm의 복합 레이어를 분리하기 위해 타입을 import합니다.
     try:
         from timm.layers import BatchNormAct2d
@@ -655,13 +661,12 @@ def main():
     use_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
                   getattr(baseline_cfg, 'use_l2_pruning', False) or \
                   getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
-                  getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
                   getattr(baseline_cfg, 'use_lamp_pruning', False) or \
                   getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
-                  getattr(baseline_cfg, 'use_lamp_pruning', False) or \
+                  getattr(baseline_cfg, 'use_taylor_pruning', False) or \
                   getattr(baseline_cfg, 'use_slimming_pruning', False)
 
-    def run_torch_pruning(model, baseline_cfg, model_cfg, device):
+    def run_torch_pruning(model, baseline_cfg, model_cfg, device, train_loader=None, criterion=None):
         """torch-pruning 라이브러리를 사용하여 DepGraph 기반 Pruning을 수행합니다."""
         if tp is None:
             logging.error("DepGraph Pruning을 사용하려면 'torch-pruning' 라이브러리를 설치해야 합니다. (pip install torch-pruning)")
@@ -699,6 +704,24 @@ def main():
             imp = tp.importance.BNScaleImportance()
             pruner_class = tp.pruner.BNScalePruner
             pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
+        elif getattr(baseline_cfg, 'use_taylor_pruning', False):
+            logging.info("Group Taylor Pruning을 시작합니다...")
+            # Taylor Pruning은 그래디언트 기반 중요도를 사용합니다.
+            imp = tp.importance.TaylorImportance()
+            # 중요도 계산을 위해 그래디언트가 필요하므로, 데이터로더에서 샘플 배치를 가져와 forward/backward pass를 수행합니다.
+            if train_loader is None or criterion is None:
+                logging.error("Taylor Pruning을 사용하려면 train_loader와 criterion이 필요합니다.")
+                return model
+            
+            logging.info("Taylor 중요도 계산을 위해 샘플 배치에 대한 그래디언트를 계산합니다...")
+            images, labels, _ = next(iter(train_loader))
+            images, labels = images.to(device), labels.to(device)
+            output = model(images)
+            loss = criterion(output, labels)
+            loss.backward()
+
+            pruner_class = tp.pruner.MagnitudePruner
+            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
         else:
             logging.warning("활성화된 torch-pruning 기법이 없습니다.")
             return model
@@ -727,10 +750,72 @@ def main():
             **pruner_kwargs
         )
 
-        pruner.step()
+        # Taylor Pruning의 경우, step()에서 그래디언트를 사용합니다.
+        if getattr(baseline_cfg, 'use_taylor_pruning', False):
+            pruner.step(interactive=False)
+        else:
+            pruner.step()
         logging.info(f"torch-pruning 완료. 모델 구조가 희소도({pruning_sparsity})에 맞춰 변경되었습니다.")
         logging.info("="*50)
         return model
+
+    def find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device):
+        """이진 탐색을 사용하여 목표 FLOPs에 가장 가까운 pruning_sparsity를 찾습니다."""
+        target_gflops = getattr(baseline_cfg, 'pruning_flops_target', 0.0)
+        if target_gflops <= 0:
+            return getattr(baseline_cfg, 'pruning_sparsity', 0.5)
+
+        logging.info("="*80)
+        logging.info(f"목표 FLOPs ({target_gflops:.4f} GFLOPs)에 맞는 최적의 Pruning 희소도를 탐색합니다...")
+
+        # 이진 탐색을 위한 초기값 설정
+        low_sparsity, high_sparsity = 0.0, 0.99
+        best_sparsity = 0.0
+        min_flops_diff = float('inf')
+        
+        # 원본 모델을 복사하여 탐색 과정에서 원본이 변경되지 않도록 함
+        original_model = copy.deepcopy(model)
+        dummy_input = torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device)
+
+        # 이진 탐색 반복 (20회 정도면 충분한 정밀도 확보 가능)
+        for i in range(20):
+            current_sparsity = (low_sparsity + high_sparsity) / 2
+            
+            # 임시 모델에 현재 희소도로 Pruning 적용
+            temp_model = copy.deepcopy(original_model)
+            
+            # run_torch_pruning과 동일한 로직으로 Pruning을 시뮬레이션
+            # 단, 실제 모델을 변경하는 대신 FLOPs만 계산
+            temp_baseline_cfg = copy.deepcopy(baseline_cfg)
+            temp_baseline_cfg.pruning_sparsity = current_sparsity
+            
+            try:
+                pruned_temp_model = run_torch_pruning(temp_model, temp_baseline_cfg, model_cfg, device)
+                
+                # Pruning된 임시 모델의 FLOPs 계산
+                macs, _ = profile(pruned_temp_model, inputs=(dummy_input,), verbose=False)
+                current_gflops = macs * 2 / 1e9
+
+                flops_diff = abs(current_gflops - target_gflops)
+                logging.info(f"  [탐색 {i+1:2d}] 희소도: {current_sparsity:.4f} -> FLOPs: {current_gflops:.4f} GFLOPs (오차: {flops_diff:.4f})")
+
+                # 최고 기록 갱신
+                if flops_diff < min_flops_diff:
+                    min_flops_diff = flops_diff
+                    best_sparsity = current_sparsity
+
+                # 이진 탐색 범위 조정
+                if current_gflops > target_gflops: # FLOPs가 목표보다 크면, 희소도를 높여야 함 (더 많이 제거)
+                    low_sparsity = current_sparsity
+                else: # FLOPs가 목표보다 작거나 같으면, 희소도를 낮춰야 함 (덜 제거)
+                    high_sparsity = current_sparsity
+            except Exception as e:
+                logging.warning(f"  [탐색 {i+1:2d}] 희소도 {current_sparsity:.4f} 적용 중 오류 발생: {e}. 이 희소도는 건너뜁니다.")
+                low_sparsity = current_sparsity # 오류 발생 시 해당 구간 탐색 회피
+
+        logging.info(f"탐색 완료. 목표 FLOPs({target_gflops:.4f})에 가장 근접한 최적 희소도는 {best_sparsity:.4f} 입니다.")
+        logging.info("="*80)
+        return best_sparsity
 
     # --- 옵티마이저 및 스케줄러 생성 함수 ---
     def create_optimizer_and_scheduler(cfg, model):
@@ -772,7 +857,7 @@ def main():
         logging.info("="*80)
         
         optimizer, scheduler = create_optimizer_and_scheduler(train_cfg, model)
-        train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+        train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
         
         # --- 2단계: Pruning 및 미세 조정 (Fine-tuning) ---
         if use_pruning:
@@ -785,17 +870,35 @@ def main():
             model.load_state_dict(torch.load(best_model_path, map_location=device))
             logging.info(f"사전 훈련된 모델 '{best_model_path}'을(를) 불러왔습니다.")
 
+            # 목표 FLOPs가 설정된 경우, 최적의 희소도를 자동으로 계산
+            if getattr(baseline_cfg, 'pruning_flops_target', 0.0) > 0:
+                # 이진 탐색으로 최적의 희소도 찾기
+                optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device)
+                # 찾은 희소도를 설정에 반영
+                baseline_cfg.pruning_sparsity = optimal_sparsity
+
             # Pruning 적용
             # [수정] L1, L2 Pruning도 torch-pruning으로 통합
             use_torch_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
                                 getattr(baseline_cfg, 'use_l2_pruning', False) or \
                                 getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
+                                getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
+                                getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
+                                getattr(baseline_cfg, 'use_taylor_pruning', False) or \
                                 getattr(baseline_cfg, 'use_lamp_pruning', False) or \
                                 getattr(baseline_cfg, 'use_slimming_pruning', False)
 
             if use_torch_pruning:
                 # torch-pruning 계열의 기법은 모델을 직접 수정합니다.
-                model = run_torch_pruning(model, baseline_cfg, model_cfg, device)
+                # Taylor Pruning은 그래디언트 계산을 위해 추가 정보가 필요합니다.
+                if getattr(baseline_cfg, 'use_taylor_pruning', False):
+                    # 임시 손실 함수 생성
+                    loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
+                    criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss()
+                    model = run_torch_pruning(model, baseline_cfg, model_cfg, device, train_loader=train_loader, criterion=criterion)
+                else:
+                    model = run_torch_pruning(model, baseline_cfg, model_cfg, device)
+
                 log_model_parameters(model) # Pruning 후 파라미터 수 확인
                 pruner = None # torch-pruning은 NNI pruner 객체를 사용하지 않음.
             
@@ -805,7 +908,7 @@ def main():
                 finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
                 
                 # 미세 조정 훈련 실행
-                train(run_cfg, finetune_cfg, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+                train(run_cfg, finetune_cfg, baseline_cfg, config, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
             else:
                 logging.info("활성화된 Pruning 방법이 없어 미세 조정을 건너뜁니다.")
 

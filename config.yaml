@@ -136,7 +136,7 @@ training_baseline:
 # 6. Pruning 후 미세 조정(Fine-tuning) 하이퍼파라미터 (baseline.py 전용)
 # =============================================================================
 finetuning_pruned:
-  epochs: 40                     # Pruning 후 성능 복구를 위해 추가 훈련할 에포크 수.
+  epochs: 10                     # Pruning 후 성능 복구를 위해 추가 훈련할 에포크 수.
   batch_size: 256                # 미세 조정 시 사용할 배치 크기.
   optimizer: 'adamw'             # 사용할 옵티마이저.
   lr: 0.001                     # 미세 조정 시에는 사전 훈련보다 낮은 학습률을 사용하는 것이 일반적입니다.
@@ -228,9 +228,10 @@ baseline:
 
   # --- 경량화 옵션 ---
   use_l1_pruning: false   # L1 Norm Pruning 적용 여부
-  use_l2_pruning: false     # L2 Norm Pruning 적용 여부
-  use_fpgm_pruning: false # FPGM Pruning 적용 여부
+  use_l2_pruning: false     # L2 Norm Pruning 적용 여부 (torch-pruning 사용)
   use_depgraph_pruning: false # DepGraph Pruning (torch-pruning 라이브러리 사용) 적용 여부
   use_lamp_pruning: false     # LAMP Pruning (torch-pruning 라이브러리 사용) 적용 여부
-  use_slimming_pruning: true # Network Slimming (BN-Scale) Pruning (torch-pruning 라이브러리 사용) 적용 여부
-  pruning_sparsity: 0.812     # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)
+  use_slimming_pruning: false # Network Slimming (BN-Scale) Pruning (torch-pruning 라이브러리 사용) 적용 여부
+  use_taylor_pruning: true    # Group Taylor Pruning (torch-pruning 사용) 적용 여부
+  pruning_sparsity: 0.812     # 수동으로 설정할 가지치기 희소도. 아래 target_flops가 0보다 클 경우 이 값은 무시됩니다.
+  pruning_flops_target: 0.1828   # 목표 FLOPs(GFLOPs). 0보다 큰 값으로 설정 시, 이 목표에 가장 가까운 pruning_sparsity를 자동으로 계산합니다.
