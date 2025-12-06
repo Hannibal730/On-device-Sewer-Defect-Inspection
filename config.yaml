@@ -18,8 +18,8 @@ run:
   
   # --- 데이터셋 설정 ---
   dataset:
-    name: 'Sewer-TAPNEW' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
-    type: 'image_folder' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
+    name: 'Sewer-ML' # 사용할 데이터셋 이름 (로깅 및 폴더명 생성에 사용) Sewer-TAPNEW, Sewer-TAP, Sewer-ML
+    type: 'csv' # type: 'csv' (이미지 폴더 + CSV 라벨) 또는 'image_folder' (클래스별 폴더 구조)
     train_split_ratio: 0.8 # 'image_folder' 타입일 때 사용할 훈련 데이터 비율 (나머지는 테스트/검증 데이터가 됨)
 
     # 데이터셋 경로 설정
@@ -35,10 +35,9 @@ run:
       # 2. 'image_folder' 타입 데이터셋 경로
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAP
       # /home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW
-      img_folder: '/home/cau/workspace/data/Sewer/Sewer-TAPNEW'
+#       img_folder: '/home/pi/Desktop/tap_new/data'
       # img_folder: '/home/user/workspace/disk/nvme1/data/Sewer/Sewer-TAPNEW'
       # img_folder: '/home/user/workspace/CHOI/Sewer-TAPNEW/data' # 5090서버 임시 데이터
-      # img_folder: '/home/pi/Desktop/tap_new/data'
 
   # 각 데이터셋에서 무작위로 샘플링할 데이터 비율. 1.0이면 전체 데이터 사용.
   random_sampling_ratio:
@@ -51,7 +50,7 @@ run:
 # 2. 훈련 하이퍼파라미터 (run.py 전용)
 # =============================================================================
 training_run:
-  epochs: 1                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
+  epochs: 50                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
   batch_size: 256                # 훈련 및 평가 시 사용할 배치 크기. 라즈베리파이 환경에 맞춰 줄임.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd', 'nadam', 'radam', 'rmsprop'
@@ -112,7 +111,7 @@ training_run:
 # 3. 훈련 하이퍼파라미터 (baseline.py 전용)
 # =============================================================================
 training_baseline:
-  epochs: 1                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
+  epochs: 10                    # Sewer-ML이 90에포크 사용하여서 동일한 90으로 설정
   batch_size: 256                # 훈련 및 평가 시 사용할 배치 크기. GPU 메모리에 따라 조절합니다.
   pre_trained: false             # true: ImageNet 사전 훈련 가중치 사용, false: 무작위 초기화 가중치 사용
   optimizer: 'adamw'            # 사용할 옵티마이저. 옵션: 'adamw', 'sgd', 'nadam', 'radam', 'rmsprop'
@@ -133,6 +132,28 @@ training_baseline:
     eta_min: 0.0001
   best_model_criterion: 'val_loss'  # 최고 모델 저장 기준. 옵션: 'val_loss', 'F1_average', 'F1_Normal', 'F1_Defect'.
 
+# =============================================================================
+# 6. Pruning 후 미세 조정(Fine-tuning) 하이퍼파라미터 (baseline.py 전용)
+# =============================================================================
+finetuning_pruned:
+  epochs: 40                     # Pruning 후 성능 복구를 위해 추가 훈련할 에포크 수.
+  batch_size: 256                # 미세 조정 시 사용할 배치 크기.
+  optimizer: 'adamw'             # 사용할 옵티마이저.
+  lr: 0.0001                     # 미세 조정 시에는 사전 훈련보다 낮은 학습률을 사용하는 것이 일반적입니다.
+  weight_decay: 0.0001           # 가중치 감쇠 값.
+  loss_function: 'CrossEntropyLoss' # 손실 함수.
+  label_smoothing: 0.1           # 레이블 스무딩 값.
+  # --- 학습률 Warmup 설정 ---
+  warmup:
+    enabled: false
+    epochs: 5
+    start_lr: 0.000001
+
+  scheduler: 'cosineannealinglr'
+  scheduler_params:
+    T_max: 40 # fine-tuning epochs에 맞춰 조정
+    eta_min: 0.0001
+  best_model_criterion: 'val_loss'
 # training_baseline:
 #   epochs: 90                    # 훈련할 총 에포크 수.
 #   batch_size: 256               # 훈련 및 평가 시 사용할 배치 크기.
@@ -195,7 +216,7 @@ model:
   positional_encoding: true  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
   res_attention: true        # 디코더 레이어 간에 어텐션 스코어를 전달하는 잔차 어텐션 사용 여부.
   save_attention: true       # 추론 시 어텐션 맵을 저장할지 여부. True로 설정하면 시각화에 사용할 수 있습니다.
-  num_plot_attention: 1     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
+  num_plot_attention: 100     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
 
 # =============================================================================
 # 5. Baseline 모델 설정 (baseline.py 전용)
@@ -206,16 +227,7 @@ baseline:
   model_name: 'efficientnet_b0'
 
   # --- 경량화 옵션 ---
-  use_l1_pruning: false      # L1 Norm Pruning 적용 여부
+  use_l1_pruning: true   # L1 Norm Pruning 적용 여부
   use_l2_pruning: false     # L2 Norm Pruning 적용 여부
-  use_fpgm_pruning: true     # FPGM Pruning 적용 여부
-  pruning_sparsity: 0.8      # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)
-
-
-
-#       '파라미터 수'	'원본 GFLOPs'	'L1norm Prun'	'FPGM Prun'
-# Ours	29,571	0.1828	0	0
-# resnet18	11,177,538	3.647	0.904->0.1821	0.895->0.1825
-# eff	4,010,110	0.8277	0.812->0.1868	0.805-> 0.1832
-# mobile	2,495,586	0.3853	0.565->0.1831	0.565->0.1829
-# xie2019	9,160,194	2.8696	0.93->0.1851	0.93->0.1851
+  use_fpgm_pruning: false     # FPGM Pruning 적용 여부
+  pruning_sparsity: 0.812     # 가지치기 희소도 (fc 층을 제외하고, conv2d랑 linear층을 p비율만큼 제거)

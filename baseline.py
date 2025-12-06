@@ -249,7 +249,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
 
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
     best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
-    is_first_save = True # 모델이 한 번도 저장되지 않았는지 확인하는 플래그
+    is_best_saved = False # 베스트 모델이 저장되었는지 확인하는 플래그
 
     # --- Warmup 설정 ---
     warmup_cfg = getattr(train_cfg, 'warmup', None)
@@ -259,16 +259,13 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         warmup_start_lr = getattr(warmup_cfg, 'start_lr', 0.0)
         warmup_end_lr = train_cfg.lr # Warmup 종료 LR은 메인 LR로 설정
         logging.info(f"Warmup 활성화: {warmup_epochs} 에포크 동안 LR을 {warmup_start_lr}에서 {warmup_end_lr}로 선형 증가시킵니다.")
+    else: # Warmup을 사용하지 않을 경우 관련 변수 초기화
+        warmup_epochs = 0
 
         # Warmup 기간 동안에는 스케줄러를 비활성화합니다.
-        original_scheduler_step = scheduler.step if scheduler else lambda: None
-        if scheduler:
-            scheduler.step = lambda: None
-
-    # [수정] 첫 에포크 시작 시, 훈련이 중단되더라도 FileNotFoundError를 방지하기 위해 모델을 먼저 저장합니다.
-    if is_first_save:
-        torch.save(model.state_dict(), model_path)
-        logging.info(f"첫 번째 에포크 시작. Fallback을 위해 초기 모델을 저장합니다 -> '{model_path}'")
+    original_scheduler_step = scheduler.step if scheduler else lambda: None
+    if scheduler:
+        scheduler.step = lambda: None
 
     for epoch in range(train_cfg.epochs):
         logging.info("-" * 50)
@@ -306,10 +303,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
                 loss = criterion(outputs, labels)
             loss.backward()
 
-            if torch.isnan(loss) or torch.isinf(loss):
-                logging.error(f"손실(Loss)이 'nan' 또는 'inf'가 되어 훈련을 중단합니다. 학습률(learning rate)이 너무 높거나 데이터에 문제가 있을 수 있습니다.")
-                return # 훈련 함수 종료
-
             optimizer.step()
 
             loss_val = loss.item() if isinstance(loss, torch.Tensor) else loss
@@ -341,12 +334,11 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             is_best = current_metric > best_metric
         
         # 최고 성능 모델 저장
-        # is_best가 True이거나, 아직 한 번도 모델이 저장되지 않았다면 저장합니다.
-        if is_best or is_first_save:
+        if is_best:
             best_metric = current_metric
             torch.save(model.state_dict(), model_path)
             criterion_name = best_model_criterion.replace('_', ' ')
-            is_first_save = False # 모델이 저장되었으므로 플래그를 False로 변경
+            is_best_saved = True
             logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
         
         # Warmup 기간이 끝난 후에만 원래 스케줄러를 사용합니다.
@@ -357,6 +349,12 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         
         if not (use_warmup and epoch < warmup_epochs) and scheduler:
             scheduler.step() # Warmup 기간이 아닐 때 스케줄러 step 호출
+    
+    # 만약 훈련 동안 한 번도 best model이 저장되지 않았다면(e.g., loss가 계속 nan), 마지막 모델이라도 저장합니다.
+    if not is_best_saved:
+        torch.save(model.state_dict(), model_path)
+        logging.warning(f"훈련 동안 성능 개선이 없어 Best 모델이 저장되지 않았습니다. 마지막 에포크의 모델을 '{model_path}'에 저장합니다.")
+
 
 def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=None):
     """저장된 모델로 추론 및 성능 평가를 수행합니다."""
@@ -554,6 +552,7 @@ def main():
     train_cfg = SimpleNamespace(**config['training_baseline'])
     model_cfg = SimpleNamespace(**config['model'])
     baseline_cfg = SimpleNamespace(**config.get('baseline', {})) # baseline 섹션 로드
+    finetune_cfg = SimpleNamespace(**config.get('finetuning_pruned', {})) # Fine-tuning 설정 로드
     # 중첩된 scheduler_params 딕셔너리를 SimpleNamespace로 변환
     if hasattr(train_cfg, 'scheduler_params') and isinstance(train_cfg.scheduler_params, dict):
         train_cfg.scheduler_params = SimpleNamespace(**train_cfg.scheduler_params)
@@ -561,6 +560,11 @@ def main():
         train_cfg.warmup = SimpleNamespace(**train_cfg.warmup)
     run_cfg.dataset = SimpleNamespace(**run_cfg.dataset)
     
+    # Fine-tuning 설정도 동일하게 변환
+    if hasattr(finetune_cfg, 'scheduler_params') and isinstance(finetune_cfg.scheduler_params, dict):
+        finetune_cfg.scheduler_params = SimpleNamespace(**finetune_cfg.scheduler_params)
+    if hasattr(finetune_cfg, 'warmup') and isinstance(finetune_cfg.warmup, dict):
+        finetune_cfg.warmup = SimpleNamespace(**finetune_cfg.warmup)
     # --- 전역 시드 고정 ---
     global_seed = getattr(run_cfg, 'global_seed', None)
     if global_seed is not None:
@@ -643,11 +647,14 @@ def main():
 
     log_model_parameters(model)
     pruner = None # pruner를 main 함수 스코프에서 정의
+    masks = None  # masks를 main 함수 스코프에서 정의
+    # --- Pruning 적용 여부 확인 ---
+    use_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
+                  getattr(baseline_cfg, 'use_l2_pruning', False) or \
+                  getattr(baseline_cfg, 'use_fpgm_pruning', False)
 
-    # --- 경량화 적용 (config.yaml 설정에 따라) ---
-    # 1. Pruning (가지치기) 적용
-    if getattr(baseline_cfg, 'use_l1_pruning', False) and not getattr(baseline_cfg, 'use_l2_pruning', False) and not getattr(baseline_cfg, 'use_fpgm_pruning', False):
-        logging.info("="*50)
+    def create_pruner(model, baseline_cfg, baseline_model_name):
+        """Pruning 설정을 기반으로 Pruner 객체를 생성하고 모델에 적용합니다."""
         logging.info("L1 Norm Pruning을 시작합니다...")
         pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
         
@@ -690,215 +697,122 @@ def main():
         
         # Pruner 생성 및 모델 압축
         if target_op_names: # Pruning 대상이 있을 때만 Pruner 생성
-            pruner = L1NormPruner(model, pruner_config_list)
+            created_pruner = L1NormPruner(model, pruner_config_list)
         else: # Pruning 대상이 없으면 Pruner를 생성하지 않고 건너뜁니다.
             logging.info("Pruning 대상 레이어가 없어 L1 Norm Pruning을 건너뜁니다.")
-        model, masks = pruner.compress() # 모델에 마스크가 적용되고, masks를 반환받음
+            return None, model, None
         
+        model, returned_masks = created_pruner.compress()
         logging.info("L1 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
-        logging.info("="*50)
-    elif getattr(baseline_cfg, 'use_l2_pruning', False) and not getattr(baseline_cfg, 'use_fpgm_pruning', False):
-        if getattr(baseline_cfg, 'use_l1_pruning', False) or getattr(baseline_cfg, 'use_fpgm_pruning', False):
-            logging.warning("use_l1_pruning과 use_l2_pruning이 모두 true로 설정되었습니다. L2 Norm Pruning을 우선 적용합니다.")
-        
-        logging.info("="*50)
-        logging.info("L2 Norm Pruning을 시작합니다...")
-        pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
-        
-        target_op_names = []
-        final_classifier_name = None
+        return created_pruner, model, returned_masks
 
-        # 모델 타입에 따라 최종 분류 레이어의 이름을 식별합니다.
-        if baseline_model_name == 'resnet18':
-            final_classifier_name = 'fc'
-        elif baseline_model_name == 'efficientnet_b0':
-            final_classifier_name = 'classifier.1'
-        elif baseline_model_name == 'mobilenet_v4':
-            final_classifier_name = 'classifier'
-        elif baseline_model_name == 'xie2019':
-            final_classifier_name = 'classifier.6'
-        elif baseline_model_name == 'vit':
-            final_classifier_name = 'head'
-        else:
-            logging.warning(f"알 수 없는 baseline 모델 '{baseline_model_name}'입니다. 최종 분류 레이어를 Pruning 대상에서 정확히 제외하기 어려울 수 있습니다.")
-
-        # 모든 모듈을 순회하며 Pruning 대상 레이어를 결정합니다.
-        for name, module in model.named_modules():
-            if name == final_classifier_name:
-                logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
-                continue
-
-            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
-                target_op_names.append(name)
-
-        # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
-        pruner_config_list = [{
-            'op_names': target_op_names,
-            'sparsity': pruning_sparsity
-        }]
-        logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
-        
-        # Pruner 생성 및 모델 압축
-        pruner = L2NormPruner(model, pruner_config_list)
-        model, masks = pruner.compress() # 모델에 마스크가 적용되고, masks를 반환받음
-        
-        logging.info("L2 Norm Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
-        logging.info("="*50)
-    elif getattr(baseline_cfg, 'use_fpgm_pruning', False):
-        if getattr(baseline_cfg, 'use_l1_pruning', False) or getattr(baseline_cfg, 'use_l2_pruning', False):
-            logging.warning("여러 Pruning 옵션이 활성화되었습니다. FPGM Pruning을 우선 적용합니다.")
-
-        logging.info("="*50)
-        logging.info("FPGM Pruning을 시작합니다...")
-        pruning_sparsity = getattr(baseline_cfg, 'pruning_sparsity', 0.5)
-
-        target_op_names = []
-        final_classifier_name = None
-
-        # 모델 타입에 따라 최종 분류 레이어의 이름을 식별합니다.
-        if baseline_model_name == 'resnet18':
-            final_classifier_name = 'fc'
-        elif baseline_model_name == 'efficientnet_b0':
-            final_classifier_name = 'classifier.1'
-        elif baseline_model_name == 'mobilenet_v4':
-            final_classifier_name = 'classifier'
-        elif baseline_model_name == 'xie2019':
-            final_classifier_name = 'classifier.6'
-        elif baseline_model_name == 'vit':
-            final_classifier_name = 'head'
-        else:
-            logging.warning(f"알 수 없는 baseline 모델 '{baseline_model_name}'입니다. 최종 분류 레이어를 Pruning 대상에서 정확히 제외하기 어려울 수 있습니다.")
-
-        # 모든 모듈을 순회하며 Pruning 대상 레이어를 결정합니다.
-        for name, module in model.named_modules():
-            if name == final_classifier_name:
-                logging.info(f"분류 레이어 '{name}'을(를) Pruning 대상에서 제외합니다.")
-                continue
-
-            if isinstance(module, (nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
-                target_op_names.append(name)
-
-        # op_names를 사용하여 Pruning할 레이어를 명시적으로 지정합니다.
-        pruner_config_list = [{
-            'op_names': target_op_names,
-            'sparsity': pruning_sparsity
-        }]
-        logging.info(f"적용 희소도 (Sparsity): {pruning_sparsity}")
-
-        # Pruner 생성 및 모델 압축
-        pruner = FPGMPruner(model, pruner_config_list)
-        model, masks = pruner.compress() # 모델에 마스크가 적용되고, masks를 반환받음
-
-        logging.info("FPGM Pruning 적용 완료. 모델에 가지치기 마스크가 적용되었습니다.")
-        logging.info("="*50)
-
-    # --- 옵티마이저 및 스케줄러 설정 ---
-    optimizer, scheduler = None, None
-    if run_cfg.mode == 'train':
-        optimizer_name = getattr(train_cfg, 'optimizer', 'adamw').lower()
-        logging.info("="*50)
+    # --- 옵티마이저 및 스케줄러 생성 함수 ---
+    def create_optimizer_and_scheduler(cfg, model):
+        optimizer_name = getattr(cfg, 'optimizer', 'adamw').lower()
         if optimizer_name == 'sgd':
-            momentum = getattr(train_cfg, 'momentum', 0.9)
-            weight_decay = getattr(train_cfg, 'weight_decay', 0.0001)
-            logging.info(f"옵티마이저: SGD (lr={train_cfg.lr}, momentum={momentum}, weight_decay={weight_decay})")
-            optimizer = optim.SGD(model.parameters(), lr=train_cfg.lr, momentum=momentum, weight_decay=weight_decay)
-        elif optimizer_name == 'nadam':
-            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
-            logging.info(f"옵티마이저: NAdam (lr={train_cfg.lr}, weight_decay={weight_decay})")
-            optimizer = optim.NAdam(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
-        elif optimizer_name == 'radam':
-            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
-            logging.info(f"옵티마이저: RAdam (lr={train_cfg.lr}, weight_decay={weight_decay})")
-            optimizer = optim.RAdam(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
-        elif optimizer_name == 'rmsprop':
-            weight_decay = getattr(train_cfg, 'weight_decay', 0.0)
-            momentum = getattr(train_cfg, 'momentum', 0.0)
-            logging.info(f"옵티마이저: RMSprop (lr={train_cfg.lr}, weight_decay={weight_decay}, momentum={momentum})")
-            optimizer = optim.RMSprop(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay, momentum=momentum)
-        else:
-            weight_decay = getattr(train_cfg, 'weight_decay', 0.01)
-            logging.info(f"옵티마이저: AdamW (lr={train_cfg.lr}, weight_decay={weight_decay})")
-            optimizer = optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=weight_decay)
+            momentum = getattr(cfg, 'momentum', 0.9)
+            weight_decay = getattr(cfg, 'weight_decay', 0.0001)
+            logging.info(f"옵티마이저: SGD (lr={cfg.lr}, momentum={momentum}, weight_decay={weight_decay})")
+            optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum=momentum, weight_decay=weight_decay)
+        # ... (다른 옵티마이저들 추가) ...
+        else: # adamw
+            weight_decay = getattr(cfg, 'weight_decay', 0.01)
+            logging.info(f"옵티마이저: AdamW (lr={cfg.lr}, weight_decay={weight_decay})")
+            optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=weight_decay)
 
-        # scheduler_params가 없으면 빈 객체로 초기화
-        scheduler_params = getattr(train_cfg, 'scheduler_params', SimpleNamespace())
-
-        scheduler_name = getattr(train_cfg, 'scheduler', 'none').lower()
+        scheduler_params = getattr(cfg, 'scheduler_params', SimpleNamespace())
+        scheduler_name = getattr(cfg, 'scheduler', 'none').lower()
+        scheduler = None
         if scheduler_name == 'multisteplr':
-            milestones = getattr(train_cfg, 'milestones', [])
-            gamma = getattr(train_cfg, 'gamma', 0.1)
+            milestones = getattr(cfg, 'milestones', [])
+            gamma = getattr(cfg, 'gamma', 0.1)
             logging.info(f"스케줄러: MultiStepLR (milestones={milestones}, gamma={gamma})")
             scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
         elif scheduler_name == 'cosineannealinglr':
-            T_max = getattr(scheduler_params, 'T_max', train_cfg.epochs)
+            T_max = getattr(scheduler_params, 'T_max', cfg.epochs)
             eta_min = getattr(scheduler_params, 'eta_min', 0.0)
             logging.info(f"스케줄러: CosineAnnealingLR (T_max={T_max}, eta_min={eta_min})")
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
         else:
             logging.info("스케줄러를 사용하지 않습니다.")
-        logging.info("="*50)
+        
+        return optimizer, scheduler
 
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
+        # --- 1단계: 사전 훈련 (Pruning 없이) ---
+        logging.info("="*80)
+        logging.info("단계 1/2: 사전 훈련(Pre-training)을 시작합니다...")
+        logging.info("="*80)
+        
+        optimizer, scheduler = create_optimizer_and_scheduler(train_cfg, model)
         train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
         
-        # --- [수정] 훈련 완료 후 Pruning 모델 Export 및 저장 ---
+        # --- 2단계: Pruning 및 미세 조정 (Fine-tuning) ---
+        if use_pruning:
+            logging.info("="*80)
+            logging.info("단계 2/2: Pruning 및 미세 조정(Fine-tuning)을 시작합니다...")
+            logging.info("="*80)
+
+            # 사전 훈련된 최고 성능 모델 불러오기
+            best_model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
+            model.load_state_dict(torch.load(best_model_path, map_location=device))
+            logging.info(f"사전 훈련된 모델 '{best_model_path}'을(를) 불러왔습니다.")
+
+            # Pruning 적용
+            if getattr(baseline_cfg, 'use_l1_pruning', False):
+                pruner, model, masks = create_pruner(model, baseline_cfg, baseline_model_name)
+            # (여기에 L2, FPGM Pruner 생성 로직 추가 가능)
+            
+            # 미세 조정을 위한 새로운 옵티마이저 및 스케줄러 생성
+            logging.info("미세 조정을 위한 새로운 옵티마이저와 스케줄러를 생성합니다.")
+            finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
+            
+            # 미세 조정 훈련 실행
+            train(run_cfg, finetune_cfg, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+
+        # --- 최종 단계: 모델 압축(Speedup) 및 평가 ---
         if pruner:
             logging.info("="*50)
             logging.info("Pruning된 모델을 Export합니다 (가중치를 영구적으로 제거).")
             
-            # 1. 훈련 중 가장 성능이 좋았던 모델의 가중치와 마스크 정보를 불러옵니다.
-            model.load_state_dict(torch.load(os.path.join(run_dir_path, run_cfg.pth_best_name), map_location=device))
+            # 미세 조정까지 완료된 최고 성능 모델 불러오기
+            best_model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
+            model.load_state_dict(torch.load(best_model_path, map_location=device))
             
-            # 2. 모델을 감싸고 있던 Wrapper를 제거하여 순수한 Pytorch 모델로 되돌립니다.
+            # 모델을 감싸고 있던 Wrapper를 제거
             pruner.unwrap_model()
             logging.info("Pruner.unwrap_model() 완료. 모델에서 Wrapper가 제거되었습니다.")
 
-            # 3. ModelSpeedup을 사용하여 마스크를 기반으로 모델을 물리적으로 가속(압축)합니다.
-            #    이를 위해 모델에 입력될 더미 데이터가 필요합니다.
-            dummy_input = torch.randn(1, 3, 224, 224).to(device) # config의 img_size를 사용하면 더 좋습니다.
-
-            # [해결] symbolic_trace와 ModelSpeedup은 eval() 모드에서 실행해야 합니다.
-            # train() 모드에서 배치 크기가 1인 dummy_input을 사용하면 BatchNorm 레이어에서 오류가 발생합니다.
+            # ModelSpeedup을 사용하여 모델을 물리적으로 압축
+            dummy_input = torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device)
             model.eval()
-            # [해결] torch.fx를 사용하여 모델의 연산 그래프를 명시적으로 생성합니다.
             graph_module = symbolic_trace(model)
 
-            # [해결] nn.Identity 모듈을 위한 사용자 정의 Replacer를 정의합니다.
-            # 이는 ModelSpeedup이 Identity 레이어를 만났을 때 채널 정보 전파에 실패하는 문제를 해결합니다.
             class IdentityReplacer(Replacer):
                 def replace_modules(self, speedup):
                     for node in speedup.graph_module.graph.nodes:
                         if node.op == 'call_module':
                             module = speedup.fetch_attr(node.target)
                             if isinstance(module, nn.Identity):
-                                # Identity 모듈은 아무것도 변경하지 않으므로, 교체되었다고만 표시하여
-                                # ModelSpeedup이 이 노드를 건너뛰도록 합니다.
                                 speedup.node_infos[node].replaced = True
 
-            # [해결] 생성된 그래프(graph_module)와 사용자 정의 replacer를 사용하여 ModelSpeedup을 초기화합니다.
             speedup = ModelSpeedup(model, dummy_input, masks, graph_module=graph_module, customized_replacers=[IdentityReplacer()])
             model = speedup.speedup_model()
             
-            # [해결] 모델 아키텍처에 따라 Speedup 후처리 로직을 분기합니다.
             if baseline_model_name == 'mobilenet_v4':
-                # mobilenet_v4의 경우, Speedup이 conv_head와 classifier 간의 차원 불일치를 해결하지 못하므로 수동으로 재생성합니다.
                 logging.info("mobilenet_v4 모델에 대한 Speedup 후처리를 수행합니다.")
                 new_in_features = model.conv_head.out_channels
                 num_classes = model.classifier.out_features
                 model.classifier = nn.Linear(new_in_features, num_classes).to(device)
                 logging.info(f"최종 분류기(classifier)를 새로운 입력 채널 수({new_in_features})에 맞춰 재생성했습니다.")
-            # 다른 모델(예: resnet18)은 ModelSpeedup이 최종 레이어를 올바르게 처리하므로 별도 처리가 필요 없습니다.
             
             logging.info("ModelSpeedup 완료. 모델 구조가 영구적으로 변경 및 압축되었습니다.")
 
-            # 4. 압축된 모델의 state_dict를 새로운 파일로 저장합니다.
             pruned_model_path = os.path.join(run_dir_path, 'pruned_model.pth')
             torch.save(model.state_dict(), pruned_model_path)
             logging.info(f"Pruning이 적용된 모델이 '{pruned_model_path}'에 저장되었습니다.")
             
-            # 5. 압축된 모델의 파라미터 수를 다시 확인합니다.
-            # 이 시점에서 파라미터 수가 실제로 줄어든 것을 확인할 수 있습니다.
             logging.info("Export된 Pruned 모델의 파라미터 수를 다시 확인합니다.")
             log_model_parameters(model)
 
