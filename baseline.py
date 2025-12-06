@@ -279,13 +279,13 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
         warmup_start_lr = getattr(warmup_cfg, 'start_lr', 0.0)
         warmup_end_lr = train_cfg.lr # Warmup 종료 LR은 메인 LR로 설정
         logging.info(f"Warmup 활성화: {warmup_epochs} 에포크 동안 LR을 {warmup_start_lr}에서 {warmup_end_lr}로 선형 증가시킵니다.")
-    else: # Warmup을 사용하지 않을 경우 관련 변수 초기화
-        warmup_epochs = 0
-
         # Warmup 기간 동안에는 스케줄러를 비활성화합니다.
-    original_scheduler_step = scheduler.step if scheduler else lambda: None
-    if scheduler:
-        scheduler.step = lambda: None # type: ignore
+        original_scheduler_step = scheduler.step if scheduler else lambda: None
+        if scheduler:
+            scheduler.step = lambda: None # type: ignore
+    else:
+        warmup_epochs = 0 # Warmup 사용 안 할 시 epochs 0으로 설정
+        original_scheduler_step = None # 사용 안 함
 
     for epoch in range(train_cfg.epochs):
         logging.info("-" * 50)
@@ -374,12 +374,12 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
             logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
         
         # Warmup 기간이 끝난 후에만 원래 스케줄러를 사용합니다.
-        if use_warmup and epoch == warmup_epochs - 1:
+        if use_warmup and original_scheduler_step and epoch == warmup_epochs - 1:
             logging.info(f"Warmup 종료. 에포크 {epoch + 2}부터 기존 스케줄러를 활성화합니다.")
             if scheduler:
                 scheduler.step = original_scheduler_step # 원래 스케줄러 step 함수 복원
         
-        if not (use_warmup and epoch < warmup_epochs) and scheduler:
+        if scheduler and not (use_warmup and epoch < warmup_epochs):
             scheduler.step() # Warmup 기간이 아닐 때 스케줄러 step 호출
     
     # 만약 훈련 동안 한 번도 best model이 저장되지 않았다면(e.g., loss가 계속 nan), 마지막 모델이라도 저장합니다.
