@@ -249,6 +249,7 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
 
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
     best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
+    is_first_save = True # 모델이 한 번도 저장되지 않았는지 확인하는 플래그
 
     # --- Warmup 설정 ---
     warmup_cfg = getattr(train_cfg, 'warmup', None)
@@ -263,6 +264,11 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         original_scheduler_step = scheduler.step if scheduler else lambda: None
         if scheduler:
             scheduler.step = lambda: None
+
+    # [수정] 첫 에포크 시작 시, 훈련이 중단되더라도 FileNotFoundError를 방지하기 위해 모델을 먼저 저장합니다.
+    if is_first_save:
+        torch.save(model.state_dict(), model_path)
+        logging.info(f"첫 번째 에포크 시작. Fallback을 위해 초기 모델을 저장합니다 -> '{model_path}'")
 
     for epoch in range(train_cfg.epochs):
         logging.info("-" * 50)
@@ -299,6 +305,11 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
             else: # crossentropyloss
                 loss = criterion(outputs, labels)
             loss.backward()
+
+            if torch.isnan(loss) or torch.isinf(loss):
+                logging.error(f"손실(Loss)이 'nan' 또는 'inf'가 되어 훈련을 중단합니다. 학습률(learning rate)이 너무 높거나 데이터에 문제가 있을 수 있습니다.")
+                return # 훈련 함수 종료
+
             optimizer.step()
 
             loss_val = loss.item() if isinstance(loss, torch.Tensor) else loss
@@ -329,10 +340,13 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
                 current_metric = eval_results['f1_macro']
             is_best = current_metric > best_metric
         
-        if is_best:
+        # 최고 성능 모델 저장
+        # is_best가 True이거나, 아직 한 번도 모델이 저장되지 않았다면 저장합니다.
+        if is_best or is_first_save:
             best_metric = current_metric
             torch.save(model.state_dict(), model_path)
             criterion_name = best_model_criterion.replace('_', ' ')
+            is_first_save = False # 모델이 저장되었으므로 플래그를 False로 변경
             logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
         
         # Warmup 기간이 끝난 후에만 원래 스케줄러를 사용합니다.
