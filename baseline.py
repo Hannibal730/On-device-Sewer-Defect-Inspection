@@ -206,7 +206,7 @@ def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name,
         'preds': all_preds
     }
 
-def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight):
+def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, epoch_offset=0):
     """모델 훈련 및 검증을 수행하고 최고 성능 모델을 저장합니다."""
     logging.info("train 모드를 시작합니다.")
     model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
@@ -266,7 +266,7 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
         # Warmup 기간 동안에는 스케줄러를 비활성화합니다.
     original_scheduler_step = scheduler.step if scheduler else lambda: None
     if scheduler:
-        scheduler.step = lambda: None
+        scheduler.step = lambda: None # type: ignore
 
     for epoch in range(train_cfg.epochs):
         logging.info("-" * 50)
@@ -290,9 +290,9 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
 
         # 에포크 시작 시 Learning Rate 로깅
         current_lr = optimizer.param_groups[0]['lr']
-        logging.info(f"[LR]    [{epoch+1}/{train_cfg.epochs}] | Learning Rate: {current_lr:.6f}")
+        logging.info(f"[LR]    [{epoch + 1 + epoch_offset}/{train_cfg.epochs + epoch_offset}] | Learning Rate: {current_lr:.6f}")
 
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_cfg.epochs} [Training]", leave=False, disable=not getattr(run_cfg, 'show_log', True))
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1 + epoch_offset}/{train_cfg.epochs + epoch_offset} [Training]", leave=False, disable=not getattr(run_cfg, 'show_log', True))
         for images, labels, _ in progress_bar:
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             optimizer.zero_grad()
@@ -329,9 +329,9 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
             progress_bar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{step_lr:.6f}")
 
         train_acc = 100 * correct / total
-        logging.info(f'[Train] [{epoch+1}/{train_cfg.epochs}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
+        logging.info(f'[Train] [{epoch + 1 + epoch_offset}/{train_cfg.epochs + epoch_offset}] | Loss: {running_loss/len(train_loader):.4f} | Train Acc: {train_acc:.2f}%')
         
-        eval_results = evaluate(run_cfg, model, valid_loader, device, criterion, loss_function_name, desc=f"[Valid] [{epoch+1}/{train_cfg.epochs}]", class_names=class_names, log_class_metrics=True)
+        eval_results = evaluate(run_cfg, model, valid_loader, device, criterion, loss_function_name, desc=f"[Valid] [{epoch + 1 + epoch_offset}/{train_cfg.epochs + epoch_offset}]", class_names=class_names, log_class_metrics=True)
 
         current_metric = 0.0
         if best_model_criterion == 'val_loss':
@@ -759,7 +759,7 @@ def main():
         logging.info("="*50)
         return model
 
-    def find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device):
+    def find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device, train_loader, criterion):
         """이진 탐색을 사용하여 목표 FLOPs에 가장 가까운 pruning_sparsity를 찾습니다."""
         target_gflops = getattr(baseline_cfg, 'pruning_flops_target', 0.0)
         if target_gflops <= 0:
@@ -767,6 +767,12 @@ def main():
 
         logging.info("="*80)
         logging.info(f"목표 FLOPs ({target_gflops:.4f} GFLOPs)에 맞는 최적의 Pruning 희소도를 탐색합니다...")
+
+        # 원본 FLOPs 측정
+        original_macs, _ = profile(model, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
+        original_gflops = original_macs * 2 / 1e9
+        logging.info(f"원본 모델 FLOPs: {original_gflops:.4f} GFLOPs")
+
 
         # 이진 탐색을 위한 초기값 설정
         low_sparsity, high_sparsity = 0.0, 0.99
@@ -790,14 +796,15 @@ def main():
             temp_baseline_cfg.pruning_sparsity = current_sparsity
             
             try:
-                pruned_temp_model = run_torch_pruning(temp_model, temp_baseline_cfg, model_cfg, device)
+                pruned_temp_model = run_torch_pruning(temp_model, temp_baseline_cfg, model_cfg, device, train_loader=train_loader, criterion=criterion)
                 
                 # Pruning된 임시 모델의 FLOPs 계산
                 macs, _ = profile(pruned_temp_model, inputs=(dummy_input,), verbose=False)
                 current_gflops = macs * 2 / 1e9
 
                 flops_diff = abs(current_gflops - target_gflops)
-                logging.info(f"  [탐색 {i+1:2d}] 희소도: {current_sparsity:.4f} -> FLOPs: {current_gflops:.4f} GFLOPs (오차: {flops_diff:.4f})")
+                reduction_ratio = (1 - current_gflops / original_gflops) * 100
+                logging.info(f"  [탐색 {i+1:2d}] 희소도: {current_sparsity:.4f} -> FLOPs: {current_gflops:.4f} GFLOPs (감소율: {reduction_ratio:.2f}%)")
 
                 # 최고 기록 갱신
                 if flops_diff < min_flops_diff:
@@ -873,7 +880,10 @@ def main():
             # 목표 FLOPs가 설정된 경우, 최적의 희소도를 자동으로 계산
             if getattr(baseline_cfg, 'pruning_flops_target', 0.0) > 0:
                 # 이진 탐색으로 최적의 희소도 찾기
-                optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device)
+                # Taylor Pruning은 criterion이 필요하므로 임시로 생성
+                loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
+                criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss()
+                optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device, train_loader, criterion)
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
 
@@ -888,6 +898,9 @@ def main():
                                 getattr(baseline_cfg, 'use_lamp_pruning', False) or \
                                 getattr(baseline_cfg, 'use_slimming_pruning', False)
 
+            # Pruning 전 원본 모델의 FLOPs 측정
+            original_macs, _ = profile(model, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
+            original_gflops = original_macs * 2 / 1e9
             if use_torch_pruning:
                 # torch-pruning 계열의 기법은 모델을 직접 수정합니다.
                 # Taylor Pruning은 그래디언트 계산을 위해 추가 정보가 필요합니다.
@@ -900,6 +913,13 @@ def main():
                     model = run_torch_pruning(model, baseline_cfg, model_cfg, device)
 
                 log_model_parameters(model) # Pruning 후 파라미터 수 확인
+
+                # Pruning 후 FLOPs 측정 및 감소율 로깅
+                pruned_macs, _ = profile(model, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
+                pruned_gflops = pruned_macs * 2 / 1e9
+                flops_reduction_ratio = (1 - pruned_gflops / original_gflops) * 100
+                logging.info(f"FLOPs가 {original_gflops:.4f} GFLOPs에서 {pruned_gflops:.4f} GFLOPs로 감소했습니다 (감소율: {flops_reduction_ratio:.2f}%).")
+
                 pruner = None # torch-pruning은 NNI pruner 객체를 사용하지 않음.
             
             if use_torch_pruning: # [수정] torch-pruning이 사용된 경우에만 미세조정 실행
@@ -908,7 +928,7 @@ def main():
                 finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
                 
                 # 미세 조정 훈련 실행
-                train(run_cfg, finetune_cfg, baseline_cfg, config, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight)
+                train(run_cfg, finetune_cfg, baseline_cfg, config, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, epoch_offset=train_cfg.epochs)
             else:
                 logging.info("활성화된 Pruning 방법이 없어 미세 조정을 건너뜁니다.")
 
