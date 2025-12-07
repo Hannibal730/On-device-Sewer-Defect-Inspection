@@ -643,7 +643,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
 
             torch.onnx.export(model, dummy_input.to('cpu'), onnx_path, 
-                              export_params=True, opset_version=12,
+                              export_params=True, opset_version=14,
                               do_constant_folding=True,
                               input_names=['input'], output_names=['output'],
                               dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
