@@ -208,91 +208,174 @@ Our architecture is inspired by CATS \citep{10.5555/3737916.3741543}, which impr
 
 \section{Methodology}
 
-\subsection{Overall Architecture}
-We define the proposed LC-Transformer as a function \( f_{LC} \) that maps an input image \( I \) to class logits:
+\subsubsection{Motivation}
+최근 비전 트랜스포머(Vision Transformer, ViT)는 다양한 컴퓨터 비전 분야에서 뛰어난 성능을 보여주고 있습니다. 이는 입력 이미지를 여러 패치(patch)로 나누고, 셀프-어텐션(self-attention) 메커니즘을 통해 패치 간의 전역적인 관계를 모델링하는 능력 덕분입니다.
+
+하지만 셀프-어텐션은 패치 개수(\(N\))에 대해 제곱(\(O(N^2)\))에 비례하는 계산 복잡도를 가집니다.
+
+이로 인해 고해상도 이미지를 처리하거나 제한된 컴퓨팅 자원을 가진 온-디바이스(on-device) 환경에 모델을 배포하는 데 큰 병목이 됩니다 \citep{papa2024survey}.
+
+이러한 한계를 극복하기 위해, 저희는 셀프-어텐션을 완전히 배제하고 크로스-어텐션(cross-attention)만을 사용하는 경량 아키텍처를 제안합니다.
+
+이 접근법은 Perceiver와 같은 선행 연구들에서 영감을 받았습니다. Perceiver 계열의 모델들은 소수의 잠재 쿼리(latent query) 배열을 도입하여, 이 쿼리들이 크로스-어텐션을 통해 입력 데이터와 상호작용하도록 설계되었습니다.
+
+이를 통해 계산 복잡도를 입력 토큰 수에 대해 선형적으로 줄일 수 있습니다 \citep{jaegle2021perceiver}.
+
+또한, 학습 가능한 쿼리를 사용하여 이미지의 특징을 먼저 요약하고 어텐션을 수행하는 방식은, 계산 효율성을 높이면서도 필요한 정보를 효과적으로 추출하는 방법으로 여러 연구에서 제안되었습니다 \citep{carion2020end}.
+
+저희 모델은 이러한 아이디어를 채택하여, (1) 패치 특징 간의 값비싼 셀프-어텐션을 제거하고, (2) 소수의 학습 가능한 쿼리가 크로스-어텐션을 통해 이미지 전체의 특징을 효율적으로 요약하도록 설계되었습니다.
+
+그 결과, 온-디바이스 환경에 적합한 낮은 계산 비용과 파라미터 수를 가지면서도 더 높은 분류 성능을 달성할 수 있었습니다.
+
+\subsubsection{Overall Architecture}
+제안하는 LC-Transformer 모델은 입력 이미지 \( I \)를 클래스 로짓(logits)으로 변환하는 함수 \( f_{LC} \)로 정의할 수 있습니다.
+
+전체 구조는 경량 CNN 기반의 패치 인코더, 크로스-어텐션 기반의 디코더, 그리고 최종 분류기의 세 가지 주요 모듈로 구성되며, 이들은 순차적으로 정보를 처리합니다.
+
 \[
 \text{Logits} = f_{LC}(I; \theta) = \bigl(\Phi_{\mathrm{cls}} \circ \Phi_{\mathrm{dec}} \circ \Phi_{\mathrm{enc}}\bigr)(I),
 \]
-where \(\Phi_{\mathrm{enc}}\), \(\Phi_{\mathrm{dec}}\), and \(\Phi_{\mathrm{cls}}\) denote the patch encoder, decoder, and classifier, respectively, and \(\theta\) comprises all the learnable parameters.
 
-\subsection{Patch Convolutional Encoder}
-The encoder \(\Phi_{\mathrm{enc}}\) converts an input image into a sequence of patch features in three steps.
-First, the input image \( I \in \mathbb{R}^{H \times W \times C} \) is partitioned into \(N_p\) patches. To maximize parameter efficiency, a single CNN feature extractor \(\Phi_{\mathrm{feat}}\) is applied to each patch \(p_i\) to extract a feature vector \(\mathbf{f}_i\):
+여기서 \( \Phi_{\mathrm{enc}} \), \( \Phi_{\mathrm{dec}} \), \( \Phi_{\mathrm{cls}} \)는 각각 패치 인코더, 디코더, 분류기를 의미하며, \( \theta \)는 학습 가능한 모든 파라미터를 나타냅니다.
+
+`HybridModel` 클래스가 이 세 모듈을 순차적으로 연결하는 역할을 합니다.
+
+\subsubsection{Patch Convolutional Encoder}
+`PatchConvEncoder` 클래스에 해당하는 인코더 \( \Phi_{\mathrm{enc}} \)는 입력 이미지를 패치(patch) 특징의 시퀀스(sequence)로 변환합니다.
+
+이 과정은 패치 분할, 특징 추출, 그리고 패치 믹싱의 세 단계로 이루어집니다.
+
+\begin{enumerate}
+    \item \textbf{패치 분할 및 특징 추출}: 먼저 입력 이미지 \( I \in \mathbb{R}^{H \times W \times C} \)를 \( N_p \)개의 겹치지 않는 패치로 분할합니다.
+    
+    그 다음, `CnnFeatureExtractor`로 구현된 단일 CNN 특징 추출기 \( \Phi_{\mathrm{feat}} \)를 모든 패치에 공유하여 적용합니다. 이는 파라미터 효율성을 극대화하는 방법입니다.
+    
+    각 패치 \( p_i \)에서 추출된 특징 맵은 `AdaptiveAvgPool2d`를 거쳐 고정된 크기로 요약된 후, `Flatten`을 통해 특징 벡터 \( \mathbf{f}_i \)가 됩니다.
 \[
 \mathbf{f}_i = \mathrm{Flatten}\!\left(\mathrm{AdaptiveAvgPool}\!\left(\Phi_{\mathrm{feat}}(p_i)\right)\right)
 \in \mathbb{R}^{D_{\mathrm{feat}}}.
 \]
-The sequence of patch features is then reshaped into a 2D grid \(F_{\mathrm{grid}} \in \mathbb{R}^{D_{\mathrm{feat}} \times H_p \times W_p}\) to restore spatial relationships. A depthwise convolution operation, \(\Phi_{\mathrm{mix}}\), is applied to this grid. This step allows each patch feature to efficiently integrate information from its neighbors, enriching it with local context:
+
+    \item \textbf{패치 믹싱 (Patch Mixing)}: 추출된 패치 특징들의 시퀀스를 다시 2D 그리드(grid) 형태 \( F_{\mathrm{grid}} \in \mathbb{R}^{D_{\mathrm{feat}} \times H_p \times W_p} \)로 복원하여 패치 간의 공간적 관계를 되살립니다. 그 후, `patch_mixer` 모듈 \( \Phi_{\mathrm{mix}} \)을 적용하여 인접한 패치들의 정보를 효율적으로 교환합니다.
+    
+    이 아이디어는 ConvMixer나 ConvNeXt와 같은 최신 컨볼루션 아키텍처에서 영감을 받았습니다. 이들 연구는 깊이별 컨볼루션(depthwise convolution)과 같은 효율적인 연산을 통해 패치 또는 특징 맵 내의 공간적 문맥을 효과적으로 혼합할 수 있음을 보여주었습니다 \citep{trockman2022patches, liu2022convnet}.
+    
+    저희의 `patch_mixer` 모듈 역시 파라미터 수가 매우 적은 3x3 깊이별 컨볼루션(`DWConv`)과 배치 정규화(Batch Normalization), 그리고 ReLU 활성화 함수로 구성되어, 최소한의 연산으로 각 패치 특징에 주변 지역 문맥 정보를 풍부하게 더해줍니다.
 \[
-F_{\mathrm{mixed}} = \Phi_{\mathrm{mix}}(F_{\mathrm{grid}}) \in \mathbb{R}^{D_{\mathrm{feat}} \times H_p \times W_p}.
+F_{\mathrm{mixed}} = \mathrm{ReLU}\left(\mathrm{BatchNorm}\left(\mathrm{DWConv}(F_{\mathrm{grid}})\right)\right) \in \mathbb{R}^{D_{\mathrm{feat}} \times H_p \times W_p}.
 \]
-Finally, the context-mixed feature map is flattened back into a 1D sequence and passed through Layer Normalization to produce the final encoder output \(X_{\mathrm{enc}}\):
+
+    \item \textbf{최종 인코더 출력}: 믹싱된 특징 맵을 다시 1D 시퀀스로 펼치고 `LayerNorm`을 적용하여 최종 인코더 출력 \( X_{\mathrm{enc}} \)를 생성합니다. 이 출력은 디코더가 처리할 Key와 Value의 기반이 됩니다.
 \[
 X_{\mathrm{enc}}
 = \mathrm{LayerNorm}\!\left(\mathrm{FlattenToSequence}(F_{\mathrm{mixed}})\right)
 \in \mathbb{R}^{N_p \times D_{\mathrm{feat}}}.
 \]
+\end{enumerate}
 
-\subsection{Lightweight Cross-Attention Decoder}
-Given \(X_{\mathrm{enc}}\), the decoder \(\Phi_{\mathrm{dec}}\) extracts and aggregates task-relevant information for classification.
+\subsubsection{Lightweight Cross-Attention Decoder}
+`Embedding4Decoder`와 `Decoder` 클래스에 해당하는 디코더 \( \Phi_{\mathrm{dec}} \)는 인코더가 생성한 패치 특징 시퀀스 \( X_{\mathrm{enc}} \)에서 분류에 필요한 핵심 정보를 추출하고 요약하는 역할을 합니다.
 
-\subsubsection{Input preparation} % 3.3.1
-Keys and values are obtained by projecting \(X_{\mathrm{enc}}\) and adding learnable positional encodings \(PE \in \mathbb{R}^{N_p \times D_{\mathrm{emb}}}\):
+이 모듈은 셀프-어텐션을 사용하지 않고 크로스-어텐션만을 사용하여 계산 효율성을 극대화합니다.
+
+\paragraph{Input preparation \& Positional Encoding}
+디코더의 Key(K)와 Value(V)는 인코더 출력 \( X_{\mathrm{enc}} \)를 `W_feat2emb` 선형 레이어로 임베딩 차원(\(D_{\mathrm{emb}}\))에 맞게 투영(projection)한 후, 위치 인코딩(Positional Encoding, PE)을 더하여 만듭니다.
+
+저희는 Masked Autoencoders (MAE) 연구에서 그 효과성이 입증된 고정된 2D 사인-코사인(sin-cos) 위치 인코딩 방식을 사용합니다 \citep{he2022masked}.
+
+이 방식은 학습 가능한 파라미터 없이 각 패치의 2차원적 위치 정보를 모델에 명시적으로 제공하여, 모델이 패치 간의 공간적 관계를 이해하도록 돕습니다.
 \[
 K = V = W_{\mathrm{emb}}(X_{\mathrm{enc}}) + PE \in \mathbb{R}^{N_p \times D_{\mathrm{emb}}}.
 \]
 
-\subsubsection{Dynamic query generation via attention pooling} % 3.3.2
-To initialize the decoder efficiently, we generate \emph{dynamic queries} by attending from a set of learnable queries to \((K,V)\).
-To keep the decoder lightweight and parameter-efficient, we do not introduce separate projection matrices \((W_Q, W_K, W_V)\) at this step. As a result, no additional parameters are added beyond the latent queries.
+\paragraph{Dynamic query generation via attention pooling}
+디코더의 초기 입력을 효율적으로 생성하기 위해, 저희는 각 이미지의 내용에 맞게 정보를 요약하는 '동적 쿼리(dynamic queries)' 생성 방식을 도입했습니다. 이 방식은 쿼리가 키-값 쌍의 데이터베이스에서 가중합을 통해 정보를 추출하는 **어텐션 풀링(attention pooling)** 메커니즘에 기반합니다 \citep{zhang2024dive}.
+
+저희 모델에서는 소수의 학습 가능한 쿼리(learnable query)가 인코더에서 추출된 전체 이미지 특징에 어텐션을 수행하여, 압축된 특징 벡터를 생성하고 고정된 쿼리 대신 입력에 적응적인 쿼리로 사용합합니다.
+
+이 방식은 두 가지 주요 장점을 가집니다. 첫째, **파라미터 효율성**입니다. 이 어텐션 풀링 단계는 새로운 가중치 행렬을 추가하는 대신 기존의 특징 투영 레이어를 공유하도록 설계되어, 학습 가능한 쿼리 자체를 제외하고는 추가 파라미터 없이 연산을 수행할 수 있습니다.
+
+둘째, 모델이 **'어디에 주목할지'를 학습**하도록 유도합니다. 학습 가능한 쿼리는 훈련 과정에서 이미지의 어떤 특징(Key)에 더 높은 가중치를 부여해야 하는지를 학습하는 '질문' 역할을 합니다. 즉, 분류에 가장 중요한 영역을 식별하고 해당 영역의 정보를 집중적으로 요약하는 방법을 스스로 학습합니다.
+
+특히 크로스 어텐션 연산을 통해 계산된 동적 쿼리 \(Q_{\mathrm{dynamic}}\)는 이처럼 중요도에 따라 가중된 정보의 압축된 결과물입니다. 정보 밀도가 높은 이 쿼리를 디코더의 초기 입력으로 사용함으로써, 모델은 더 빠르고 효율적으로 분류에 필요한 핵심 특징을 정제해 나갈 수 있습니다.
+
+
 
 \begin{enumerate}
-  \item \textbf{Latent queries.} Maintain \(N_q\) learnable queries \(Q_{\mathrm{learnable}} \in \mathbb{R}^{N_q \times D_{\mathrm{feat}}}\) and project them to the embedding space:
-  \[
-  Q_{\mathrm{latent}} = W_{\mathrm{emb}}(Q_{\mathrm{learnable}}) \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}}.
-  \]
-  \item \textbf{Attention scores.} Compute attention from \(Q_{\mathrm{latent}}\) to \(K\):
-  \[
-  \mathrm{Scores} = \mathrm{softmax}\!\left(\frac{Q_{\mathrm{latent}} K^{\top}}{\sqrt{D_{\mathrm{emb}}}}\right) \in \mathbb{R}^{N_q \times N_p}.
-  \]
-  \item \textbf{Dynamic queries.} Aggregate values to form the input queries for the first decoder layer:
-  \[
-  Q_{\mathrm{dynamic}} = \mathrm{Scores}\cdot V \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}}.
-  \]
+    \item \textbf{잠재 쿼리 (Latent queries)}: 먼저, 학습 가능한 \( N_q \)개의 쿼리 \( Q_{\mathrm{learnable}} \in \mathbb{R}^{N_q \times D_{\mathrm{feat}}} \)를 Key, Value와 동일한 `W_feat2emb` 선형 레이어로 투영하여 잠재 쿼리 \( Q_{\mathrm{latent}} \)를 생성합니다.
+    \[
+    Q_{\mathrm{latent}} = W_{\mathrm{emb}}(Q_{\mathrm{learnable}}) \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}}.
+    \]
+    \item \textbf{어텐션 점수 및 동적 쿼리 생성}: 이 잠재 쿼리가 이미지 전체의 특징을 담고 있는 Key(K)에 얼마나 주목할지 어텐션 점수를 계산하고, 이를 가중치로 사용하여 Value(V)를 종합함으로써 동적 쿼리 \( Q_{\mathrm{dynamic}} \)를 얻습니다. 이 쿼리들은 첫 번째 디코더 레이어의 입력으로 사용되어, 디코더가 처음부터 이미지의 핵심 정보에 집중하도록 돕습니다.
+    \[
+    \mathrm{Scores} = \mathrm{softmax}\!\left(\frac{Q_{\mathrm{latent}} K^{\top}}{\sqrt{D_{\mathrm{emb}}}}\right), \quad Q_{\mathrm{dynamic}} = \mathrm{Scores}\cdot V.
+    \]
 \end{enumerate}
 
+\paragraph{Decoder layers}
+디코더는 \( L \)개의 동일한 레이어로 구성되며, 각 레이어는 멀티-헤드 크로스-어텐션(Multi-Head Cross-Attention, MHCA)과 피드-포워드 네트워크(Feed-Forward Network, FFN)로 이루어져 있습니다. 각 연산 후에는 잔차 연결(residual connection)과 레이어 정규화(`LayerNorm`)가 적용됩니다. 디코더의 입력 쿼리 \( Q^{(0)} = Q_{\mathrm{dynamic}} \)는 각 레이어를 거치며 점차 정제되고, Key(K)와 Value(V)는 모든 레이어에서 공유됩니다. 동적 쿼리 생성 단계와 달리, 각 MHCA 블록은 독립적인 투영 행렬 \((W_Q^i, W_K^i, W_V^i)\)을 학습하여 사용합니다.
 
-\subsubsection{Decoder layers} % 3.3.3
-The decoder consists of \(L\) layers, each comprising multi-head cross-attention (MHCA) and a feed-forward network (FFN), both with residual connections and layer normalization. 
-We take \(Q^{(0)} = Q_{\mathrm{dynamic}}\) as the input to the first layer, with \(K\) and \(V\) shared across all layers.
-Unlike the initialization step above, each MHCA layer applies learned projections \((W_Q^i, W_K^i, W_V^i)\).
-
-For input \(Q^{(l-1)}\) to layer \(l\),
+레이어 \( l \)의 입력 \( Q^{(l-1)} \)에 대한 연산은 다음과 같습니다.
 \[
 \hat{Q}^{(l)} = \mathrm{LayerNorm}\!\Bigl(Q^{(l-1)} + \mathrm{MHCA}\bigl(Q^{(l-1)}, K, V\bigr)\Bigr), \qquad
 Q^{(l)} = \mathrm{LayerNorm}\!\Bigl(\hat{Q}^{(l)} + \mathrm{FFN}(\hat{Q}^{(l)})\Bigr).
 \]
-MHCA uses \(h\) heads:
-\[
-\mathrm{MHCA}(Q,K,V) = \mathrm{Concat}(\mathrm{head}_1,\dots,\mathrm{head}_h)\, W_O,
-\]
-\[
-\mathrm{head}_i = \mathrm{Attention}(QW_Q^{i}, KW_K^{i}, VW_V^{i}), \qquad
-\mathrm{Attention}(Q',K',V') = \mathrm{softmax}\!\left(\frac{Q'K'^{\top}}{\sqrt{d_k}}\right)V'.
-\]
-Here \(W_Q^{i}, W_K^{i}, W_V^{i} \in \mathbb{R}^{D_{\mathrm{emb}} \times d_k}\), \(d_k = D_{\mathrm{emb}}/h\), and \(W_O \in \mathbb{R}^{D_{\mathrm{emb}} \times D_{\mathrm{emb}}}\). 
-The FFN is a two-layer MLP with GEGLU activation:
-\[
-\mathrm{FFN}(x) = W_2\bigl(\mathrm{GEGLU}(W_1 x)\bigr).
-\]
+FFN은 `GEGLU` 활성화 함수를 사용하는 2-레이어 MLP로, 이는 표준 ReLU에 비해 성능을 향상시키는 것으로 알려져 있습니다 \citep{shazeer2020glu}.
 
+\subsubsection{Classifier}
+마지막 디코더 레이어의 출력 \( Z = Q^{(L)} \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}} \)는 이미지 전체의 정보를 압축적으로 담고 있는 특징들의 집합입니다. 이 특징들을 최종 분류를 위해 단일 벡터로 변환하는 과정은 다음과 같습니다.
 
-\subsection{Classifier}
-Let \(Z = Q^{(L)} \in \mathbb{R}^{N_q \times D_{\mathrm{emb}}}\) be the output of the final decoder layer. A projection head \(\Phi_{\mathrm{proj}}\) maps \(Z\) to \(D_{\mathrm{feat}}\) per query, and the result is flattened to form a single feature vector:
+\begin{enumerate}
+    \item \textbf{특징 투영 및 평탄화}: `Projection4Classifier` 모듈이 디코더의 출력 \( Z \)를 다시 원래 특징 차원인 \( D_{\mathrm{feat}} \)로 투영하고, 모든 쿼리의 특징 벡터를 하나로 평탄화(flatten)하여 최종 특징 벡터를 생성합니다.
 \[
 \mathrm{Features} = \mathrm{Flatten}\!\bigl(\Phi_{\mathrm{proj}}(Z)\bigr) \in \mathbb{R}^{N_q \cdot D_{\mathrm{feat}}}.
 \]
-An MLP classifier then produces the class logits:
+    \item \textbf{최종 분류}: 이 평탄화된 특징 벡터를 `Classifier` 클래스에 구현된 간단한 MLP 분류기에 입력하여 최종 클래스 로짓(logits)을 출력합니다.
 \[
 \mathrm{Logits} = \mathrm{MLP}(\mathrm{Features}) \in \mathbb{R}^{N_{\mathrm{cls}}}.
 \]
+\end{enumerate}
+
+
+\begin{algorithm}[H]
+\caption{Proposed Method}
+\label{alg:main}
+\begin{algorithmic}[1]
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+\Require Image batch $I \in \mathbb{R}^{B \times C \times H \times W}$, Learnable queries $Q_{\text{learn}} \in \mathbb{R}^{N_q \times D_{\text{feat}}}$
+\Ensure Class logits $Y \in \mathbb{R}^{B \times N_{\text{cls}}}$
+
+\Statex
+\Statex \textbf{1. Patch Convolutional Encoder}
+\State Extract patches $\mathcal{P} = \{P_1, \dots, P_N\}$ from $I$ with kernel $p$, stride $s$
+\State $F_{\text{patch}} \leftarrow \text{Flatten}(\text{AvgPool}(\text{CNN}(\mathcal{P}))) \in \mathbb{R}^{(B \cdot N) \times D_{\text{feat}}}$ \Comment{Apply shared CNN to each patch}
+\State $F_{\text{grid}} \leftarrow \text{ReshapeToGrid}(F_{\text{patch}}) \in \mathbb{R}^{B \times D_{\text{feat}} \times H_p \times W_p}$
+\State $F_{\text{mixed}} \leftarrow \sigma(\text{BN}(\text{DWConv}(F_{\text{grid}}))) \in \mathbb{R}^{B \times D_{\text{feat}} \times H_p \times W_p}$ \Comment{Mix local features via Depth-Wise Convolution}
+\State $X_{\text{enc}} \leftarrow \text{LayerNorm}(\text{Flatten}(F_{\text{mixed}})) \in \mathbb{R}^{B \times N \times D_{\text{feat}}}$ \Comment{Encoder output features}
+
+
+\Statex
+\Statex \textbf{2. Adaptive Query Generation}
+\State $K, V \leftarrow X_{\text{enc}} W_{\text{emb}} + \text{PE} \in \mathbb{R}^{B \times N \times D_{\text{model}}}$ \Comment{Add 2D sinusoidal positional encoding}
+\State $Q_{\text{latent}} \leftarrow Q_{\text{learn}} W_{\text{emb}} \in \mathbb{R}^{N_q \times D_{\text{model}}}$ \Comment{Project with the same projection}
+\State $A \leftarrow \text{Softmax}\left( \frac{Q_{\text{latent}} K^\top}{\sqrt{D_{\text{model}}}} \right) \in \mathbb{R}^{B \times N_q \times N}$ \Comment{Calculate attention scores}
+\State $Q^{(0)} \leftarrow A \cdot V \in \mathbb{R}^{B \times N_q \times D_{\text{model}}}$ \Comment{Attention pooling}
+
+
+
+\Statex
+\Statex \textbf{3. Multi-Head Cross-Attention Decoder}
+\For{$l = 1, \dots, L$}
+    \State $Q' \leftarrow \text{LayerNorm}\left( Q^{(l-1)} + \text{MHCA}(Q^{(l-1)}, K, V) \right) \in \mathbb{R}^{B \times N_q \times D_{\text{model}}}$
+    \State $Q^{(l)} \leftarrow \text{LayerNorm}\left( Q' + \text{FFN}(Q') \right) \in \mathbb{R}^{B \times N_q \times D_{\text{model}}}$
+\EndFor
+
+\Statex
+\Statex \textbf{4. Classification Head}
+\State $Z \leftarrow \text{Flatten}(\text{Linear}(Q^{(L)})) \in \mathbb{R}^{B \times (N_q \cdot D_{\text{feat}})}$
+\State $Y \leftarrow \text{MLP}_{\text{cls}}(Z) \in \mathbb{R}^{B \times N_{\text{cls}}}$
+\State \Return $Y$
+
+\end{algorithmic}
+\end{algorithm}

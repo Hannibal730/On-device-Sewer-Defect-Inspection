@@ -140,6 +140,13 @@ def create_baseline_model(model_name, num_labels, pretrained):
         # timm 라이브러리를 사용하여 Vision Transformer 모델을 생성합니다.
         # 'vit_base_patch16_224'는 대표적인 ViT 모델입니다.
         model = timm.create_model('vit_base_patch16_224', pretrained=pretrained, num_classes=num_labels)
+    elif model_name == 'swin_tiny':
+        # timm 라이브러리를 사용하여 Swin Transformer 모델을 생성합니다.
+        # 'swin_tiny_patch4_window7_224'는 작은 Swin ViT 모델입니다.
+        model = timm.create_model('swin_tiny_patch4_window7_224', pretrained=pretrained, num_classes=num_labels)
+    elif model_name == 'deit_tiny':
+        # timm 라이브러리를 사용하여 DeiT (Data-efficient Image Transformer)의 tiny 버전을 생성합니다.
+        model = timm.create_model('deit_tiny_patch16_224', pretrained=pretrained, num_classes=num_labels)
     else:
         raise ValueError(f"지원하지 않는 baseline 모델 이름입니다: {model_name}")
         
