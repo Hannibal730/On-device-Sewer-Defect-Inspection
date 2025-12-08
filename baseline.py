@@ -147,6 +147,15 @@ def create_baseline_model(model_name, num_labels, pretrained):
     elif model_name == 'deit_tiny':
         # timm 라이브러리를 사용하여 DeiT (Data-efficient Image Transformer)의 tiny 버전을 생성합니다.
         model = timm.create_model('deit_tiny_patch16_224', pretrained=pretrained, num_classes=num_labels)
+    elif model_name == 'mobile_vit_s':
+        # timm 라이브러리를 사용하여 MobileViT-S 모델을 생성합니다.
+        model = timm.create_model('mobilevit_s', pretrained=pretrained, num_classes=num_labels)
+    elif model_name == 'mobile_vit_xs':
+        # timm 라이브러리를 사용하여 MobileViT-XS 모델을 생성합니다.
+        model = timm.create_model('mobilevit_xs', pretrained=pretrained, num_classes=num_labels)
+    elif model_name == 'mobile_vit_xxs':
+        # timm 라이브러리를 사용하여 MobileViT-XXS 모델을 생성합니다.
+        model = timm.create_model('mobilevit_xxs', pretrained=pretrained, num_classes=num_labels)
     else:
         raise ValueError(f"지원하지 않는 baseline 모델 이름입니다: {model_name}")
         
