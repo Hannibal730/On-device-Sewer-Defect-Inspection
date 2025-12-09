@@ -224,7 +224,7 @@ model:
 # =============================================================================
 baseline:
   # 사용할 baseline 모델의 이름을 지정합니다.
-  # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4', 'xie2019', 'vit', 'swin_tiny', 'deit_tiny', 'mobile_vit_s', 'mobile_vit_xs', 'mobile_vit_xxs'
+  # 사용 가능한 옵션: 'resnet18', 'efficientnet_b0', 'mobilenet_v4_s', 'xie2019', 'vit', 'swin_tiny', 'deit_tiny', 'mobile_vit_s', 'mobile_vit_xs', 'mobile_vit_xxs'
   model_name: 'mobile_vit_xxs'
 
   # --- 경량화 옵션 ---
