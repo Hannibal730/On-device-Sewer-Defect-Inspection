@@ -25,7 +25,12 @@ try:
 except ImportError:
     Attention = None
 
-from dataloader import prepare_data # 데이터 로딩 함수 임포트
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+from dataloader import prepare_data 
 
 try:
     from thop import profile
@@ -176,6 +181,53 @@ def log_model_parameters(model):
     logging.info("모델 파라미터 수:")
     logging.info(f"  - 총 파라미터: {total_params:,} 개")
     logging.info(f"  - 학습 가능한 파라미터: {trainable_params:,} 개")
+    logging.info("="*50)
+
+# =============================================================================
+# [NEW] 1-1. ONNX CPU 메모리 측정 함수 (단일 샘플 방식)
+# =============================================================================
+def measure_cpu_peak_memory_during_inference(session, data_loader, device):
+    """ONNX 모델 추론 중 CPU 최대 메모리 사용량(RSS)을 단일 샘플 기준으로 측정합니다."""
+    if not psutil:
+        logging.warning("CPU 메모리 사용량을 측정하려면 'pip install psutil'을 실행해주세요.")
+        return
+
+    process = psutil.Process(os.getpid())
+    
+    try:
+        # 데이터 로더에서 단일 샘플을 가져옵니다.
+        dummy_input, _, _ = next(iter(data_loader))
+        single_dummy_input_np = dummy_input[0].unsqueeze(0).cpu().numpy()
+        input_name = session.get_inputs()[0].name
+    except Exception as e:
+        logging.error(f"ONNX 메모리 측정을 위한 더미 데이터 생성 중 오류 발생: {e}")
+        return
+
+    # --- [수정] 기준 메모리를 추론 실행 전에 측정 ---
+    mem_before = process.memory_info().rss / (1024 * 1024) # MB
+    logging.info(f"ONNX 추론 실행 전 기본 CPU 메모리: {mem_before:.2f} MB")
+    peak_mem = mem_before
+
+    # Warm-up (10회)
+    logging.info("ONNX CPU 메모리 측정을 위한 예열(warm-up)을 시작합니다 (단일 샘플 x 10회)...")
+    for _ in range(10):
+        session.run(None, {input_name: single_dummy_input_np})
+        # 예열 중에도 메모리 피크를 측정
+        peak_mem = max(peak_mem, process.memory_info().rss / (1024 * 1024))
+
+    logging.info("="*50)
+    logging.info("ONNX 모델 추론 중 CPU 최대 메모리 사용량 측정을 시작합니다 (단일 샘플 x 100회 반복)...")
+    
+    # 실제 측정 (100회 반복)
+    num_iterations = 100
+    for _ in range(num_iterations):
+        session.run(None, {input_name: single_dummy_input_np})
+        peak_mem = max(peak_mem, process.memory_info().rss / (1024 * 1024))
+
+    # --- [수정] 로그 메시지 변경 ---
+    logging.info(f"  - 추론 전 기본 CPU 메모리: {mem_before:.2f} MB")
+    logging.info(f"  - 추론 중 최대 CPU 메모리 (Peak): {peak_mem:.2f} MB")
+    logging.info(f"  - 추론으로 인한 순수 메모리 증가량: {(peak_mem - mem_before):.2f} MB")
     logging.info("="*50)
 
 # =============================================================================
@@ -425,6 +477,11 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
         try:
             logging.info(f"ONNX Runtime (v{onnxruntime.__version__})으로 평가를 시작합니다.")
             onnx_session = onnxruntime.InferenceSession(onnx_inference_path)
+
+            # --- [NEW] ONNX CPU Peak Memory Measurement ---
+            if device.type == 'cpu':
+                measure_cpu_peak_memory_during_inference(onnx_session, data_loader, device)
+
             dummy_input, _, _ = next(iter(data_loader))
             measure_onnx_performance(onnx_session, dummy_input)
             evaluate_onnx(run_cfg, onnx_session, data_loader, desc=f"[{mode_name} (ONNX)]", class_names=class_names, log_class_metrics=True)
