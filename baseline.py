@@ -5,7 +5,7 @@ import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Subset
-from sklearn.metrics import precision_score, recall_score, f1_score
+from sklearn.metrics import precision_score, recall_score, f1_score # type: ignore
 from types import SimpleNamespace
 import pandas as pd
 from torchvision import models as torchvision_models
@@ -14,10 +14,17 @@ import timm
 import argparse
 import yaml
 import logging
-from datetime import datetime
+from datetime import datetime # type: ignore
 import copy
 import random
 import time
+import types
+import torch.nn.functional as F
+try:
+    from timm.layers import Attention
+except ImportError:
+    Attention = None
+
 from dataloader import prepare_data # 데이터 로딩 함수 임포트
 
 try:
@@ -677,6 +684,52 @@ def main():
     model = create_baseline_model(baseline_model_name, num_labels, pretrained=train_cfg.pre_trained).to(device)
 
     # =============================================================================
+    # [추가] torch-pruning 호환성을 위한 timm Attention 레이어 Monkey-Patch
+    # =============================================================================
+    def patched_attention_forward(self, x, attn_mask=None):
+        """
+        timm의 Attention.forward를 수정한 버전.
+        Pruning으로 인해 입력 채널(C)과 내부 헤드 차원(head_dim * num_heads)이 달라졌을 때 발생하는
+        reshape 오류를 해결하기 위해 마지막 reshape에서 C 대신 -1을 사용합니다.
+        """
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(0)
+
+        if hasattr(self, 'q_norm'):
+            q, k = self.q_norm(q), self.k_norm(k)
+
+        if hasattr(F, 'scaled_dot_product_attention') and getattr(self, 'fused_attn', False):
+            x = F.scaled_dot_product_attention(
+                q, k, v,
+                attn_mask=attn_mask,
+                dropout_p=self.attn_drop.p if self.training else 0.,
+            )
+        else:
+            # self.scale은 timm의 Attention에 없을 수 있으므로 확인 후 사용
+            scale = getattr(self, 'scale', 1.0 / (self.head_dim ** 0.5))
+            q = q * scale
+            attn = q @ k.transpose(-2, -1)
+            attn = attn.softmax(dim=-1)
+            attn = self.attn_drop(attn)
+            x = attn @ v
+
+        # [수정] Pruning 후 C가 변경되어 발생하는 오류를 막기 위해 C를 하드코딩하는 대신 -1로 설정
+        x = x.transpose(1, 2).reshape(B, N, -1)
+        
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+    if Attention is not None and F is not None:
+        is_timm_model = baseline_model_name in ['vit', 'swin_tiny', 'deit_tiny', 'mobile_vit_s', 'mobile_vit_xs', 'mobile_vit_xxs']
+        if is_timm_model:
+            logging.info(f"timm 모델({baseline_model_name})의 Attention.forward를 Pruning 호환성을 위해 Monkey-patching 합니다.")
+            for module in model.modules():
+                if isinstance(module, Attention):
+                    module.forward = types.MethodType(patched_attention_forward, module)
+
+    # =============================================================================
     # [최종 수정] timm 모델의 복합 레이어를 NNI가 이해할 수 있는 표준 레이어로 변환
     # =============================================================================
     # timm 라이브러리 버전 문제와 상관없이 직접 복합 레이어를 표준 레이어로 교체하는 함수
@@ -873,6 +926,64 @@ def main():
         logging.info("="*80)
         return best_sparsity
 
+    def find_sparsity_for_target_params(model, baseline_cfg, model_cfg, device, train_loader, criterion):
+        """이진 탐색을 사용하여 목표 파라미터 수에 가장 가까운 pruning_sparsity를 찾습니다."""
+        target_m_params = getattr(baseline_cfg, 'pruning_params_target', 0.0)
+        if target_m_params <= 0:
+            return getattr(baseline_cfg, 'pruning_sparsity', 0.5)
+
+        logging.info("="*80)
+        logging.info(f"목표 파라미터 수 ({target_m_params:.4f}M)에 맞는 최적의 Pruning 희소도를 탐색합니다...")
+
+        # 원본 파라미터 수 측정
+        original_params = sum(p.numel() for p in model.parameters())
+        original_m_params = original_params / 1e6
+        logging.info(f"원본 모델 파라미터: {original_m_params:.4f}M")
+
+
+        # 이진 탐색을 위한 초기값 설정
+        low_sparsity, high_sparsity = 0.0, 0.99
+        best_sparsity = 0.0
+        min_params_diff = float('inf')
+        
+        # 원본 모델을 복사하여 탐색 과정에서 원본이 변경되지 않도록 함
+        original_model = copy.deepcopy(model)
+
+        # 이진 탐색 반복 (100회 정도면 충분한 정밀도 확보 가능)
+        for i in range(100):
+            current_sparsity = (low_sparsity + high_sparsity) / 2
+            
+            temp_model = copy.deepcopy(original_model)
+            
+            temp_baseline_cfg = copy.deepcopy(baseline_cfg)
+            temp_baseline_cfg.pruning_sparsity = current_sparsity
+            
+            try:
+                pruned_temp_model = run_torch_pruning(temp_model, temp_baseline_cfg, model_cfg, device, train_loader=train_loader, criterion=criterion)
+                
+                current_params = sum(p.numel() for p in pruned_temp_model.parameters())
+                current_m_params = current_params / 1e6
+
+                params_diff = abs(current_m_params - target_m_params)
+                reduction_ratio = (1 - current_params / original_params) * 100
+                logging.info(f"  [탐색 {i+1:2d}] 희소도: {current_sparsity:.4f} -> 파라미터: {current_m_params:.4f}M (감소율: {reduction_ratio:.2f}%)")
+
+                if params_diff < min_params_diff:
+                    min_params_diff = params_diff
+                    best_sparsity = current_sparsity
+
+                if current_m_params > target_m_params: # 파라미터가 목표보다 많으면, 희소도를 높여야 함 (더 많이 제거)
+                    low_sparsity = current_sparsity
+                else: # 파라미터가 목표보다 적거나 같으면, 희소도를 낮춰야 함 (덜 제거)
+                    high_sparsity = current_sparsity
+            except Exception as e:
+                logging.warning(f"  [탐색 {i+1:2d}] 희소도 {current_sparsity:.4f} 적용 중 오류 발생: {e}. 이 희소도는 건너뜁니다.")
+                low_sparsity = current_sparsity # 오류 발생 시 해당 구간 탐색 회피
+
+        logging.info(f"탐색 완료. 목표 파라미터 수({target_m_params:.4f}M)에 가장 근접한 최적 희소도는 {best_sparsity:.4f} 입니다.")
+        logging.info("="*80)
+        return best_sparsity
+
     # --- 옵티마이저 및 스케줄러 생성 함수 ---
     def create_optimizer_and_scheduler(cfg, model):
         optimizer_name = getattr(cfg, 'optimizer', 'adamw').lower()
@@ -933,6 +1044,14 @@ def main():
                 loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
                 criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss()
                 optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device, train_loader, criterion)
+                # 찾은 희소도를 설정에 반영
+                baseline_cfg.pruning_sparsity = optimal_sparsity
+            # 목표 파라미터 수가 설정된 경우, 최적의 희소도를 자동으로 계산
+            elif getattr(baseline_cfg, 'pruning_params_target', 0.0) > 0:
+                # 이진 탐색으로 최적의 희소도 찾기
+                loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
+                criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss()
+                optimal_sparsity = find_sparsity_for_target_params(model, baseline_cfg, model_cfg, device, train_loader, criterion)
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
 
