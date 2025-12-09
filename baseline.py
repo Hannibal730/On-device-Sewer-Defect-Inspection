@@ -844,6 +844,15 @@ def main():
             ignored_layers.append(last_layer)
             logging.info(f"분류 레이어 '{type(last_layer).__name__}'을(를) Pruning 대상에서 제외합니다.")
 
+        # [추가] ViT 계열 모델의 qkv 레이어를 Pruning 대상에서 제외하여 구조적 오류 방지
+        is_vit_family = 'vit' in baseline_model_name or 'deit' in baseline_model_name or 'swin' in baseline_model_name
+        if is_vit_family:
+            for name, module in model.named_modules():
+                # timm ViT/DeiT/Swin 모델들은 attention 블록 내에 'qkv'라는 이름의 Linear 레이어를 가짐
+                if isinstance(module, nn.Linear) and 'qkv' in name:
+                    ignored_layers.append(module)
+            logging.info(f"ViT 계열 모델({baseline_model_name})의 모든 qkv 레이어를 Pruning 대상에서 제외합니다.")
+
         # --- Pruner 생성 및 실행 ---
         pruner = pruner_class(
             model,
