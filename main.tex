@@ -270,3 +270,117 @@ The decoder contains $L$ identical layers, each comprising Multi-Head Cross-Atte
 
 \end{algorithmic}
 \end{algorithm}
+
+
+
+\section{Experiments}
+\label{sec:exp}
+
+We conducted experiments to validate the effectiveness and efficiency of the proposed method, \textbf{LIQCA}.
+Section~\ref{sec:exp_datasets} introduces the public and private sewer datasets used in this study.
+Section~\ref{sec:exp_baselines} describes the baseline methods and the training hyperparameters for LIQCA.
+Section~\ref{sec:exp_metrics} presents the evaluation metrics used to assess both performance and efficiency.
+Section~\ref{sec:exp_comparison} compares LIQCA with the baselines under several experimental settings.
+Finally, Section~\ref{sec:exp_ablation} provides an ablation study to verify the contribution of the input-conditioned initial queries.
+
+\subsection{Datasets}
+\label{sec:exp_datasets}
+
+We conducted experiments on both public and private sewer datasets.
+
+\paragraph{Public dataset.}
+We use \textbf{Sewer-ML} as the public sewer dataset.
+Sewer-ML contains approximately 1.3 million sewer images annotated with defect codes by skilled sewer inspectors from three companies over nine years \citep{haurum2021sewer}.
+The original video resolutions in Sewer-ML vary widely and are primarily distributed across
+$350 \times 284$, $352 \times 288$, $466 \times 568$, $480 \times 576$, $720 \times 576$, and $768 \times 576$.
+
+Figure~\ref{fig:sewer_ml_samples} shows normal and abnormal examples from Sewer-ML.
+The dataset provides 18 defect types, and multiple defect codes may be assigned to a single image.
+For our experiments, we perform binary classification by labeling an image as \textit{Abnormal} if it contains at least one defect code; otherwise, it is labeled as \textit{Normal}.
+After this binarization and preprocessing, the resulting training and test splits are summarized in Table~\ref{tab:dataset_stats}.
+
+\paragraph{Private dataset.}
+We also collected a private sewer dataset from real sewer pipelines to evaluate LIQCA in practical deployment scenarios.
+As shown in Figure~\ref{fig:private_dataset_samples}, we captured images inside operational sewer pipes and annotated them as normal or abnormal.
+The image resolution of the private dataset is $1280 \times 720$.
+We split this dataset into training and test sets using an 8:2 ratio.
+Detailed statistics are provided in Table~\ref{tab:dataset_stats}.
+
+\begin{figure}[t!]
+    \centering
+    \subfloat[Normal\label{fig:img1}]{
+        \includegraphics[width=0.23\linewidth]{00603609.pdf}
+    }
+    \hfill
+    \subfloat[\centering Abnormal \\ (OB, FS, AF)\label{fig:img2}]{
+        \includegraphics[width=0.23\linewidth]{00507651.pdf}
+    }
+    \hfill
+    \subfloat[Abnormal \\ (AF)\label{fig:img3}]{
+        \includegraphics[width=0.23\linewidth]{01039052.pdf}
+    }
+    \hfill
+    \subfloat[Abnormal \\ (FS, BE)\label{fig:img4}]{
+        \includegraphics[width=0.23\linewidth]{00482857.pdf}
+    }
+    \caption{Samples from the Sewer-ML dataset.
+    (a) A normal sewer pipe.
+    (b)--(d) Abnormal sewer pipes containing defects with specific defect codes
+    (e.g., OB: surface damage, FS: displaced joint, AF: settled deposits, BE: attached deposits).}
+    \label{fig:sewer_ml_samples}
+\end{figure}
+
+\begin{figure}[t!]
+    \centering
+    \subfloat[Normal\label{fig:normal_private}]{
+        \includegraphics[width=0.48\linewidth]{12-1358.3-A.mp4_20190321144656.pdf}
+    }
+    \hfill
+    \subfloat[Abnormal \\ (DS)\label{fig:abnormal_private}]{
+        \includegraphics[width=0.48\linewidth]{62830.mp4_20250624093311_DS_.pdf}
+    }
+    \caption{Samples from the private sewer dataset.
+    (a) A normal sewer pipe.
+    (b) An abnormal sewer pipe containing settled deposits (DS).}
+    \label{fig:private_dataset_samples}
+\end{figure}
+
+\begin{table}[t]
+    \centering
+    \caption{Statistics of the Sewer-ML and private datasets used in this study.}
+    \label{tab:dataset_stats}
+    \begin{tabular}{llrrr}
+        \toprule
+        \textbf{Dataset} & \textbf{Class Type} & \textbf{Training} & \textbf{Test} & \textbf{Total} \\
+        \midrule
+        \multirow{3}{*}{Sewer-ML}
+        & Normal   & 552,820   & 68,681  & 621,501 \\
+        & Abnormal & 487,309   & 61,365  & 548,674 \\
+        \cmidrule(l){2-5}
+        & \textbf{Total} & \textbf{1,040,129} & \textbf{130,046} & \textbf{1,170,175} \\
+        \midrule
+        \multirow{3}{*}{Private}
+        & Normal   & 700   & 177  & 877 \\
+        & Abnormal & 653   & 162  & 815 \\
+        \cmidrule(l){2-5}
+        & \textbf{Total} & \textbf{1,353} & \textbf{339} & \textbf{1,692} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Baselines and Hyperparameters}
+\label{sec:exp_baselines}
+
+\subsection{Evaluation Metrics}
+\label{sec:exp_metrics}
+
+
+
+
+
+
+\subsection{Experiment Results}
+\label{sec:exp_comparison}
+
+\subsection{Ablation Study}
+\label{sec:exp_ablation}

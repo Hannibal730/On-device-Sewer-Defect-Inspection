@@ -6,6 +6,7 @@ import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from torchvision import transforms, datasets
+import re # re 모듈 임포트
 
 # =============================================================================
 # 1. 데이터셋 클래스 정의
@@ -65,7 +66,50 @@ class ImageFolderWithPaths(datasets.ImageFolder):
         original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
         # 파일 경로를 가져옵니다.
         path = self.imgs[index][0]
-        return (*original_tuple, os.path.basename(path))
+        
+        # [수정] 파일명에서 불필요한 문자열 제거
+        # 파일명에서 유니코드 이스케이프를 디코딩하고, 이전의 ' '로 시작하는 불필요한 접두사 제거 로직은 제거합니다.
+        # PC의 파일명과 일관성을 유지하기 위해 접두사를 제거하지 않습니다.
+        filename = _decode_unicode_escapes_in_filename(os.path.basename(path))
+        return (*original_tuple, filename)
+
+def _decode_unicode_escapes_in_filename(s):
+    """
+    #Uxxxx 형태의 유니코드 이스케이프 시퀀스를 실제 유니코드 문자로 디코딩합니다.
+    파일 이름 중간이나 여러 번 나타나는 경우를 처리합니다.
+    """
+    def replace_hex_escape(match):
+        hex_code = match.group(1)
+        try:
+            return chr(int(hex_code, 16))
+        except ValueError:
+            return match.group(0) # 유효하지 않은 16진수 코드인 경우 원본 반환
+    
+    return re.sub(r'#U([0-9a-fA-F]{4})', replace_hex_escape, s)
+
+class TransformedSubset(Dataset):
+    """특정 Subset에 transform을 적용하기 위한 래퍼 클래스입니다."""
+    def __init__(self, subset, transform=None):
+        self.subset = subset
+        self.transform = transform
+        # Subset의 classes와 class_to_idx 속성을 상속받아 DataLoader와의 호환성을 유지합니다.
+        if hasattr(subset.dataset, 'classes'):
+            self.classes = subset.dataset.classes
+        if hasattr(subset.dataset, 'class_to_idx'):
+            self.class_to_idx = subset.dataset.class_to_idx
+
+    def __getitem__(self, index):
+        # Subset에서 (PIL Image, label, filename)을 가져옵니다.
+        image, label, filename = self.subset[index]
+        
+        # transform을 적용합니다.
+        if self.transform:
+            image = self.transform(image)
+        
+        return image, label, filename
+
+    def __len__(self):
+        return len(self.subset)
 
 # =============================================================================
 # 2. 데이터 준비 함수
@@ -122,11 +166,18 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
         elif dataset_cfg.type == 'image_folder':
             logging.info(f"'{dataset_cfg.paths['img_folder']}' 경로에서 데이터를 불러와 훈련/테스트셋으로 분할합니다.")
             
-            # 훈련용(증강 포함)과 검증용(증강 없음) 데이터셋을 별도로 생성
-            dataset_for_train = ImageFolderWithPaths(root=dataset_cfg.paths['img_folder'], transform=train_transform)
-            dataset_for_valid_test = ImageFolderWithPaths(root=dataset_cfg.paths['img_folder'], transform=valid_test_transform)
+            # [수정] 데이터 분할의 일관성을 보장하기 위해, transform이 없는 단일 데이터셋을 먼저 생성합니다.
+            base_dataset = ImageFolderWithPaths(root=dataset_cfg.paths['img_folder'], transform=None) # transform=None
+            
+            # [최종 수정] 파일 경로를 직접 수정하지 않고, 정렬 시에만 정규화된 파일명을 사용합니다.
+            # 1. 파일명에 포함된 유니코드 이스케이프 시퀀스(#Uxxxx)를 실제 문자로 디코딩합니다.
+            # 2. 전체 경로가 아닌 파일명(basename)을 기준으로 정렬합니다.
+            # 이 두 가지를 통해 서로 다른 OS(Windows, Linux)에서도 동일한 파일 순서를 보장하여
+            # random_split이 항상 동일한 테스트셋을 생성하도록 합니다.
+            # 원본 파일 경로는 그대로 유지하여 파일 로딩 오류를 방지합니다.
+            base_dataset.imgs.sort(key=lambda item: _decode_unicode_escapes_in_filename(os.path.basename(item[0])))
 
-            num_total = len(dataset_for_train)
+            num_total = len(base_dataset)
             train_ratio = getattr(dataset_cfg, 'train_split_ratio', 0.8)
             num_train = int(num_total * train_ratio)
             num_test = num_total - num_train
@@ -135,16 +186,16 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             global_seed = getattr(run_cfg, 'global_seed', 42) # global_seed가 없으면 기본값 42 사용
             logging.info(f"총 {num_total}개 데이터를 훈련용 {num_train}개, 테스트용 {num_test}개로 분할합니다 (split_seed={global_seed}).")
 
-            # 재현성을 위해 고정된 시드로 데이터를 분할
+            # [수정] 단일 데이터셋을 기준으로 분할합니다.
             generator = torch.Generator().manual_seed(global_seed)
-            train_indices, test_indices = random_split(range(num_total), [num_train, num_test], generator=generator)
+            train_subset, test_subset = random_split(base_dataset, [num_train, num_test], generator=generator)
 
-            # 동일한 인덱스를 사용하여 각기 다른 transform을 가진 데이터셋의 Subset을 생성
-            full_train_dataset = Subset(dataset_for_train, train_indices)
-            full_test_dataset = Subset(dataset_for_valid_test, test_indices)
+            # [수정] 분할된 Subset에 각각 다른 transform을 적용하는 래퍼를 사용합니다.
+            full_train_dataset = TransformedSubset(train_subset, transform=train_transform)
+            full_test_dataset = TransformedSubset(test_subset, transform=valid_test_transform)
             full_valid_dataset = full_test_dataset # 검증셋은 테스트셋과 동일하게 사용
             
-            class_names = dataset_for_train.classes
+            class_names = base_dataset.classes
         else:
             raise ValueError(f"지원하지 않는 데이터셋 타입입니다: {dataset_cfg.type}")
 
@@ -177,10 +228,18 @@ def prepare_data(run_cfg, train_cfg, model_cfg):
             logging.info("BCE 손실 함수의 'pos_weight'를 자동 계산합니다.")
             labels = []
             
-            # full_train_dataset이 Subset 객체인지 확인합니다.
-            if isinstance(full_train_dataset, Subset):
-                original_dataset = full_train_dataset.dataset
-                indices = full_train_dataset.indices
+            # [수정] full_train_dataset이 Subset 또는 TransformedSubset 객체인지 확인합니다.
+            subset_to_process = None
+            if hasattr(full_train_dataset, 'subset') and isinstance(getattr(full_train_dataset, 'subset'), Subset):
+                # TransformedSubset의 경우
+                subset_to_process = full_train_dataset.subset
+            elif isinstance(full_train_dataset, Subset):
+                # 일반 Subset의 경우
+                subset_to_process = full_train_dataset
+
+            if subset_to_process:
+                original_dataset = subset_to_process.dataset
+                indices = subset_to_process.indices
             else: # Subset이 아니라면 (예: CustomImageDataset) 자기 자신을 원본으로 사용합니다.
                 original_dataset = full_train_dataset
                 indices = list(range(len(original_dataset)))
