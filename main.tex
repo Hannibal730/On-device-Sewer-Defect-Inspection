@@ -38,17 +38,10 @@
 %% The amssymb package provides various useful mathematical symbols
 % \usepackage{amssymb}
 % \usepackage[ruled,vlined]{algorithm2e}
-\usepackage{graphicx}
-\usepackage{algorithmic}
 \usepackage{algorithm}
-\input{math_commands}
-\usepackage{multirow}
-
-\usepackage{pifont}
-\newcommand{\xmark}{\ding{55}}%
-
-\renewcommand{\algorithmicrequire}{\textbf{Input:}}
-\renewcommand{\algorithmicensure}{\textbf{Output:}}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+\input{math_commands.tex}
 %% The amsthm package provides extended theorem environments
 %% \usepackage{amsthm}
 
@@ -56,8 +49,12 @@
 %% \begin{linenumbers}, end it with \end{linenumbers}. Or switch it on
 %% for the whole article with \linenumbers.
 %% \usepackage{lineno}
-
+\usepackage{wrapfig}  % 텍스트가 감싸는 표/그림을 만들기 위해 필수
+\usepackage{graphicx} % resizebox를 위해 필요
+\usepackage{booktabs}
+\usepackage{multirow}
 \usepackage[utf8]{inputenc}
+\usepackage{soul}
 \usepackage{verbatim}
 \usepackage[USenglish, nodayofweek]{datetime}
 \usepackage{url}
@@ -75,6 +72,7 @@
 \usepackage{geometry}
 \usepackage{pdflscape}
 \usepackage{afterpage}
+\usepackage[table]{xcolor}
 \hypersetup{colorlinks = true, linkcolor = blue, anchorcolor =red, citecolor = blue, filecolor = red, urlcolor = red, pdfauthor=author}
 
 \journal{Engineering Applications of Artificial Intelligence}
@@ -108,129 +106,129 @@
 %%            country={}}
 %% \fntext[label3]{}
 
-\title{Low Cost Sewer Defect Diagnosis Transformer for On-Device Processing}
+%\title{On-Device Friendly Sewer Defect Inspection via Query-conditioned Cross-Attention Model}
+\title{LIQCA: Lightweight Input-conditioned Query Cross-Attention for On-device Defect Diagnosis}
 %% use optional labels to link authors explicitly to addresses:
-% \author[a]{Dongbin Kim}
-% \affiliation[a]{organization={Department of Industrial Engineering, Seoul National University},
-%             addressline={Gwanakro 1},
-%             city={Seoul},
-%             country={Korea}}
 
-% \author[a]{Jaewook Lee}            
-
-% \author[b]{Hoki Kim\corref{cor1}}
-% \cortext[cor1]{corresponding author}
-% \ead{hokikim@cau.ac.kr}
-% \affiliation[b]{organization={Department of Industrial Security, Chung-Ang University},
-%             addressline={84, Heukseok-ro},
-%             city={Seoul},
-%             country={Korea}}
-
-\author{Anonymous}
-% \affiliation[a]{organization={Anonymous},
-%             addressline={ },
-%             city={ },
-%             country={ }}
-
-
+\begin{highlights}
+%\item
+%\item 
+%\item 
+%\item 
+\end{highlights}
+\author[b]{Deaseung Choi}
+\author[a]{Mincheol Kim}
+\author[a]{Jaeseong Kim}
+\author[a]{Hoki Kim\corref{cor1}}
+\cortext[cor1]{corresponding author}
+\ead{hokikim@cau.ac.kr}
+\affiliation[a]{organization={Chung-Ang University},
+            addressline={06974, 84 Heukseok-ro},
+            city={Seoul},
+            country={Republic of Korea}}
             
+\affiliation[b]{organization={Konkuk University},
+            addressline={05030, 120-1 Neungdong-ro}, 
+            city={Seoul},
+            country={Republic of Korea}}
+
 \begin{abstract}
-%% Text of abstract
-
-% Here is the first paragraph in Introduction,
-% “Sewer maintenance is an important issue for the city infrastructure, because undetected sewer defect can cause the urban problems like sinkhole, city flooding and pollution. To prevent these urban problems, sewer experts diagnose sewer system by their eyes, watching the real time images that is given by remote robots. (1)
-% However, Dirksen et al. found that human cognitive ability failed to classify the 25% of the sewer defect from German, Netherland, France, Austria sewer datasets. (2)
-% For this reason, automated sewer diagnosis system, using deep learning also developed actively to reduce human biases, and to save city infrastructure cost.
-% Traditional AI models depends on high performance server and cloud computing resources. (3). But Edge Intelligence deploying AI algorithms to edge-device can reduce the dependency of cloud system reduced and make the local processing more faster. (4)
-% However, there are limits for real time processing and automated diagnosis because of its lack of on-device computing resources. (5)
-
-% In this paper, we propose new model to solve this problem.
-% New model is a lightweight classification model designed to diagnose the sewer defect on On-device.
-% This model divides input images into patches and extracts features from each patch. In this stage, the model shares convolutional weight with all patches to enlarge the efficiency of parameter size.
-% And in decoder stage, we use cross -attention mechanism instead of self-attention to reduce the computational cost.
-% Also, we set the decoder’s query as few learnable parameters to improve the performance of decoder, by actively adapting the individual input image's features.
-% Our models can be the effective solution for the automated sewer defect diagnosis system.” 
-% Please correct and revise it.
-\begin{comment}
-Sewer maintenance is critical to urban infrastructure: undetected defects can trigger sinkholes, flooding, and environmental contamination. Current practice relies on experts who visually inspect real-time video captured by remotely operated robots \citep{HAURUM2020103061}. However, \citet{Dirksen01032013}. reported that human inspectors missed or misclassified about 25\% of defects in datasets from Germany, the Netherlands, France, and Austria. To mitigate such errors and reduce maintenance costs, deep-learning–based automated inspection systems have been actively explored, yet many approaches assume access to high-performance servers or cloud resources \citep{sijingundefined}. Edge intelligence—deploying models on edge devices—reduces reliance on the cloud and enables low-latency local processing \citep{zhou2019edge}. But tight compute and memory budgets still hinder real-time inference and fully automated diagnosis \citep{10.1145/3486618}.
-
-In this paper, we introduce a lightweight on-device classifier for sewer-defect diagnosis. The model partitions each image into patches and applies a shared convolutional encoder across all patches, amortizing parameters and improving efficiency. The decoder replaces self-attention with cross-attention to cut computational cost, and it operates on a small set of learnable queries that adapt to each input image, improving accuracy with minimal overhead. This architecture satisfies edge-device constraints while maintaining strong performance, making it a practical component for automated sewer inspection systems.
-\end{comment}
+Bearing fault diagnosis plays a central role in industrial monitoring systems by enabling early detection of mechanical failures and minimizing downtime. Recently, deep learning models have demonstrated strong performance in classifying fault types across various domains. In practical industrial applications, certain training data may occasionally need to be removed due to organizational changes, privacy regulations, contractual obligations, or data quality issues. To address this challenge, machine unlearning has attracted increasing attention; however, prior work rarely investigates machine unlearning specifically in the context of bearing fault diagnosis. In this paper, we thoroughly analyze existing unlearning methods for fault diagnosis systems and reveal that they perform poorly on time-series vibration data typical of bearing faults. To overcome this limitation, we propose a novel unlearning method for bearing fault diagnosis, Soft-directed Embedding Unlearning (SEU), which directly manipulates the embedding space by pushing forget samples away from original class clusters while preserving the structure of retain samples using soft examples near decision boundaries. Using a manifold similarity measure, we quantify the angular separation between forget and retain samples and show that SEU achieves a stable and effective approximation of the ideal manifold structure. Comprehensive experiments on both public data and private data collected from our own bearing machines demonstrate that SEU enables more effective machine unlearning compared to existing baselines.
 \end{abstract}
 
+\begin{keyword}
 
-%\begin{keyword}
-%Rotating machinery \sep Fault diagnosis \sep  On-device\sep Periodicity \sep Patch representation
-%\end{keyword}
+Bearing fault diagnosis system \sep Machine unlearning \sep Embedding learning
+
+\end{keyword}
 
 \end{frontmatter}
 
-% \linenumbers
-
 \section{Introduction}
-\label{sec:introduction}
+\label{sec:intro}
 
-\begin{comment}
-Sewer maintenance is very important task for public safety. Because undetected sewer defects can cause urban failures like sinkholes, contamination of groundwater and soil leading public health risks (1).
-However, 2025 American Society of Civil Engineers (ASCE) infrastructure report card (2) gave a grade of D+ to the wastewater infrastructure in the United States. 
-According to the report, the number of failures per 100 miles of pipe was hovered around 2 since 2017, however it increased to 3.3 in 2021. And it also cited that the cost of upgrading or replacing parts is becoming more expensive.
-Therefore, regular inspection of sewage networks is very crucial for urban safety.
-\end{comment}
+% civil infrastructure 소개
+Civil infrastructure is essential public utilities that support modern society and improve our quality of life \citep{fu2025optimizing}. Although these systems deliver long-term service, their performance inevitably degrades with age and continuous operation. This motivates the need for structural health monitoring (SHM) systems, such as detecting damage and ensuring operational reliability \citep{cha2024deep}.
 
-Sewer maintenance is a critical task for ensuring public safety, as undetected sewer defects can lead to urban failures such as sinkholes and contamination of groundwater and soil, which in turn pose serious public health risks \citep{YANG2026107027}. Despite its importance, the infrastructure report card published by the American Society of Civil Engineers assigned a grade of D+ to the wastewater infrastructure in the United States \citep{ASCE2025Infrastructure}. According to this report, the number of failures per 100 miles of pipe hovered around 2 from 2017 onward but increased to 3.3 in 2021, and the cost of upgrading or replacing aging components continues to rise. These trends highlight that regular inspection of sewer networks is crucial for maintaining urban safety.
+Recent progress in deep learning has further accelerated the development of smart \citep{fu2025optimizing, malekloo2022machine, hsieh2020machine}. Numerous studies have demonstrated that deep learning substantially enhances the accuracy in SHM \citep{malekloo2022machine, qiu2023real}. Comprehensive reviews \citep{dong2021review, hsieh2020machine, panella2022semantic} have highlighted these advancements; for example, quantitative evaluation frameworks have shown that deep learning–based crack analysis outperforms traditional image-processing and classical machine-learning approaches.
 
-To diagnose the condition of sewer systems, remotely operated robots are used to record the interior of sewer pipes, and domain experts then inspect the recorded images \citep{NGUYEN2025106479}. This manual inspection process is time-consuming and labor-intensive \citep{WANG2021103840}. Moreover, \citet{Dirksen01032013} reported that human inspectors failed to correctly classify approximately 25\% of sewer defects in datasets from Germany, the Netherlands, France, and Austria. To address these limitations, previous studies have proposed sewer defect detection systems based on conventional machine-learning techniques \citep{doi:10.1061/(ASCE)1076-0342(1999)5:2(69)}. More recently, \citet{KUMAR2018273} proposed a deep learning based sewer defect detection system, and with the rapid progress of deep learning, such methods are now being actively investigated \citep{NASHAT2025295}.
+% sewer 중요
+Among various civil infrastructures, sewer systems are particularly critical because they support essential water and sanitation functions to civil \citep{jo2022sewerage, haurum2021sewer}. Similar to other civil infrastructures, sewer networks require periodic inspection and maintenance since they can have defects such as cracks, joint displacements, root intrusions, and structural deformation over time, which leads to the requirement of SHM. Early detection of these defects is crucial for preventing failures and ensuring safe, continuous operation.
+Therefore, sewer maintenance is a critical task for ensuring public safety, as undetected sewer defects can lead to urban failures such as sinkholes and contamination of groundwater and soil, which in turn pose serious public health risks \citep{yang2026structural}. 
 
-Despite these advances, deep learning–based approaches typically require substantial computational resources, memory, and power to process complex inspection tasks \citep{9985008}. Consequently, deploying sewer defect detection models on edge or embedded devices equipped with low-performance GPUs is challenging \citep{9904106}. To address this limitation, we propose a lightweight sewer defect diagnosis model for on-device deployment that employs a shared-weights cross-attention mechanism.
+To diagnose the condition of sewer systems, remotely operated robots are used to record the interior of sewer pipes, and domain experts then inspect the recorded images \citep{nguyen2025sewer}. This manual inspection process is time-consuming and labor-intensive \citep{wang2021towards}. Moreover, \citet{dirksen2013consistency} reported that human inspectors failed to correctly classify approximately 25\% of sewer defects in datasets from Germany, the Netherlands, France, and Austria. To address these limitations, previous studies have proposed sewer defect detection systems based on conventional machine-learning techniques \citep{makar1999diagnostic}. More recently, \citet{kumar2018automated} proposed a deep learning based sewer defect detection system, and with the rapid progress of deep learning, such methods are now being actively investigated \citep{nashat2025hybrid}.
 
-Our architecture is inspired by CATS \citep{10.5555/3737916.3741543}, which improves model efficiency by removing self-attention, leveraging cross-attention, and sharing parameters
+Despite recent progress, deep learning–based inspection systems still demand substantial computational resources, memory, and power to process complex sewer-assessment tasks \citep{shuvo2022efficient}. These constraints are particularly problematic in sewer infrastructure, where inspection robots operate in harsh, confined environments with limited access to high-speed communication. The 2025 Infrastructure Report Card released by the American Society of Civil Engineers assigned a grade of D+ to the U.S. wastewater system. Specifically, failures per 100 miles of pipe remained stable at roughly 2 from 2017 onward but surged to 3.3 in 2021, while the costs associated with repairing or replacing aging pipelines continue to increase.
 
+\begin{wrapfigure}{l}{0.7\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{intro.pdf}
+    \caption{Challenges in deploying heavy, high-performance models in resource-constrained environments.}
+    \label{fig:intro}
+\end{wrapfigure}
 
+In such resource-limited environments, deploying sewer defect detection models on edge or embedded devices equipped with low-performance resources remains highly challenging \citep{ma2022training}. Therefore, in this paper, we propose an on-device friendly sewer defect inspection framework that enables efficient inference under stringent computational budgets. Specifically, we propose the Lightweight Input-conditioned Query Cross-Attention Model (LIQCA), a cross-attention-based architecture designed for efficient and reliable on-device sewer defect inspection. To enable deployment on resource-constrained edge platforms, LIQCA adopts a lightweight patch-wise encoder that substantially reduces spatial redundancy while preserving critical structural relationships. A compact memory query mechanism conditions the cross-attention layers, allowing the model to selectively retrieve salient defect-related features without relying on computationally expensive self-attention. This design yields a highly efficient yet discriminative representation, making LIQCA well suited for real-time, on-device sewer inspection applications.
 
+This paper is organized as follows. Section~\ref{sec:related} reviews prior work on sewer defect inspection and architectures. Section~\ref{sec:method} motivates the need for efficient on-device inspection systems and introduces the proposed Lightweight Input-conditioned Query Cross-Attention Model (LIQCA) in detail, including the patch-wise encoder and memory-query mechanism. Section~\ref{sec:exp} presents the experimental results. We evaluate LIQCA using both (i) public sewer inspection datasets and (ii) a newly gathered practical private dataset collected from real sewer pipelines to accurately reflect practical deployment scenarios. The proposed model consistently outperforms existing lightweight baselines while maintaining strict computational budgets suitable for edge devices. We further analyze the model through ablation studies, qualitative defect localization, and latency–accuracy trade-off evaluations. Finally, Section~\ref{sec:con} concludes the paper and discusses potential directions for future on-device inspection research.
 
+Our main contributions are as follows:
+\begin{itemize}
+\item We identify the reliance on computationally heavy components in existing sewer defect inspection models and show that such complexity limits their practicality for deployment on edge platforms.
 
+\item We propose the \textbf{Lightweight Input-conditioned Query Cross-Attention Model (LIQCA)}, a new architecture that integrates a memory-driven query mechanism with a shared visual encoder, enabling efficient yet highly discriminative feature extraction for sewer defect inspection.
 
+\item We establish a new dataset collected from real operational sewer environments. Furthermore, we demonstrate that LIQCA achieves competitive accuracy while substantially reducing FLOPs, latency, and memory usage, outperforming existing lightweight baselines on both public sewer inspection datasets and self-collected sewer datasets.
 
-
-
+\end{itemize}
 
 \section{Related Work}
-\label{sec:rel}
+\label{sec:related}
+\subsection{Sewer Defect Inspection in Civil Infrastructure}
 
-% perceiver IO처럼 디코더의 쿼리 사이즈를 지정해두고 어텐션하여 모델 사이즈를 줄이는 방식 인용 필요
+As sewer systems age, deterioration of sewer pipes can occur, potentially leading to urban infrastructure failures such as sinkholes and flooding \citep{yang2026structural, yusuf2024deep}. Sewer defects can also cause serious public health problems, including contamination of drinking water and the spread of waterborne diseases \citep{nguyen2025sewer, myrans2018automated}. To address these issues, regular maintenance of sewer systems is essential to prevent hazardous and costly failures \citep{hassan2019underground, wang2022monitoring}.
 
-\subsection{Sewer Defect Diagnosis}
-\subsection{Diagnosis Model Architecture}
-%  machine learning deep learning
-\subsection{On-device System}
-.
+Traditionally, human inspectors entered sewer systems and manually inspected the interior to detect defects; however, this approach is dangerous, time-consuming, and costly \citep{nguyen2025sewer}. Currently, closed-circuit television (CCTV) is commonly used to inspect the interior of sewers and to prevent structural issues \citep{wirahadikusumah1998assessment, wang2022monitoring}. In particular, with advances in robotics, manually controlled CCTV robots have been adopted to investigate sewer systems more safely \citep{seet2018design, jang2022review, kolvenbach2020towards}. On-site operators deploy the robot into the sewer pipes and control it to record the pipe interior, after which off-site inspectors review the recorded CCTV videos to detect defects \citep{yin2021automation, john2022pipe}. Nevertheless, even skilled inspectors often misclassify defect images due to human biases \citep{dirksen2013consistency, yang2024weakly, iyer2005robust}. Considering the effort and time required to review entire videos, automated sewer defect detection systems are highly desirable \citep{wang2021towards, guo2009automated}.
 
+Recently, advances in deep learning for computer vision have led to active development of deep learning–based methods for sewer condition diagnosis \citep{nashat2025hybrid}. \citet{cheng2018automated} utilized Faster R-CNN to detect roots, cracks, infiltration, and deposits in sewer CCTV images. \citet{kumar2018automated} adopted a deep CNN to classify sewer defects such as root intrusion, deposits, and cracks. \citet{yin2020deep} used YOLOv3 as an object detector to detect sewer defects (i.e., broken pipes, holes, deposits, cracks, fractures, and roots). \citet{li2019sewer} introduced a hierarchical classification method based on ResNet-18 to address imbalanced datasets, where a high-level task detects defect images and a low-level task estimates the probabilities of each defect class. \citet{moradi2020automated} employed a support vector machine (SVM) together with maximally stable extremal regions (MSER) to detect sewer defects. \citet{xie2019automatic} proposed a two-level hierarchical deep CNN for both binary and multiclass classification, where the first level performs binary classification and the second level performs multiclass defect classification.
+
+Research on developing sewer defect datasets has also been conducted. Sewer-ML is a benchmark sewer defect dataset consisting of 1.3 million sewer images. \citet{xie2019automatic} achieved the highest F1-score of 90.62\% for the normal class on the Sewer-ML dataset, demonstrating the strong performance of the proposed binary classifier \citep{haurum2021sewer}. Although these approaches have improved the performance of defect classification, existing CNN architectures for sewer inspection typically contain a large number of parameters and therefore require substantial computational resources and inference time \citep{wang2025classification, yang2021attention}. Thus, there is a need to develop models for sewer diagnosis that achieve lower computational cost while further improving performance, making them suitable for automatic real-time diagnosis system of sewer pipelines \citep{lu2025real}.
+
+\subsection{Deep Learning Architectures and On-device Adaptation}
+
+It is essential to regularly assess the condition of civil structures to prevent catastrophic urban failures \citep{koch2015review}. With advances in deep learning, CNN-based approaches have been widely adopted to inspect and monitor defects in civil infrastructure, often outperforming traditional image-processing techniques such as Canny and Sobel edge detection \citep{cha2017deep}. Deep learning-based structural health monitoring (SHM) can reduce human labor and cost while enabling automated inspection systems that improve the safety of civil structures \citep{zaurin2009integration, spencer2019advances}. However, deep learning inference typically requires substantial computational resources; relying on cloud computing to meet these demands can introduce high latency \citep{chen2019deep}. Consequently, edge intelligence—performing inference on edge devices immediately after data are collected—has become increasingly important in domains that generate large volumes of visual data \citep{zhou2019edge, deng2020edge}. In recent years, significant research effort has focused on deploying real-time deep learning vision modules on edge devices \citep{ananthanarayanan2017real, zhang2017live}. Yet, running deep neural networks on embedded platforms remains challenging due to model complexity, intensive computation, and high memory consumption \citep{han2015deep, jacob2018quantization, wang2020convergence}.
+
+To address the large parameter and compute footprint of DNNs, lightweight backbones designed for mobile and edge deployment have emerged. MobileNet leverages depthwise separable convolutions to reduce computational cost \citep{howard2017mobilenets}. By factorizing a standard convolution into a depthwise convolution for spatial filtering and a pointwise convolution for channel-wise feature combination, MobileNet substantially reduces both parameter count and floating-point operations (FLOPs). EfficientNet focuses on principled model scaling rather than only introducing new architectural blocks \citep{tan2019efficientnet}. Specifically, it proposes compound scaling that uniformly adjusts network width, depth, and input resolution with a fixed coefficient, achieving an improved balance between accuracy and efficiency under resource constraints.
+
+%Beyond architectural design, model compression methods have also been actively studied. Unstructured pruning reduces model size by removing individual weights with small magnitudes, which yields sparse weight matrices but often fails to provide practical speedups on standard GPUs due to irregular memory access patterns \citep{han2015deep}. To mitigate this limitation, structured pruning removes entire filters—commonly based on L1-norm criteria—thereby preserving dense computation and enabling acceleration on general-purpose hardware without specialized implementations \citep{filters2016pruning}. However, norm-based criteria can be limited when filters with small norms nonetheless contribute meaningfully to performance. Filter Pruning via Geometric Median (FPGM) addresses this issue by identifying redundant filters based on geometric relationships rather than magnitude alone \citep{he2019filter}. Quantization further reduces latency and memory usage by lowering numerical precision from floating-point to low-bit integers (e.g., INT8), which is especially beneficial for inference on edge devices \citep{jacob2018quantization}. Together, structured pruning and quantization can substantially reduce model size and inference cost, making real-time on-device deployment more feasible in resource-constrained settings \citep{choudhary2020comprehensive, deng2020model}.
+
+Beyond architectural design, model compression methods have also been actively studied. Knowledge distillation, for instance, compresses models by training a compact student network to mimic the behavior of a larger teacher network \citep{hinton2015distilling}. Unstructured pruning reduces model size by removing individual weights with small magnitudes, which yields sparse weight matrices but often fails to provide practical speedups on standard GPUs due to irregular memory access patterns \citep{han2015deep}. To mitigate this limitation, structured pruning removes entire filters—commonly based on L1-norm criteria—thereby preserving dense computation and enabling acceleration on general-purpose hardware without specialized implementations \citep{filters2016pruning}. Pruning can substantially reduce model size and inference cost, making real-time on-device deployment more feasible in resource-constrained settings \citep{choudhary2020comprehensive, deng2020model}.
+
+Despite these advances, compressing models still involves an accuracy–efficiency trade-off \citep{tan2019efficientnet, gao2025cloud}. Compressed models may also exhibit reduced robustness to noise and rare samples \citep{hooker2020compressed}. In practical SHM scenarios, a major challenge is the distribution shift between training data collected in controlled environments and test data acquired in the field \citep{torralba2011unbiased}. As a result, deploying models trained on clean laboratory datasets directly to edge devices can lead to significant performance degradation. A straightforward approach is to transfer newly collected real-world data to high-performance servers for retraining. However, the large volumes of data generated on edge devices can substantially increase energy consumption and impose heavy bandwidth demands \citep{shi2016edge}.
+
+%These issues are further exacerbated in underground infrastructure monitoring (e.g., sewer systems), where wireless communication is unreliable because electromagnetic waves experience high attenuation and complex reflection, refraction, and scattering due to the surrounding ground and unpredictable obstacles such as rocks and tree roots \citep{akyildiz2009signal}.
+
+On-device AI for SHM can help alleviate latency, bandwidth, and network instability that limit cloud-based monitoring approaches \citep{qiu2025trends}. For example, CR-YOLO enables real-time detection of hazardous bridge surface cracks on an NVIDIA Jetson Xavier NX and demonstrates strong speed and accuracy on both public and self-collected datasets \citep{zhang2022automated}. A YOLOv2-based model has also been deployed on an AMD Zynq-7000 SoC for rail fastener inspection, achieving 24 FPS and indicating suitability for real-time edge deployment \citep{xiao2023real, redmon2017yolo9000}. Lite-V2, a lightweight CNN for crack detection and surface-type prediction, has been implemented on low-cost Raspberry Pi platforms and achieves an F1-score of 0.93 with only 0.28M parameters on an open-source concrete crack dataset \citep{zhang2023edge, raza2025efficient}. Collectively, these studies highlight the potential of deep learning-enabled SHM systems to support automated, real-time inspection of civil infrastructure directly on edge devices.
 
 \section{Methodology}
 \label{sec:method}
 \subsection{Motivation}
 
-Vision Transformer (ViT) models have recently demonstrated strong performance on a wide range of computer vision tasks. These models typically divide an input image into patches and apply self-attention to model interactions among patch tokens. However, the computational complexity of self-attention scales quadratically with the number of patches. This quadratic cost becomes a major bottleneck when deploying models in on-device environments and embedded autonomous systems with limited computing resources \citep{papa2024survey, li2022efficientformer, mehta2021mobilevit}.
+Vision Transformer (ViT) models and their variants have recently demonstrated strong performance across a wide range of computer vision tasks. These methods rely on a patching mechanism that divides an input image into patches and applies self-attention to model interactions among patches \citep{dosovitskiy2020image}.
+Despite their effectiveness, ViT-based approaches often incur high computational cost because self-attention scales quadratically with the number of input patches.
+This quadratic complexity becomes a major obstacle for deployment in on-device environments and embedded autonomous systems with limited compute resources.
+Moreover, the large memory footprint required to store attention maps exacerbates memory access overhead, which can severely degrade real-time inference speed \citep{papa2024survey, li2022efficientformer, mehta2021mobilevit}.
 
-To address this limitation, we propose \textbf{LIQCA}, a \textbf{L}ightweight \textbf{I}nput-conditioned \textbf{Q}uery \textbf{C}ross-\textbf{A}ttention model. LIQCA is designed to be extremely lightweight for resource-constrained devices by replacing self-attention entirely with cross-attention. Our approach is inspired by prior works such as Perceiver, which introduces a small set of latent queries that interact with input tokens via cross-attention, reducing complexity to be linear in the number of input tokens \citep{jaegle2021perceiver}. In addition, using a fixed number of learnable queries to summarize visual features has been shown to improve computational efficiency while retaining essential information \citep{carion2020end}. We adopt these ideas to remove costly self-attention among patch features and enable a small number of learnable queries to summarize global image information efficiently through cross-attention.
+To address these constraints, we propose \textbf{LIQCA} (\textbf{L}ightweight \textbf{I}nput-conditioned \textbf{Q}uery \textbf{C}ross-\textbf{A}ttention).
+LIQCA is designed as an extremely lightweight architecture for resource-constrained devices by replacing the entire self-attention mechanism with cross-attention.
+Our design is motivated by prior works such as Perceiver, which introduces a small set of latent queries that interact with input tokens via cross-attention, reducing the attention complexity to be linear in the number of input tokens when the number of queries is fixed \citep{jaegle2021perceiver}.
+Specifically, while standard self-attention requires $O(N^2)$ complexity for $N$ patches, our cross-attention mechanism with a small number of queries $N_q$ reduces this to $O(N \cdot N_q)$.
+In addition, using a predefined number of learnable queries—an idea inspired by DETR—has been shown to effectively summarize visual features while improving computational efficiency \citep{carion2020end}.
+Building on these insights, LIQCA eliminates costly self-attention among patch features and enables a small set of learnable queries to efficiently summarize global image information through cross-attention.
 
-LIQCA consists of three main modules: (i) a lightweight CNN-based patch encoder, (ii) a cross-attention-based decoder, and (iii) a final classifier. This design achieves low computational cost and a small parameter count, making it well-suited for on-device deployment.
+LIQCA consists of three main modules: (1) a CNN-based patch encoder, (2) a lightweight cross-attention-based decoder, and (3) a final classifier.
+As a result, LIQCA achieves low computational cost with a small parameter count, making it well-suited for on-device inference.
 
-\subsection{Patch Convolutional Encoder}
-
-The encoder consists of three stages: image patching, feature extraction, and patch mixing. First, the input image is divided into non-overlapping patches. A lightweight CNN feature extractor is then applied to each patch with shared weights to maximize parameter efficiency. The feature map extracted from each patch is compressed into a patch feature using average pooling.
-
-Next, the sequence of patch features is reshaped into a 2D grid, and a depth-wise convolution is applied to integrate local information across neighboring patches. This enables each patch feature to interact with surrounding context at minimal computational cost. This design is motivated by ConvMixer and ConvNeXt, which show that depth-wise convolution can effectively mix spatial context across patches or feature maps \citep{trockman2022patches, liu2022convnet}. The mixed patch features are then flattened back into a 1D sequence as the encoder output, which is used as the keys and values for the decoder.
-
-\subsection{Lightweight Cross-Attention Decoder}
-
-The decoder aims to extract and refine information required for classification from the mixed patch features. Keys and values are obtained by projecting the encoder output to the model embedding dimension and adding positional encoding. We use fixed 2D sinusoidal positional encoding, whose effectiveness has been demonstrated in the Masked Autoencoders (MAE) study \citep{he2022masked}. This encoding provides explicit 2D spatial information without learnable parameters, helping the model capture spatial relationships among patches.
-
-To construct input-conditioned initial queries, we perform cross-attention between a small set of learnable queries and the encoder output. The resulting outputs serve as the initial queries for the decoder, rather than using fixed latent queries. For parameter efficiency, this initialization step employs a single shared projection layer to generate queries, keys, and values. Conceptually, the learnable queries act as questions that adaptively select informative image features during training \citep{jaegle2021perceiver}. By summarizing each input image into a compact set of informative queries before the decoder layers, LIQCA can refine salient features efficiently without requiring additional decoder depth.
-
-The decoder contains $L$ identical layers, each comprising Multi-Head Cross-Attention (MHCA) and a Feed-Forward Network (FFN). Residual connections and Layer Normalization are applied after each sub-layer. Unlike the shared-projection initialization stage, each MHCA layer learns its own independent projection matrices $(W_Q^i, W_K^i, W_V^i)$. The FFN is a two-layer MLP with the GEGLU activation function, which has been shown to improve performance compared to standard ReLU-based FFNs \citep{shazeer2020glu}. The output of the final decoder layer is passed to a lightweight MLP classifier to produce the final class logits.
-
-\begin{algorithm}[H]
+\begin{algorithm}[!h]
 \caption{Proposed Method}
 \label{alg:main}
 \begin{algorithmic}[1]
@@ -242,8 +240,8 @@ The decoder contains $L$ identical layers, each comprising Multi-Head Cross-Atte
 
 \Statex
 \Statex \textbf{1. Patch Convolutional Encoder}
-\State Extract patches $\mathcal{P} = {P_1, \dots, P_N}$ from $I$ with kernel $p$ and stride $s$
-\State $F_{\text{patch}} \leftarrow \text{AvgPool}(\text{CNN}{\theta}(\mathcal{P})) \in \mathbb{R}^{B \times N \times D{\text{feat}} \times 1 \times 1}$ \Comment{Shared CNN over patches}
+\State Extract patches $\mathcal{P} = \{P_1, \dots, P_N\}$ from $I$ with kernel $p$ and stride $s$
+\State $F_{\text{patch}} \leftarrow \text{AvgPool}(\text{CNN}_{\theta}(\mathcal{P})) \in \mathbb{R}^{B \times N \times D_{\text{feat}} \times 1 \times 1}$ \Comment{Shared CNN over patches}
 \State $F_{\text{grid}} \leftarrow \text{Rearrange}(F_{\text{patch}}) \in \mathbb{R}^{B \times D_{\text{feat}} \times H_p \times W_p}$
 \State $F_{\text{mixed}} \leftarrow \text{DWConv}(F_{\text{grid}}) \in \mathbb{R}^{B \times D_{\text{feat}} \times H_p \times W_p}$ \Comment{Local patch mixing}
 \State $X_{\text{enc}} \leftarrow \text{LN}(\text{Rearrange}(F_{\text{mixed}})) \in \mathbb{R}^{B \times N \times D_{\text{feat}}}$ \Comment{Encoder output}
@@ -265,13 +263,106 @@ The decoder contains $L$ identical layers, each comprising Multi-Head Cross-Atte
 \Statex
 \Statex \textbf{4. Classification Head}
 \State $Z \leftarrow \text{Linear}(Q^{(L)}) \in \mathbb{R}^{B \times N_q \times D_{\text{feat}}}$
-\State $Y \leftarrow \text{MLP}{\text{cls}}(Z) \in \mathbb{R}^{B \times N{\text{cls}}}$
+\State $Y \leftarrow \text{MLP}_{\text{cls}}(Z) \in \mathbb{R}^{B \times N_{\text{cls}}}$
 \State \Return $Y$
 
 \end{algorithmic}
 \end{algorithm}
 
+\subsection{Patch Convolutional Encoder}
+The encoder comprises three processes: image patching, feature extraction, and patch mixing.
+The input image is divided into non-overlapping patches.
+Then, a lightweight CNN feature extractor, constructed from the initial layers of EfficientNet-B0 \citep{tan2019efficientnet}, is applied to each patch using shared weights to maximize parameter efficiency. 
+This extractor leverages Mobile Inverted Bottleneck Convolution (MBConv) blocks, which significantly reduce computational cost while preserving representational capacity by utilizing depthwise separable convolutions combined with inverted residual connections \citep{sandler2018mobilenetv2}.
 
+The feature map extracted from each patch is compressed into a patch-level representation via average pooling.
+Next, the sequence of patch features is reshaped into a 2D grid, and a depthwise convolution is applied to combine local information across neighboring patches.
+This operation enables each patch feature to incorporate surrounding context with minimal computational overhead.
+Our design is motivated by ConvMixer and ConvNeXt, which demonstrate that depthwise convolution can effectively mix spatial context across patches or feature maps \citep{trockman2022patches, liu2022convnet}.
+Finally, the mixed features are flattened back into a 1D sequence.
+This encoder output is used as the Key and Value inputs for the decoder.
+
+\subsection{Lightweight Cross-Attention Decoder}
+The decoder is designed to extract and refine the information required for classification from the mixed patch features.
+The Key and Value are obtained by projecting the encoder output to the model embedding dimension and then adding positional encodings.
+We adopt fixed 2D sinusoidal positional encodings, as validated in Masked Autoencoders (MAE) \citep{he2022masked}.
+This approach provides explicit 2D spatial information for each patch without introducing additional learnable parameters, helping the model capture spatial relationships among patches.
+
+To construct informative initial queries, we perform an input-conditioned query initialization step.
+Learnable queries first attend to the encoder output via cross-attention, producing instance-specific queries rather than using static learnable queries.
+To improve parameter efficiency, this initialization uses a single shared projection layer to generate queries, keys, and values.
+Intuitively, the learnable queries act as questions that determine which image features (Keys) should receive higher weights during training \citep{jaegle2021perceiver}.
+In LIQCA, a small number of learnable queries interact with each input instance before entering the decoder layers, enabling them to compactly summarize the image.
+These informative, input-conditioned queries allow the decoder to refine salient features more effectively without requiring deeper stacks of layers.
+Unlike static learnable queries that primarily capture dataset-level priors, this strategy enables queries to adapt to the characteristics of each instance, which can facilitate faster convergence and improved feature extraction.
+
+\begin{table}[t]
+\centering
+\caption{Detailed breakdown of trainable parameters in our proposed architecture.}
+\label{tab:param_breakdown}
+\begin{tabular}{lr}
+\toprule
+\textbf{Component} & \textbf{Parameters} \\
+\midrule
+\addlinespace[0.5em] % [헤더 아래 여백 추가] 본문과 살짝 떨어뜨림
+
+\textbf{Encoder (PatchConvEncoder)} & \textbf{19,402} \\
+\quad CNN Backbone (EfficientNet-B0 based) & 19,090 \\
+\quad Patch Mixer (Depthwise Conv) & 264 \\
+\quad Normalization (LayerNorm) & 48 \\
+\addlinespace % [섹션 간 여백] 가독성을 위해 추가 (선택 사항)
+
+\textbf{Decoder (Cross-Attention-based)} & \textbf{9,816} \\
+\quad Embedding Layer ($W_{\text{emb}}$) & 600 \\
+\quad Learnable Queries ($N_q=1$) & 24 \\
+\quad Decoder Layers (Cross-Attention) & 8,592 \\
+\quad Projection for Classifier & 600 \\
+\addlinespace % [섹션 간 여백]
+
+\textbf{Classifier (Projection MLP)} & \textbf{353} \\
+
+\addlinespace[0.5em] % [Total 위 여백 추가] 합계 라인 강조
+\midrule % 합계 위에는 보통 선을 하나 그어줌 (계산 완료 의미)
+\textbf{Total Model Parameters} & \textbf{29,571} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The decoder consists of $L$ identical layers, each comprising a Multi-Head Cross-Attention (MHCA) block and a Feed-Forward Network (FFN).
+Residual connections and Layer Normalization are applied after each sub-layer.
+Unlike the initialization step, each MHCA block uses its own independent projection matrices for queries, keys, and values.
+The FFN is implemented as an MLP with a GEGLU activation function
+The output of the final decoder layer is fed into a lightweight MLP classifier to produce class logits.
+
+To demonstrate the structural efficiency of our method, Table \ref{tab:param_breakdown} provides a breakdown of trainable parameters, totaling fewer than 30K.
+The encoder accounts for the majority of parameters (66\%), indicating that LIQCA emphasizes efficient CNN-based local feature extraction while keeping the cross-attention decoder compact to minimize overhead.
+This compact design makes LIQCA a practical candidate for deep-learning applications on micro-controllers (MCUs), bridging the gap between large-scale models and extremely resource-limited hardware.
+
+% \begin{table}[H]
+% \centering
+% \caption{Detailed breakdown of trainable parameters in our proposed architecture.}
+% \label{tab:param_breakdown}
+% \begin{tabular}{lr}
+% \toprule
+% \textbf{Component} & \textbf{Parameters} \\
+% \midrule
+% \textbf{Encoder (PatchConvEncoder)} & \textbf{19,402} \\
+% \quad CNN Backbone (EfficientNet-B0 based) & 19,090 \\
+% \quad Patch Mixer (Depthwise Conv) & 264 \\
+% \quad Normalization (LayerNorm) & 48 \\
+% \midrule
+% \textbf{Decoder (Cross-Attention-based)} & \textbf{9,816} \\
+% \quad Embedding Layer ($W_{\text{emb}}$) & 600 \\
+% \quad Learnable Queries ($N_q=1$) & 24 \\
+% \quad Decoder Layers (Cross-Attention) & 8,592 \\
+% \quad Projection for Classifier & 600 \\
+% \midrule
+% \textbf{Classifier (Projection MLP)} & \textbf{353} \\
+% \midrule
+% \textbf{Total Model Parameters} & \textbf{29,571} \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
 
 \section{Experiments}
 \label{sec:exp}
@@ -280,31 +371,9 @@ We conducted experiments to validate the effectiveness and efficiency of the pro
 Section~\ref{sec:exp_datasets} introduces the public and private sewer datasets used in this study.
 Section~\ref{sec:exp_baselines} describes the baseline methods and the training hyperparameters for LIQCA.
 Section~\ref{sec:exp_metrics} presents the evaluation metrics used to assess both performance and efficiency.
-Section~\ref{sec:exp_comparison} compares LIQCA with the baselines under several experimental settings.
+Section~\ref{sec:exp_results} compares LIQCA with the baselines under several experimental settings.
 Finally, Section~\ref{sec:exp_ablation} provides an ablation study to verify the contribution of the input-conditioned initial queries.
 
-\subsection{Datasets}
-\label{sec:exp_datasets}
-
-We conducted experiments on both public and private sewer datasets.
-
-\paragraph{Public dataset.}
-We use \textbf{Sewer-ML} as the public sewer dataset.
-Sewer-ML contains approximately 1.3 million sewer images annotated with defect codes by skilled sewer inspectors from three companies over nine years \citep{haurum2021sewer}.
-The original video resolutions in Sewer-ML vary widely and are primarily distributed across
-$350 \times 284$, $352 \times 288$, $466 \times 568$, $480 \times 576$, $720 \times 576$, and $768 \times 576$.
-
-Figure~\ref{fig:sewer_ml_samples} shows normal and abnormal examples from Sewer-ML.
-The dataset provides 18 defect types, and multiple defect codes may be assigned to a single image.
-For our experiments, we perform binary classification by labeling an image as \textit{Abnormal} if it contains at least one defect code; otherwise, it is labeled as \textit{Normal}.
-After this binarization and preprocessing, the resulting training and test splits are summarized in Table~\ref{tab:dataset_stats}.
-
-\paragraph{Private dataset.}
-We also collected a private sewer dataset from real sewer pipelines to evaluate LIQCA in practical deployment scenarios.
-As shown in Figure~\ref{fig:private_dataset_samples}, we captured images inside operational sewer pipes and annotated them as normal or abnormal.
-The image resolution of the private dataset is $1280 \times 720$.
-We split this dataset into training and test sets using an 8:2 ratio.
-Detailed statistics are provided in Table~\ref{tab:dataset_stats}.
 
 \begin{figure}[t!]
     \centering
@@ -345,6 +414,22 @@ Detailed statistics are provided in Table~\ref{tab:dataset_stats}.
     \label{fig:private_dataset_samples}
 \end{figure}
 
+\subsection{Datasets}
+\label{sec:exp_datasets}
+
+We conducted experiments on both public and private sewer datasets. We use Sewer-ML as the public sewer dataset.
+Sewer-ML contains approximately 1.3 million sewer images annotated with defect codes by skilled sewer inspectors from three companies over nine years \citep{haurum2021sewer}.
+The original video resolutions in Sewer-ML vary widely (e.g., $352 \times 288$, $720 \times 576$). Figure~\ref{fig:sewer_ml_samples} shows normal and abnormal examples from Sewer-ML.
+The dataset provides 18 defect types, and multiple defect codes may be assigned to a single image.
+For our experiments, we perform binary classification by labeling an image as \textit{Abnormal} if it contains at least one defect code; otherwise, it is labeled as \textit{Normal}.
+After this binarization and preprocessing, the resulting training and test splits are summarized in Table~\ref{tab:dataset_stats}.
+
+We also collected a private sewer dataset from real sewer pipelines to evaluate LIQCA in practical deployment scenarios.
+As shown in Figure~\ref{fig:private_dataset_samples}, we captured images inside operational sewer pipes and annotated them as normal or abnormal.
+The image resolution of the private dataset is $1280 \times 720$.
+We split this dataset into training and test sets using an 8:2 ratio.
+Detailed statistics are provided in Table~\ref{tab:dataset_stats}.
+
 \begin{table}[t]
     \centering
     \caption{Statistics of the Sewer-ML and private datasets used in this study.}
@@ -371,16 +456,413 @@ Detailed statistics are provided in Table~\ref{tab:dataset_stats}.
 \subsection{Baselines and Hyperparameters}
 \label{sec:exp_baselines}
 
-\subsection{Evaluation Metrics}
+In this section, we compare LIQCA against four categories of baselines.
+
+(i) \textbf{Lightweight CNNs.} CNN-based models designed for mobile deployment are naturally lightweight. We consider EfficientNet-B0, which uses compound scaling with MBConv blocks to jointly optimize accuracy and efficiency. We also include MobileNetV4-S, which employs Universal Inverted Bottleneck (UIB) blocks and neural architecture search (NAS) specifically tailored for low-latency mobile accelerators. In particular, MobileNetV4-S demonstrates superior efficiency compared to previous lightweight CNN variants \citep{qin2404mobilenetv4}. We therefore use EfficientNet-B0 and MobileNetV4-S as representative lightweight CNN baselines.
+
+(ii) \textbf{Lightweight ViTs.} Vision Transformers (ViTs) have shown strong performance across a range of computer vision tasks. We adopt DeiT as a lightweight ViT baseline. DeiT introduces a distillation token that facilitates effective knowledge distillation by allowing the student to attend to the teacher’s outputs through self-attention, improving both accuracy and data efficiency relative to earlier transformer variants \citep{touvron2021training}.
+
+(iii) \textbf{Hybrid CNN--Transformer models.} MobileViT is a mobile-friendly hybrid architecture that combines lightweight CNNs for local feature extraction with transformer blocks for global context modeling, making it conceptually close to LIQCA. We choose MobileViT-XXS, the smallest variant in the MobileViT family, as a key hybrid baseline \citep{mehta2021mobilevit}.
+
+(iv) \textbf{Domain-specific model.} \citet{xie2019automatic} propose a CNN model tailored to classify defects in sewer imagery. This approach achieves the highest performance among both general-purpose models and sewer-specific methods on the binary classification task of the Sewer-ML dataset \citep{haurum2021sewer}. We include \citet{xie2019automatic} as a domain-specialized baseline to compare practical deployment capability with LIQCA.
+
+For hyperparameters, we follow the Sewer-ML training protocol for image preprocessing and train all models from scratch for 90 epochs. We use cross-entropy loss and the AdamW optimizer with an initial learning rate of 1e-4 and weight decay of 1e-2, together with a cosine-annealing learning-rate schedule. To mitigate overconfident predictions on ambiguous or visually realistic defect images that can also challenge human inspectors, we adopt label smoothing \citep{liu2023model}. All models are trained with a batch size of 256 on a single NVIDIA RTX 5090 GPU.
+
+% \begin{table}[t]
+% \centering
+% \caption{Summary of baseline models and their key architectural characteristics used for comparison.}
+% \label{tab:baselines}
+% \begin{tabular}{lll}
+% \toprule
+% \textbf{Category} & \textbf{Model} & \textbf{Key Characteristic} \\
+% \midrule
+% \multirow{2}{*}{\textbf{CNN-based}} & EfficientNet-B0 & Compound scaling with MBConv blocks \\
+%  & MobileNetV4-S & Universal Inverted Bottleneck (UIB) \& NAS \\
+% \midrule
+% \textbf{ViT-based} & DeiT-Tiny & Pure ViT with distillation token strategy \\
+% \midrule
+% \textbf{Hybrid} & MobileViT-XXS & Mobile-friendly CNN-Transformer hybrid \\
+% \midrule
+% \textbf{Domain} & Xie2019 & CNN specialized for sewer defect detection \\
+% \midrule
+% \textbf{Ours} & \textbf{LIQCA} & \textbf{Input-Conditioned Query Cross-Attention} \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+\subsection{Metrics and Comparison Strategy}
 \label{sec:exp_metrics}
+This section outlines the evaluation metrics and comparison strategies adopted to assess model feasibility in resource-constrained environments.
 
+\subsubsection{Performance Metrics.}
+We employ Top-1 accuracy over all classes and precision, recall, and F1-score for the abnormal class as our primary evaluation metrics. Following \citet{haurum2021sewer}, we prioritize metrics for the abnormal class because false negatives (i.e., undetected defects) pose a greater economic risk than false positives in automated sewer inspection. However, relying solely on recall is insufficient, since frequent false alarms (low precision) can undermine system reliability and increase manual verification costs. Therefore, we consider precision and F1-score alongside recall to ensure a balanced evaluation. We report all performance metrics using the model checkpoint that achieves the lowest validation loss.
 
+\subsubsection{Efficiency Metrics.}
+To assess the deployment potential of LIQCA on edge devices, we measure model size, latency, and peak memory usage. To simulate a realistic deployment environment, we perform evaluations using the ONNX Runtime instead of the standard PyTorch checkpoint (.pth) format. Furthermore, to validate practical feasibility on resource-constrained hardware, we conduct all measurements directly on a \textbf{Raspberry Pi 5}, utilizing its Broadcom BCM2712 SoC featuring a quad-core ARM Cortex-A76 CPU and LPDDR4X memory. Raspberry Pi, widely recognized as a representative benchmark platform in industrial edge computing and robotics \citep{mathe2024comprehensive}, serves as a practical testbed for evaluating on-device performance under strict power and thermal envelopes, in contrast to theoretical metrics derived from server-grade GPUs.
 
+We first run inference 10 times with a single sample to warm up the system. We then perform 100 additional inferences with the same sample and compute the average latency per inference. To obtain peak memory usage per sample, we record the maximum memory consumption during these 100 runs and subtract the baseline memory usage measured before any inference.
 
+\subsubsection{Fair Comparison Strategy.}
+To ensure fair comparisons across different model architectures, we adopt a structured pruning protocol for all baselines. Specifically, we prune each baseline model to match the computational complexity of LIQCA, measured in floating-point operations (FLOPs). FLOPs are a standard proxy for lightweight model efficiency and often correlate with inference latency and energy consumption on resource-constrained devices \citep{howard2017mobilenets}.
 
+Nevertheless, FLOPs alone do not fully characterize real-world efficiency. A comprehensive comparison should also control the parameter count, which directly affects memory footprint and can influence distributed training efficiency, especially when deploying to hardware with limited on-chip memory \citep{iandola2016squeezenet}. Accordingly, we perform an additional set of comparisons in which we prune baselines to match the parameter scale of LIQCA (approximately 30K parameters), enabling evaluation under realistic storage constraints.
+
+We implement L1-norm structured pruning using the \textbf{torch-pruning} library together with the Dependency Graph (DepGraph) algorithm \citep{fang2023depgraph}. The L1-norm criterion ranks filters by the magnitude of their weights and removes those with the smallest sums of absolute values, which are considered less informative \citep{filters2016pruning}. DepGraph automatically identifies and groups coupled layers (e.g., within residual connections) to preserve structural integrity and dimensional consistency during pruning. For each baseline, we train for the first 10 epochs of the 90-epoch schedule to estimate filter importance and then prune to the target FLOP or parameter budget, excluding the final classification layer. This choice follows \citet{you2019drawing}, who showed that using roughly 6.5\%--12.5\% of the full training schedule is sufficient to identify high-quality subnetworks. With this protocol, we establish a standardized benchmark that facilitates a fair evaluation of LIQCA against all baselines under matched resource constraints.
 
 \subsection{Experiment Results}
-\label{sec:exp_comparison}
+\label{sec:exp_results}
+In this section, we validate the practical feasibility of LIQCA by comparing it with baselines under standardized resource constraints.
+
+\subsubsection{Performance with Unpruned baselines}
+
+
+
+\subsubsection{Pruning the baselines}
+
+\subsubsection{Comparison under ISO-FLOPs}
+
+\subsubsection{Comparison under ISO-Params}
+
+
+
+
+
+
+
+
+
+% 1.og모델들 성능비교표
+\begin{table}[t]
+    \centering
+    \caption{Performance of unpruned model comparison on Sewer-ML and Private datasets.}
+    \label{tab:original_info}
+    
+    \resizebox{\columnwidth}{!}{%
+        \begin{tabular}{l l c c c c}
+            \toprule
+            \multirow{2}{*}{\textbf{Dataset}} & \multirow{2}{*}{\textbf{Model}} & \textbf{Acc$_{\text{abnormal}}$} & \textbf{Prec$_{\text{abnormal}}$} & \textbf{Rec$_{\text{abnormal}}$} & \textbf{F1$_{\text{abnormal}}$} \\
+             & & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} \\
+            \midrule
+            
+            % Sewer-ML Dataset
+            \multirow{6}{*}{\textbf{Sewer-ML}} 
+             & EfficientNet-B0 & -- & -- & -- & -- \\
+             & MobileNetV4-S   & -- & -- & -- & -- \\
+             & Xie2019         & -- & -- & -- & -- \\
+             & DeiT-Tiny       & -- & -- & -- & -- \\
+             & MobileViT-XXS   & -- & -- & -- & -- \\
+             \cmidrule{2-6}
+             & \textbf{Ours}   & -- & -- & -- & -- \\
+            \midrule
+            
+            % Private Dataset
+            \multirow{6}{*}{\textbf{Private}} 
+             & EfficientNet-B0 & 83.78 & 81.87 & 83.44 & 82.65 \\
+             & MobileNetV4-S   & 80.53 & 77.58 & 81.53 & 79.50 \\
+             & Xie2019         & 82.60 & 79.17 & \textbf{84.71} & 81.85 \\
+             & DeiT-Tiny       & 78.17 & 73.45 & 82.80 & 77.84 \\
+             & MobileViT-XXS   & 81.42 & 77.98 & 83.44 & 80.62 \\
+             \cmidrule{2-6} 
+             & \textbf{Ours}   & \textbf{85.84} & \textbf{86.09} & 82.80 & \textbf{84.42} \\
+            \bottomrule
+        \end{tabular}%
+    }
+\end{table}
+
+\begin{table}[t]
+    \centering
+    \caption{Performance comparison of original (unpruned) models. Note that the computational complexity and model size of baseline models significantly exceed those of LIQCA.}
+    \label{tab:original_performance}
+    
+    % \columnwidth: 단일 컬럼 폭에 맞춤
+    \resizebox{\columnwidth}{!}{%
+        % Method 열 제거 -> l (Model) + r r r r (수치) + r@{\pm}l (Latency) + r@{\pm}l (FPS)
+        \begin{tabular}{l r r r r r@{ $\pm$ }l r@{ $\pm$ }l}
+            \toprule
+            \multirow{2}{*}{\textbf{Model}} & \textbf{FLOPs} & \textbf{Params} & \textbf{ONNX} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
+             & \textbf{(G)} & \textbf{(M)} & \textbf{(MB)} & \textbf{(MB)} & \multicolumn{2}{c}{\textbf{(ms)}} & \multicolumn{2}{c}{} \\
+            \midrule
+            
+            \textbf{EfficientNet-B0} & 0.83 & 4.01 & 15.29 & 21.08 & 32.30 & 1.89 & 31.03 & 1.21 \\
+            \textbf{MobileNetV4-S}   & 0.39 & 2.50 & 9.49  & 1.00  & 7.79  & 0.18 & 128.48 & 2.55 \\
+            \textbf{Xie2019}         & 2.87 & 9.16 & 34.95 & 28.73 & 34.49 & 1.67 & 29.04 & 1.07 \\
+            \textbf{DeiT-Tiny}       & 2.15 & 5.52 & 21.23 & 2.91  & 34.01 & 1.57 & 29.45 & 1.08 \\
+            \textbf{MobileViT-XXS}   & 0.54 & 0.95 & 3.88  & 10.44 & 22.96 & 0.56 & 43.58 & 0.94 \\
+            \midrule
+            \textbf{Ours}            & \textbf{0.18} & \textbf{0.03} & \textbf{0.19} & 17.31 & 16.48 & 1.60 & 61.07 & 3.94 \\
+            \bottomrule
+        \end{tabular}%
+    }
+\end{table}
+
+% 1.OG(sewer-Ml&tapnew) -> 2.FLOPs 압축표 -> 3.pruned(sewer-ML&tapnew) -> 4.params압축표 -> 5.pruned(sewer-ML&tapnew) -> 6. Ablation study
+
+
+
+
+\begin{table}[t]
+    \centering
+    
+    % --- 첫 번째 표 (FLOPs Constrained) ---
+    \caption{Baseline models are pruned to match the computational complexity (FLOPs) of LIQCA ($\approx$ 0.18 G).}
+    \label{tab:flops_pruning}
+    
+    \resizebox{\textwidth}{!}{%
+        \begin{tabular}{l l r r r r r@{ $\pm$ }l r@{ $\pm$ }l}
+            \toprule
+            \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{FLOPs} & \textbf{Params} & \textbf{ONNX} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
+             & \textbf{(ISO-FLOPs)}& \textbf{(G)} & \textbf{(M)} & \textbf{(MB)} & \textbf{(MB)} & \multicolumn{2}{c}{\textbf{(ms)}} & \multicolumn{2}{c}{} \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{EfficientNet-B0}} 
+             & L1 Pruning    & \textbf{0.18} & 0.78 & 2.99  & 5.89  & 11.19 & 1.34 & 90.25 & 7.46 \\
+             & DepGraph      & \textbf{0.18} & 0.78 & 2.99  & 5.89  & 11.19 & 2.27 & 91.06 & 8.64 \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{MobileNetV4-S}} 
+             & L1 Pruning    & \textbf{0.18} & 1.16 & 4.40  & 1.00  & 5.50  & 1.83 & 196.45 & 45.56 \\
+             & DepGraph      & \textbf{0.18} & 1.16 & 4.40  & 1.00  & 7.50  & 8.36 & 193.22 & 61.72 \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{Xie2019}} 
+             & L1 Pruning    & \textbf{0.19} & 0.06 & 0.22  & 1.19  & 6.96  & 5.36 & 180.97 & 57.78 \\
+             & DepGraph      & \textbf{0.19} & 0.06 & 0.22  & 1.19  & 5.72  & 2.49 & 194.35 & 46.82 \\ 
+            \midrule
+            
+            \multirow{2}{*}{\textbf{DeiT-Tiny}} 
+             & L1 Pruning    & \textbf{0.18} & 0.49 & 2.00  & 1.12  & 12.56 & 2.38 & 81.42 & 9.46 \\
+             & DepGraph      & \textbf{0.18} & 0.49 & 2.00  & 1.12  & 12.17 & 1.22 & 82.73 & 5.50 \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{MobileViT-XXS}} 
+             & L1 Pruning    & \textbf{0.18} & 0.32 & 1.47  & 7.09  & 14.27 & 1.11 & 70.37 & 3.91 \\
+             & DepGraph      & \textbf{0.18} & 0.32 & 1.47  & 7.09  & 14.37 & 0.98 & 69.81 & 3.66 \\
+            \midrule
+            
+            \textbf{Ours} 
+             & Original      & \textbf{0.18} & 0.03 & 0.19 & 17.31 & 16.48 & 1.60 & 61.07 & 3.94 \\
+            \bottomrule
+        \end{tabular}%
+    }
+
+    \vspace{2em} 
+
+    % --- 두 번째 표 (Params Constrained) ---
+    \caption{Baseline models are pruned to match the parameter count of LIQCA ($\approx$ 0.03M).}
+    \label{tab:params_pruning}
+    
+    \resizebox{\textwidth}{!}{%
+        \begin{tabular}{l l r r r r r@{ $\pm$ }l r@{ $\pm$ }l}
+            \toprule
+            \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{FLOPs} & \textbf{Params} & \textbf{ONNX} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
+             & \textbf{(ISO-Params)}& \textbf{(G)} & \textbf{(M)} & \textbf{(MB)} & \textbf{(MB)} & \multicolumn{2}{c}{\textbf{(ms)}} & \multicolumn{2}{c}{} \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{EfficientNet-B0}} 
+             & L1 Pruning    & 0.01 & \textbf{0.03} & 0.18  & 1.14  & 4.84  & 5.66 & 391.40 & 184.44 \\
+             & DepGraph      & 0.01 & \textbf{0.03} & 0.18  & 1.14  & 3.99  & 3.67 & 374.44 & 153.22 \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{MobileNetV4-S}} 
+             & L1 Pruning    & 0.01 & \textbf{0.03} & 0.13  & 1.00  & 2.78  & 4.85 & 911.66 & 495.02 \\
+             & DepGraph      & 0.01 & \textbf{0.03} & 0.13  & 1.00  & 9.11  & 9.30 & 387.70 & 338.74 \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{Xie2019}} 
+             & L1 Pruning    & 0.11 & \textbf{0.03} & 0.12  & 1.19  & 5.69  & 3.94 & 219.20 & 65.98 \\
+             & DepGraph      & 0.11 & \textbf{0.03} & 0.12  & 1.19  & 11.30 & 15.15 & 197.69 & 88.78 \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{DeiT-Tiny}} 
+             & L1 Pruning    & 0.01 & \textbf{0.03} & 0.26  & 1.12  & 9.84  & 0.45 & 101.79 & 3.97 \\
+             & DepGraph      & 0.01 & \textbf{0.03} & 0.26  & 1.22  & 10.37 & 1.90 & 98.11  & 9.46 \\
+            \midrule
+            
+            \multirow{2}{*}{\textbf{MobileViT-XXS}} 
+             & L1 Pruning    & 0.02 & \textbf{0.03} & 0.36  & 6.83  & 9.85  & 5.24 & 109.70 & 16.90 \\
+             & DepGraph      & 0.02 & \textbf{0.03} & 0.36  & 6.83  & 10.70 & 6.64 & 105.06 & 20.31 \\
+            \midrule
+            
+            \textbf{Ours} 
+             & Original      & 0.18 & \textbf{0.03} & 0.19  & 17.31 & 16.48 & 1.60 & 61.07 & 3.94 \\
+            \bottomrule
+        \end{tabular}%
+    }
+\end{table}
+
+
+
+
+
+
+%3.pruned(sewer-ML&tapnew)
+\begin{table}[t]
+    \centering
+    \caption{Performance comparison on Sewer-ML and Private datasets with FLOPs-constrained pruning ($\approx$ 0.18 G).}
+    \label{tab:flops_performance}
+    
+    \resizebox{\columnwidth}{!}{%
+        \begin{tabular}{l l l c c c c}
+            \toprule
+            \multirow{2}{*}{\textbf{Dataset}} & \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{Acc$_{\text{abnormal}}$} & \textbf{Prec$_{\text{abnormal}}$} & \textbf{Rec$_{\text{abnormal}}$} & \textbf{F1$_{\text{abnormal}}$} \\
+             & & \textbf{(ISO-FLOPs)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} \\
+            \midrule
+            
+            % Sewer-ML Dataset
+            \multirow{11}{*}{\textbf{Sewer-ML}} 
+             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{Xie2019} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{DeiT-Tiny} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \textbf{Ours} & Original & -- & -- & -- & -- \\
+            \midrule
+            
+            % Private Dataset
+            \multirow{11}{*}{\textbf{Private}} 
+             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & 81.71 & 81.46 & 78.34 & 79.87 \\
+             & & DepGraph & 81.71 & 81.46 & 78.34 & 79.87 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & 81.71 & 79.50 & 81.53 & 80.50 \\
+             & & DepGraph & 83.48 & 81.37 & \textbf{83.44} & 82.39 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{Xie2019} & L1 pruning & 80.53 & 77.91 & 80.89 & 79.37 \\
+             & & DepGraph & 78.76 & 76.07 & 78.98 & 77.50 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{DeiT-Tiny} & L1 pruning & 80.83 & 79.49 & 78.98 & 79.23 \\
+             & & DepGraph & 80.83 & 79.49 & 78.98 & 79.23 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & 81.71 & 80.25 & 80.25 & 80.25 \\
+             & & DepGraph & 82.30 & 79.39 & \textbf{83.44} & 81.37 \\
+             \cmidrule{2-7}
+             & \textbf{Ours} & Original & \textbf{85.84} & \textbf{86.09} & 82.80 & \textbf{84.42} \\
+            \bottomrule
+        \end{tabular}%
+    }
+\end{table}
+
+
+
+
+
+
+
+%5.pruned(sewer-ML&tapnew)
+\begin{table}[t]
+    \centering
+    \caption{Performance comparison on Sewer-ML and Private datasets with parameter-constrained pruning ($\approx$ 0.03M).}
+    \label{tab:params_performance}
+    
+    \resizebox{\columnwidth}{!}{%
+        \begin{tabular}{l l l c c c c}
+            \toprule
+            \multirow{2}{*}{\textbf{Dataset}} & \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{Acc$_{\text{abnormal}}$} & \textbf{Prec$_{\text{abnormal}}$} & \textbf{Rec$_{\text{abnormal}}$} & \textbf{F1$_{\text{abnormal}}$} \\
+             & & \textbf{(ISO-Params)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} \\
+            \midrule
+            
+            % Sewer-ML Dataset (Empty)
+            \multirow{11}{*}{\textbf{Sewer-ML}} 
+             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{Xie2019} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{DeiT-Tiny} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & -- & -- & -- & -- \\
+             & & DepGraph & -- & -- & -- & -- \\
+             \cmidrule{2-7}
+             & \textbf{Ours} & Original & -- & -- & -- & -- \\
+            \midrule
+            
+            % Private Dataset
+            \multirow{11}{*}{\textbf{Private}} 
+             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & 80.53 & 78.26 & 80.25 & 79.25 \\
+             & & DepGraph & 82.01 & 80.77 & 80.25 & 80.51 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & 71.09 & 67.46 & 72.61 & 69.94 \\
+             & & DepGraph & 71.98 & 70.13 & 68.79 & 69.45 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{Xie2019} & L1 pruning & 76.70 & 75.00 & 74.52 & 74.76 \\
+             & & DepGraph & 76.11 & 73.75 & 75.16 & 74.45 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{DeiT-Tiny} & L1 pruning & 53.69 & \phantom{0}0.00 & \phantom{0}0.00 & \phantom{0}0.00 \\
+             & & DepGraph & 54.87 & \phantom{0}1.00 & \phantom{0}0.03 & \phantom{0}0.05 \\
+             \cmidrule{2-7}
+             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & 78.17 & 77.12 & 75.16 & 76.13 \\
+             & & DepGraph & 76.40 & 73.91 & 75.80 & 74.84 \\
+             \cmidrule{2-7}
+             & \textbf{Ours} & Original & \textbf{85.84} & \textbf{86.09} & \textbf{82.80} & \textbf{84.42} \\
+            \bottomrule
+        \end{tabular}%
+    }
+\end{table}
+
+
+
+
 
 \subsection{Ablation Study}
 \label{sec:exp_ablation}
+
+
+
+
+
+
+
+
+\section{Conclusion}\label{sec:con}
+
+%In this paper, we introduce Soft-directed Embedding Unlearning (\textbf{SEU}) to address machine unlearning in bearing fault diagnosis. Leveraging a dual-triplet loss, soft sample and embedding-level alignment, \textbf{SEU} effectively removes forget samples while preserving retain samples and overall diagnostic performance. Our comprehensive experiments on both public and private datasets show that \textbf{SEU} achieves results closest to \textbf{Retrain} across multiple architectures, highlighting its potential as a practical approach for privacy-preserving, regulation-compliant fault diagnosis systems. While our study focuses on class-wise forgetting, extending \textbf{SEU} to handle more complex and different forget scenarios, such as selective instance-level unlearning or random-data forgetting, remains an open challenge. Future work will explore these directions, aiming to further enhance regulation-compliant fault diagnosis systems.
+
+
+
+% \section*{Acknowledgement}
+
+% This work was supported by the National Research
+% Foundation of Korea (NRF) Grant funded by the Korean Government (Ministry of Science and Information \& Communications
+% Technology, MSIT) (Nos. 2019R1A2C2002358, 2022R1F1A1074393, and RS-2023-00208412).
+
+%% The Appendices part is started with the command \appendix;
+%% appendix sections are then done as normal sections
+%% \appendix
+
+%% \section{}
+%% \label{}
+
+%% If you have bibdatabase file and want bibtex to generate the
+%% bibitems, please use
+%%
+\bibliographystyle{elsarticle-harv} 
+\bibliography{ref}
+
+%% else use the following coding to input the bibitems directly in the
+%% TeX file.
+
+% \begin{thebibliography}{ref}
+%% \bibitem[Author(year)]{label}
+%% Text of bibliographic item
+% \bibitem[ ()]{}
+% \end{thebibliography}
+
+\end{document}
+
+\endinput
+%%
+%% End of file `elsarticle-template-harv.tex'

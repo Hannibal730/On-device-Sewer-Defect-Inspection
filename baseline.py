@@ -92,6 +92,72 @@ def setup_logging(run_cfg, data_dir_name, baseline_model_name, baseline_cfg):
     logging.info(f"로그 파일이 '{log_filename}'에 저장됩니다.")
     return run_dir_path, timestamp, lightweight_option_names
 
+def patch_timm_model_for_pruning(model, model_name, device):
+    """timm 모델의 Pruning 호환성을 위해 모델 구조를 수정(monkey-patch)합니다."""
+    # =============================================================================
+    # 1. Attention.forward 몽키 패치
+    # =============================================================================
+    def patched_attention_forward(self, x, attn_mask=None):
+        """
+        timm의 Attention.forward를 수정한 버전.
+        Pruning으로 인해 입력 채널(C)과 내부 헤드 차원(head_dim * num_heads)이 달라졌을 때 발생하는
+        reshape 오류를 해결하기 위해 마지막 reshape에서 C 대신 -1을 사용합니다.
+        """
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(0)
+
+        if hasattr(self, 'q_norm'):
+            q, k = self.q_norm(q), self.k_norm(k)
+
+        if hasattr(F, 'scaled_dot_product_attention') and getattr(self, 'fused_attn', False):
+            x = F.scaled_dot_product_attention(
+                q, k, v,
+                attn_mask=attn_mask,
+                dropout_p=self.attn_drop.p if self.training else 0.,
+            )
+        else:
+            scale = getattr(self, 'scale', 1.0 / (self.head_dim ** 0.5))
+            q = q * scale
+            attn = q @ k.transpose(-2, -1)
+            attn = attn.softmax(dim=-1)
+            attn = self.attn_drop(attn)
+            x = attn @ v
+
+        x = x.transpose(1, 2).reshape(B, N, -1)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+    is_vit_family = model_name in ['vit', 'swin_tiny', 'deit_tiny', 'mobile_vit_s', 'mobile_vit_xs', 'mobile_vit_xxs']
+    if is_vit_family and Attention is not None and F is not None:
+        logging.info(f"timm 모델({model_name})의 Attention.forward를 Pruning 호환성을 위해 Monkey-patching 합니다.")
+        for module in model.modules():
+            if isinstance(module, Attention):
+                module.forward = types.MethodType(patched_attention_forward, module)
+
+    # =============================================================================
+    # 2. 복합 레이어(BatchNormAct2d) 변환
+    # =============================================================================
+    try:
+        from timm.layers import BatchNormAct2d
+    except ImportError:
+        BatchNormAct2d = None
+
+    def fuse_timm_norm_act_layers(module):
+        if BatchNormAct2d is None: return
+        for name, child in module.named_children():
+            if isinstance(child, BatchNormAct2d):
+                bn = nn.BatchNorm2d(child.num_features, child.eps, child.momentum, child.affine, child.track_running_stats)
+                bn.load_state_dict(child.state_dict())
+                new_module = nn.Sequential(bn, child.act).to(device)
+                setattr(module, name, new_module)
+            else:
+                fuse_timm_norm_act_layers(child)
+
+    fuse_timm_norm_act_layers(model)
+    return model
+
 class Xie2019(nn.Module):
     def __init__(self, num_classes, dropout_rate = 0.6):
         super(Xie2019, self).__init__()
@@ -443,7 +509,10 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
         # 최고 성능 모델 저장
         if is_best:
             best_metric = current_metric
-            torch.save(model.state_dict(), model_path)
+            # [수정] thop.profile에 의해 오염될 수 있는 state_dict를 저장하기 전 정리합니다.
+            # 'total_ops' 또는 'total_params'로 끝나는 키를 제거하여 순수한 가중치만 저장합니다.
+            clean_state_dict = {k: v for k, v in model.state_dict().items() if not k.endswith(('total_ops', 'total_params'))}
+            torch.save(clean_state_dict, model_path)
             criterion_name = best_model_criterion.replace('_', ' ')
             is_best_saved = True
             logging.info(f"[Best Model Saved] ({criterion_name}: {best_metric:.4f}) -> '{model_path}'")
@@ -459,7 +528,9 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
     
     # 만약 훈련 동안 한 번도 best model이 저장되지 않았다면(e.g., loss가 계속 nan), 마지막 모델이라도 저장합니다.
     if not is_best_saved:
-        torch.save(model.state_dict(), model_path)
+        # [수정] 여기에서도 state_dict를 정리하여 저장합니다.
+        clean_state_dict = {k: v for k, v in model.state_dict().items() if not k.endswith(('total_ops', 'total_params'))}
+        torch.save(clean_state_dict, model_path)
         logging.warning(f"훈련 동안 성능 개선이 없어 Best 모델이 저장되지 않았습니다. 마지막 에포크의 모델을 '{model_path}'에 저장합니다.")
     return best_metric
 
@@ -491,25 +562,26 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
 
     logging.info(f"{mode_name} 모드를 시작합니다.")
 
-    # --- [수정] Pruning된 모델과 일반 모델에 맞는 가중치 파일을 선택적으로 로드 ---
-    # Pruning이 적용된 경우, 압축된 모델의 파라미터는 'pruned_model.pth'에 저장되어 있습니다.
-    # main 함수에서 이미 압축된 모델 객체를 전달했으므로, 여기서는 가중치를 다시 로드할 필요가 없습니다.
-    # 하지만, 만약 'inference' 모드로만 실행될 경우를 대비하여 로드 로직을 유지하되, 올바른 파일을 선택하도록 합니다.
-    pruned_model_path = os.path.join(run_dir_path, 'pruned_model.pth')
-    best_model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
+    model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
 
-    # 'pruned_model.pth'가 존재하면 그것을 우선적으로 사용합니다.
-    model_to_load = pruned_model_path if os.path.exists(pruned_model_path) else best_model_path
-
-    # main 함수에서 이미 올바른 상태의 모델을 전달했으므로, 여기서는 가중치를 다시 로드할 필요가 없습니다.
-    # 만약 'inference' 모드로만 실행될 경우, 아래 로직이 필요합니다.
-    # if run_cfg.mode == 'inference':
-    #     try:
-    #         model.load_state_dict(torch.load(model_to_load, map_location=device))
-    #         logging.info(f"'{model_to_load}' 가중치 로드 완료.")
-    #     except Exception as e:
-    #         logging.error(f"모델 가중치 로딩 중 오류 발생: {e}")
-    #         return
+    # 'inference' 모드로 단독 실행될 때만 가중치를 불러옵니다.
+    # 'train' 모드 후 'Test'로 호출될 때는 이미 최적 가중치가 적용된 모델 객체가 전달됩니다.
+    if run_cfg.mode == 'inference':
+        if not os.path.exists(model_path):
+            logging.error(f"모델 파일('{model_path}')을 찾을 수 없습니다. 'pth_inference_dir' 경로를 확인하세요.")
+            return None # final_acc가 None이 되도록 반환
+        try:
+            # [수정] main 함수에서 Pruning이 재적용된 모델에 가중치를 로드합니다.
+            model.load_state_dict(torch.load(model_path, map_location=device))
+            logging.info(f"'{model_path}' 가중치 로드 완료.")
+        except RuntimeError as e:
+            logging.error(f"모델 가중치 로딩 중 런타임 오류 발생: {e}")
+            logging.error("이 오류는 보통 Pruning된 모델 구조와 불러오려는 가중치가 일치하지 않을 때 발생합니다.")
+            logging.error("훈련 시 사용된 Pruning 옵션이 현재 config.yaml에 동일하게 설정되어 있는지 확인하세요.")
+            return None
+        except Exception as e:
+            logging.error(f"모델 가중치 로딩 중 예상치 못한 오류 발생: {e}")
+            return None
 
     model.eval()
 
@@ -740,78 +812,8 @@ def main():
     # --- Baseline 모델 생성 ---
     model = create_baseline_model(baseline_model_name, num_labels, pretrained=train_cfg.pre_trained).to(device)
 
-    # =============================================================================
-    # [추가] torch-pruning 호환성을 위한 timm Attention 레이어 Monkey-Patch
-    # =============================================================================
-    def patched_attention_forward(self, x, attn_mask=None):
-        """
-        timm의 Attention.forward를 수정한 버전.
-        Pruning으로 인해 입력 채널(C)과 내부 헤드 차원(head_dim * num_heads)이 달라졌을 때 발생하는
-        reshape 오류를 해결하기 위해 마지막 reshape에서 C 대신 -1을 사용합니다.
-        """
-        B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv.unbind(0)
-
-        if hasattr(self, 'q_norm'):
-            q, k = self.q_norm(q), self.k_norm(k)
-
-        if hasattr(F, 'scaled_dot_product_attention') and getattr(self, 'fused_attn', False):
-            x = F.scaled_dot_product_attention(
-                q, k, v,
-                attn_mask=attn_mask,
-                dropout_p=self.attn_drop.p if self.training else 0.,
-            )
-        else:
-            # self.scale은 timm의 Attention에 없을 수 있으므로 확인 후 사용
-            scale = getattr(self, 'scale', 1.0 / (self.head_dim ** 0.5))
-            q = q * scale
-            attn = q @ k.transpose(-2, -1)
-            attn = attn.softmax(dim=-1)
-            attn = self.attn_drop(attn)
-            x = attn @ v
-
-        # [수정] Pruning 후 C가 변경되어 발생하는 오류를 막기 위해 C를 하드코딩하는 대신 -1로 설정
-        x = x.transpose(1, 2).reshape(B, N, -1)
-        
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-    if Attention is not None and F is not None:
-        is_timm_model = baseline_model_name in ['vit', 'swin_tiny', 'deit_tiny', 'mobile_vit_s', 'mobile_vit_xs', 'mobile_vit_xxs']
-        if is_timm_model:
-            logging.info(f"timm 모델({baseline_model_name})의 Attention.forward를 Pruning 호환성을 위해 Monkey-patching 합니다.")
-            for module in model.modules():
-                if isinstance(module, Attention):
-                    module.forward = types.MethodType(patched_attention_forward, module)
-
-    # =============================================================================
-    # [최종 수정] timm 모델의 복합 레이어를 NNI가 이해할 수 있는 표준 레이어로 변환
-    # =============================================================================
-    # timm 라이브러리 버전 문제와 상관없이 직접 복합 레이어를 표준 레이어로 교체하는 함수
-    def fuse_timm_norm_act_layers(module):
-        if BatchNormAct2d is None:
-            return module
-
-        for name, child in module.named_children():
-            if isinstance(child, BatchNormAct2d):
-                # BatchNormAct2d는 nn.BatchNorm2d를 상속합니다.
-                # 새로운 nn.BatchNorm2d를 만들고 state_dict를 복사합니다.
-                bn = nn.BatchNorm2d(child.num_features, child.eps, child.momentum, child.affine, child.track_running_stats)
-                bn.load_state_dict(child.state_dict())
-                # 활성화 함수(act)와 결합하여 nn.Sequential로 만듭니다.
-                # timm 모델은 device 정보가 없을 수 있으므로, to(device)를 추가합니다.
-                new_module = nn.Sequential(bn, child.act).to(device)
-                setattr(module, name, new_module)
-                logging.info(f"  - 복합 레이어 '{name}'를 nn.Sequential(BatchNorm2d, Activation)으로 교체했습니다.")
-            else:
-                # 자식 모듈에 대해 재귀적으로 함수 호출
-                fuse_timm_norm_act_layers(child)
-        return module
-
-    logging.info(f"timm 모델({baseline_model_name})의 복합 레이어를 표준 레이어로 변환합니다...")
-    model = fuse_timm_norm_act_layers(model)
+    # Pruning 호환성을 위해 timm 모델 구조를 수정합니다.
+    model = patch_timm_model_for_pruning(model, baseline_model_name, device)
 
     log_model_parameters(model)
     pruner = None # pruner를 main 함수 스코프에서 정의
@@ -1108,18 +1110,30 @@ def main():
                 # 이진 탐색으로 최적의 희소도 찾기
                 # Taylor Pruning은 criterion이 필요하므로 임시로 생성
                 loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
-                criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss()
-                optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device, train_loader, criterion)
+                criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss() # type: ignore
+                optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device, train_loader, criterion) # type: ignore
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
+                # [추가] 계산된 희소도를 파일에 저장하여 추론 시 재사용
+                run_info = {'pruning_sparsity': optimal_sparsity}
+                run_info_path = os.path.join(run_dir_path, 'run_info.yaml')
+                with open(run_info_path, 'w') as f:
+                    yaml.dump(run_info, f)
+                logging.info(f"계산된 최적 희소도({optimal_sparsity:.4f})를 '{run_info_path}'에 저장했습니다.")
             # 목표 파라미터 수가 설정된 경우, 최적의 희소도를 자동으로 계산
             elif getattr(baseline_cfg, 'pruning_params_target', 0.0) > 0:
                 # 이진 탐색으로 최적의 희소도 찾기
                 loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
-                criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss()
-                optimal_sparsity = find_sparsity_for_target_params(model, baseline_cfg, model_cfg, device, train_loader, criterion)
+                criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss() # type: ignore
+                optimal_sparsity = find_sparsity_for_target_params(model, baseline_cfg, model_cfg, device, train_loader, criterion) # type: ignore
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
+                # [추가] 계산된 희소도를 파일에 저장하여 추론 시 재사용
+                run_info = {'pruning_sparsity': optimal_sparsity}
+                run_info_path = os.path.join(run_dir_path, 'run_info.yaml')
+                with open(run_info_path, 'w') as f:
+                    yaml.dump(run_info, f)
+                logging.info(f"계산된 최적 희소도({optimal_sparsity:.4f})를 '{run_info_path}'에 저장했습니다.")
 
             # Pruning 적용
             # [수정] L1, L2 Pruning도 torch-pruning으로 통합
@@ -1134,6 +1148,11 @@ def main():
 
             # Pruning 전 원본 모델의 FLOPs 측정
             original_macs, _ = profile(model, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
+            # [수정] Pruning 전 원본 모델의 FLOPs 측정 (모델 오염 방지를 위해 복사본 사용)
+            logging.info("Pruning 전 원본 모델의 FLOPs를 측정합니다...")
+            model_for_profiling = copy.deepcopy(model)
+            original_macs, _ = profile(model_for_profiling, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
+            del model_for_profiling # 메모리에서 복사본 해제
             original_gflops = original_macs * 2 / 1e9
             if use_torch_pruning:
                 # torch-pruning 계열의 기법은 모델을 직접 수정합니다.
@@ -1141,8 +1160,8 @@ def main():
                 if getattr(baseline_cfg, 'use_taylor_pruning', False):
                     # 임시 손실 함수 생성
                     loss_function_name = getattr(train_cfg, 'loss_function', 'CrossEntropyLoss').lower()
-                    criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss()
-                    model = run_torch_pruning(model, baseline_cfg, model_cfg, device, train_loader=train_loader, criterion=criterion)
+                    criterion = nn.CrossEntropyLoss() if loss_function_name != 'bcewithlogitsloss' else nn.BCEWithLogitsLoss() # type: ignore
+                    model = run_torch_pruning(model, baseline_cfg, model_cfg, device, train_loader=train_loader, criterion=criterion) # type: ignore
                 else:
                     model = run_torch_pruning(model, baseline_cfg, model_cfg, device)
 
@@ -1150,6 +1169,11 @@ def main():
 
                 # Pruning 후 FLOPs 측정 및 감소율 로깅
                 pruned_macs, _ = profile(model, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
+                # [수정] Pruning 후 FLOPs 측정 및 감소율 로깅 (모델 오염 방지를 위해 복사본 사용)
+                logging.info("Pruning 후 모델의 FLOPs를 측정합니다...")
+                model_for_profiling = copy.deepcopy(model)
+                pruned_macs, _ = profile(model_for_profiling, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
+                del model_for_profiling # 메모리에서 복사본 해제
                 pruned_gflops = pruned_macs * 2 / 1e9
                 flops_reduction_ratio = (1 - pruned_gflops / original_gflops) * 100
                 logging.info(f"FLOPs가 {original_gflops:.4f} GFLOPs에서 {pruned_gflops:.4f} GFLOPs로 감소했습니다 (감소율: {flops_reduction_ratio:.2f}%).")
@@ -1167,16 +1191,41 @@ def main():
             else:
                 logging.info("활성화된 Pruning 방법이 없어 미세 조정을 건너뜁니다.")
 
-        # --- 최종 단계: Pruning된 모델 저장 및 평가 ---
-        # torch-pruning은 모델을 직접 수정하므로, 미세조정 후 최종 모델을 저장합니다.
-        if use_pruning:
-            pruned_model_path = os.path.join(run_dir_path, 'pruned_model.pth')
-            torch.save(model.state_dict(), pruned_model_path)
-            logging.info(f"Pruning이 적용된 모델이 '{pruned_model_path}'에 저장되었습니다.")
-
         logging.info("="*50)
-        logging.info("훈련 완료. 최종 모델 성능을 테스트 세트로 평가합니다.")
-        final_acc = inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
+        logging.info("훈련 완료. 최고 성능 모델을 불러와 테스트 세트로 최종 평가합니다.")
+        # --- [최종 수정] 최종 평가를 위해 깨끗한 모델 객체를 새로 생성하고 가중치를 로드합니다. ---
+        # 훈련 과정에서 사용된 model 객체는 FLOPs 측정 등으로 오염되었을 수 있습니다.
+        # 따라서, 가장 안정적인 방법은 새로운 모델을 만들고, Pruning 구조를 재현한 뒤, 저장된 가중치를 불러오는 것입니다.
+        best_model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
+        if os.path.exists(best_model_path):
+            # 1. 깨끗한 모델 골격을 새로 생성합니다.
+            logging.info("최종 평가를 위해 새로운 모델 객체를 생성합니다.")
+            final_model = create_baseline_model(baseline_model_name, num_labels, pretrained=False).to(device)
+
+            # [추가] 새로 생성된 모델에도 Pruning 호환성 패치를 적용합니다.
+            final_model = patch_timm_model_for_pruning(final_model, baseline_model_name, device)
+            
+            # 2. Pruning이 사용되었다면, 새로운 모델에도 동일한 Pruning 구조를 적용합니다.
+            # config의 pruning_sparsity 값은 훈련 중 자동 계산된 값을 유지하고 있습니다.
+            if use_pruning:
+                logging.info("최종 평가 모델에 Pruning 구조를 재적용합니다...")
+                # Pruning에 필요한 임시 criterion 생성
+                criterion = nn.CrossEntropyLoss()
+                final_model = run_torch_pruning(final_model, baseline_cfg, model_cfg, device, train_loader=train_loader, criterion=criterion)
+
+            # 3. 깨끗하게 Pruning된 모델에 저장된 가중치를 불러옵니다.
+            # 이 시점에는 모델 객체와 state_dict 모두 thop 오염이 없으므로 오류가 발생하지 않습니다.
+            final_model.load_state_dict(torch.load(best_model_path, map_location=device))
+            logging.info(f"최고 성능 모델 가중치를 새로 생성된 모델 객체에 로드 완료: '{best_model_path}'")
+            
+            # 최종 평가에 사용할 모델을 교체합니다.
+            model_to_test = final_model
+        else:
+            logging.warning(f"최고 성능 모델 '{best_model_path}'을(를) 찾을 수 없습니다. 마지막 에포크의 모델로 평가를 진행합니다.")
+            # fallback으로 훈련 마지막 상태의 모델을 사용합니다.
+            model_to_test = model
+
+        final_acc = inference(run_cfg, model_cfg, model_to_test, test_loader, device, run_dir_path, timestamp, mode_name="Test", class_names=class_names)
 
         if final_acc is not None:
             log_filename = f"log_{timestamp}.log"
@@ -1195,6 +1244,35 @@ def main():
             logging.info(f"'{onnx_inference_path}' ONNX 파일 평가를 위해 PyTorch 모델 생성을 건너뜁니다.")
             inference(run_cfg, model_cfg, None, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
         else:
+            # --- [추가] 추론 모드에서 Pruning 재현 로직 ---
+            # 훈련 시 Pruning이 사용되었는지 확인하고 모델 구조를 동일하게 재구성합니다.
+            # 1. 훈련 로그 디렉토리에서 run_info.yaml을 읽어 희소도를 가져옵니다.
+            run_info_path = os.path.join(run_dir_path, 'run_info.yaml')
+            if os.path.exists(run_info_path):
+                with open(run_info_path, 'r') as f:
+                    run_info = yaml.safe_load(f)
+                # config.yaml의 값보다 run_info.yaml의 값을 우선 적용
+                if 'pruning_sparsity' in run_info:
+                    baseline_cfg.pruning_sparsity = run_info['pruning_sparsity']
+                    logging.info(f"'run_info.yaml'에서 Pruning 희소도({baseline_cfg.pruning_sparsity:.4f})를 불러왔습니다.")
+
+            # 2. config.yaml 또는 run_info.yaml의 설정을 바탕으로 Pruning 적용
+            use_pruning_in_inference = getattr(baseline_cfg, 'use_l1_pruning', False) or \
+                                       getattr(baseline_cfg, 'use_l2_pruning', False) or \
+                                       getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
+                                       getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
+                                       getattr(baseline_cfg, 'use_taylor_pruning', False) or \
+                                       getattr(baseline_cfg, 'use_lamp_pruning', False) or \
+                                       getattr(baseline_cfg, 'use_slimming_pruning', False)
+            
+            if use_pruning_in_inference:
+                logging.info("추론 모드: 훈련된 모델의 Pruning 구조를 재현합니다...")
+                # Taylor Pruning은 그래디언트 계산을 위해 train_loader와 criterion이 필요합니다.
+                # 추론 시에는 정확한 그래디언트 계산이 불가능하므로, L1/L2 등 다른 Pruning 기법 사용을 권장합니다.
+                # 여기서는 실행을 위해 임시 criterion을 생성합니다.
+                criterion = nn.CrossEntropyLoss()
+                model = run_torch_pruning(model, baseline_cfg, model_cfg, device, train_loader=train_loader, criterion=criterion)
+
             log_model_parameters(model)
             inference(run_cfg, model_cfg, model, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
 
