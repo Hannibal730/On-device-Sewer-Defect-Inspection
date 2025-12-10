@@ -206,7 +206,7 @@ def create_baseline_model(model_name, num_labels, pretrained):
         model = torchvision_models.efficientnet_b0(weights=torchvision_models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
         num_ftrs = model.classifier[1].in_features
         model.classifier[1] = nn.Linear(num_ftrs, num_labels)
-    elif model_name == 'mobilenet_v4':
+    elif model_name == 'mobilenet_v4_s':
         # timm 라이브러리를 사용하여 MobileNetV4 모델을 생성합니다.
         # 'mobilenetv4_conv_small'은 가벼운 버전 중 하나입니다.
         # timm.create_model은 num_classes 인자를 통해 자동으로 마지막 분류 레이어를 교체해줍니다.
