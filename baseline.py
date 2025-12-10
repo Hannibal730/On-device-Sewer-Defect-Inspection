@@ -1114,12 +1114,17 @@ def main():
                 optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device, train_loader, criterion) # type: ignore
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
-                # [추가] 계산된 희소도를 파일에 저장하여 추론 시 재사용
-                run_info = {'pruning_sparsity': optimal_sparsity}
-                run_info_path = os.path.join(run_dir_path, 'run_info.yaml')
-                with open(run_info_path, 'w') as f:
-                    yaml.dump(run_info, f)
-                logging.info(f"계산된 최적 희소도({optimal_sparsity:.4f})를 '{run_info_path}'에 저장했습니다.")
+                # [수정] 계산된 Pruning 정보를 파일에 저장하여 추론 시 재사용
+                pruning_info = {
+                    'pruning_method': lightweight_option_names[0] if lightweight_option_names else 'unknown',
+                    'target_type': 'flops',
+                    'target_value': getattr(baseline_cfg, 'pruning_flops_target'),
+                    'optimal_sparsity': optimal_sparsity
+                }
+                pruning_info_path = os.path.join(run_dir_path, 'pruning_info.yaml')
+                with open(pruning_info_path, 'w') as f:
+                    yaml.dump(pruning_info, f, default_flow_style=False, sort_keys=False)
+                logging.info(f"계산된 Pruning 정보(희소도: {optimal_sparsity:.4f})를 '{pruning_info_path}'에 저장했습니다.")
             # 목표 파라미터 수가 설정된 경우, 최적의 희소도를 자동으로 계산
             elif getattr(baseline_cfg, 'pruning_params_target', 0.0) > 0:
                 # 이진 탐색으로 최적의 희소도 찾기
@@ -1128,12 +1133,17 @@ def main():
                 optimal_sparsity = find_sparsity_for_target_params(model, baseline_cfg, model_cfg, device, train_loader, criterion) # type: ignore
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
-                # [추가] 계산된 희소도를 파일에 저장하여 추론 시 재사용
-                run_info = {'pruning_sparsity': optimal_sparsity}
-                run_info_path = os.path.join(run_dir_path, 'run_info.yaml')
-                with open(run_info_path, 'w') as f:
-                    yaml.dump(run_info, f)
-                logging.info(f"계산된 최적 희소도({optimal_sparsity:.4f})를 '{run_info_path}'에 저장했습니다.")
+                # [수정] 계산된 Pruning 정보를 파일에 저장하여 추론 시 재사용
+                pruning_info = {
+                    'pruning_method': lightweight_option_names[0] if lightweight_option_names else 'unknown',
+                    'target_type': 'params',
+                    'target_value': getattr(baseline_cfg, 'pruning_params_target'),
+                    'optimal_sparsity': optimal_sparsity
+                }
+                pruning_info_path = os.path.join(run_dir_path, 'pruning_info.yaml')
+                with open(pruning_info_path, 'w') as f:
+                    yaml.dump(pruning_info, f, default_flow_style=False, sort_keys=False)
+                logging.info(f"계산된 Pruning 정보(희소도: {optimal_sparsity:.4f})를 '{pruning_info_path}'에 저장했습니다.")
 
             # Pruning 적용
             # [수정] L1, L2 Pruning도 torch-pruning으로 통합
@@ -1246,15 +1256,15 @@ def main():
         else:
             # --- [추가] 추론 모드에서 Pruning 재현 로직 ---
             # 훈련 시 Pruning이 사용되었는지 확인하고 모델 구조를 동일하게 재구성합니다.
-            # 1. 훈련 로그 디렉토리에서 run_info.yaml을 읽어 희소도를 가져옵니다.
-            run_info_path = os.path.join(run_dir_path, 'run_info.yaml')
-            if os.path.exists(run_info_path):
-                with open(run_info_path, 'r') as f:
-                    run_info = yaml.safe_load(f)
-                # config.yaml의 값보다 run_info.yaml의 값을 우선 적용
-                if 'pruning_sparsity' in run_info:
-                    baseline_cfg.pruning_sparsity = run_info['pruning_sparsity']
-                    logging.info(f"'run_info.yaml'에서 Pruning 희소도({baseline_cfg.pruning_sparsity:.4f})를 불러왔습니다.")
+            # 1. 훈련 로그 디렉토리에서 pruning_info.yaml을 읽어 희소도를 가져옵니다.
+            pruning_info_path = os.path.join(run_dir_path, 'pruning_info.yaml')
+            if os.path.exists(pruning_info_path):
+                with open(pruning_info_path, 'r') as f:
+                    pruning_info = yaml.safe_load(f)
+                # config.yaml의 값보다 pruning_info.yaml의 값을 우선 적용
+                if 'optimal_sparsity' in pruning_info:
+                    baseline_cfg.pruning_sparsity = pruning_info['optimal_sparsity']
+                    logging.info(f"'{pruning_info_path}'에서 Pruning 희소도({baseline_cfg.pruning_sparsity:.4f})를 불러왔습니다.")
 
             # 2. config.yaml 또는 run_info.yaml의 설정을 바탕으로 Pruning 적용
             use_pruning_in_inference = getattr(baseline_cfg, 'use_l1_pruning', False) or \
