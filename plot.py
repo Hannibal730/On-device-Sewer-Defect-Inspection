@@ -445,8 +445,8 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
         plt.close()
 
         # 5. 컴파일된 전체 어텐션 맵 저장 (_compile.png)
-        # 원본 이미지를 위한 열을 추가하여 (num_heads + 1) 열로 설정
-        fig, axes = plt.subplots(num_queries, num_heads + 1, figsize=((num_heads + 1) * 5, num_queries * 5), squeeze=False)
+        # 원본 이미지를 위한 열(1) + 평균 어텐션 맵을 위한 열(1)을 추가하여 (num_heads + 2) 열로 설정
+        fig, axes = plt.subplots(num_queries, num_heads + 2, figsize=((num_heads + 2) * 5, num_queries * 5), squeeze=False)
         
         # 전체 그래프 제목 설정
         title = 'Attention Maps per Head and Query'
@@ -485,6 +485,28 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
                 ax.set_title(f'Head {head+1} / Query_patch {query_patch+1}')
                 ax.axis('off')
 
+        # 마지막 열에 평균 어텐션 맵 표시
+        for query_patch in range(num_queries):
+            ax_avg = axes[query_patch, num_heads + 1]
+            
+            # 해당 쿼리에 대한 모든 헤드의 어텐션 맵 평균 계산
+            # attention_maps: [num_heads, num_queries, num_patches]
+            avg_attn_map_query = attention_maps[:, query_patch, :].mean(dim=0) # [num_patches]
+            
+            # 1D -> 2D 그리드로 변환
+            attn_map_2d = avg_attn_map_query.view(1, 1, grid_size, grid_size)
+            
+            # 업샘플링
+            upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+            upscaled_map = upscaled_map.squeeze().numpy()
+
+            # 그리기
+            ax_avg.imshow(image, extent=(0, img_size, 0, img_size))
+            ax_avg.imshow(upscaled_map, cmap='jet', alpha=0.3, extent=(0, img_size, 0, img_size))
+
+            ax_avg.set_title(f'Average / Query_patch {query_patch+1}')
+            ax_avg.axis('off')
+
         plt.tight_layout(rect=[0, 0.03, 1, 0.93]) # suptitle 공간 확보를 위해 rect 조정
         
         compile_save_path = os.path.join(output_folder, f"{base_name}_compile.png")
@@ -504,12 +526,53 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
             # 시각화
             plt.figure(figsize=(8, 8))
             plt.imshow(image, extent=(0, img_size, 0, img_size))
-            plt.imshow(upscaled_map, cmap='jet', alpha=0.3, extent=(0, img_size, 0, img_size))
+            plt.imshow(upscaled_map, cmap='jet', alpha=0.5, extent=(0, img_size, 0, img_size))
             plt.axis('off')
             # plt.title(f'Attention Map - Head {head+1}') # 제목(title)을 제거합니다.
             head_save_path = os.path.join(output_folder, f"{base_name}_head{head+1}.png")
             plt.savefig(head_save_path, bbox_inches='tight')
             plt.close()
+
+            # [추가] 별도의 어텐션 스코어 히트맵 저장 (격자무늬, Viridis)
+            plt.figure(figsize=(8, 6))
+            # 1D -> 2D numpy array (grid_size x grid_size)
+            score_map_2d = head_attn_map.view(grid_size, grid_size).numpy()
+            sns.heatmap(score_map_2d, cmap='viridis', annot=False, fmt=".4f", 
+                        linewidths=0.5, linecolor='gray', square=True, cbar=True)
+            plt.title(f'Attention Score - Head {head+1}')
+            plt.axis('off')
+            score_save_path = os.path.join(output_folder, f"{base_name}_score_head{head+1}.png")
+            plt.savefig(score_save_path, bbox_inches='tight')
+            plt.close()
+
+        # 7. 모든 헤드의 평균 어텐션 맵 저장 (_head_avg.png)
+        # 모든 헤드와 모든 쿼리에 대해 평균을 냅니다.
+        avg_attn_map = attention_maps.mean(dim=(0, 1)) # [num_patches]
+        
+        # 1D -> 2D 그리드로 변환 및 업샘플링
+        attn_map_2d = avg_attn_map.view(1, 1, grid_size, grid_size)
+        upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+        upscaled_map = upscaled_map.squeeze().numpy()
+
+        # 시각화 (Overlay)
+        plt.figure(figsize=(8, 8))
+        plt.imshow(image, extent=(0, img_size, 0, img_size))
+        plt.imshow(upscaled_map, cmap='jet', alpha=0.3, extent=(0, img_size, 0, img_size))
+        plt.axis('off')
+        avg_save_path = os.path.join(output_folder, f"{base_name}_head_avg.png")
+        plt.savefig(avg_save_path, bbox_inches='tight')
+        plt.close()
+
+        # [추가] 별도의 평균 어텐션 스코어 히트맵 저장 (격자무늬, Viridis)
+        plt.figure(figsize=(8, 6))
+        score_map_2d = avg_attn_map.view(grid_size, grid_size).numpy()
+        sns.heatmap(score_map_2d, cmap='viridis', annot=False, fmt=".4f", 
+                    linewidths=0.5, linecolor='gray', square=True, cbar=True)
+        plt.title('Average Attention Score')
+        plt.axis('off')
+        score_avg_save_path = os.path.join(output_folder, f"{base_name}_score_avg.png")
+        plt.savefig(score_avg_save_path, bbox_inches='tight')
+        plt.close()
 
     except Exception as e:
         logging.error(f"어텐션 맵 시각화 중 오류 발생: {e}")
