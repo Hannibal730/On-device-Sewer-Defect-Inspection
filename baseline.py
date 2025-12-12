@@ -56,7 +56,7 @@ def setup_logging(run_cfg, data_dir_name, baseline_model_name, baseline_cfg):
     # --- [수정] 경량화 옵션 이름을 폴더명에 추가 ---
     lightweight_option_names = []
     pruning_options = [
-        'use_l1_pruning', 'use_l2_pruning', 'use_depgraph_pruning', 
+        'use_l1_pruning', 'use_l2_pruning', 'use_fpgm_pruning',
         'use_lamp_pruning', 'use_slimming_pruning', 'use_taylor_pruning'
     ]
     for option in pruning_options:
@@ -69,7 +69,6 @@ def setup_logging(run_cfg, data_dir_name, baseline_model_name, baseline_cfg):
         logging.disable(logging.CRITICAL)
         return '.', timestamp, lightweight_option_names
 
-    # 각 실행을 위한 고유한 디렉토리 생성 (baseline 모델 이름 포함)
     lightweight_str = ""
     if lightweight_option_names:
         lightweight_str = "_" + "-".join(lightweight_option_names)
@@ -250,7 +249,7 @@ def log_model_parameters(model):
     logging.info("="*50)
 
 # =============================================================================
-# [NEW] 1-1. ONNX CPU 메모리 측정 함수 (단일 샘플 방식)
+# ONNX CPU 메모리 측정 함수 (단일 샘플 방식)
 # =============================================================================
 def measure_cpu_peak_memory_during_inference(session, data_loader, device):
     """ONNX 모델 추론 중 CPU 최대 메모리 사용량(RSS)을 단일 샘플 기준으로 측정합니다."""
@@ -269,7 +268,7 @@ def measure_cpu_peak_memory_during_inference(session, data_loader, device):
         logging.error(f"ONNX 메모리 측정을 위한 더미 데이터 생성 중 오류 발생: {e}")
         return
 
-    # --- [수정] 기준 메모리를 추론 실행 전에 측정 ---
+    # 기준 메모리를 추론 실행 전에 측정
     mem_before = process.memory_info().rss / (1024 * 1024) # MB
     logging.info(f"ONNX 추론 실행 전 기본 CPU 메모리: {mem_before:.2f} MB")
     peak_mem = mem_before
@@ -290,7 +289,6 @@ def measure_cpu_peak_memory_during_inference(session, data_loader, device):
         session.run(None, {input_name: single_dummy_input_np})
         peak_mem = max(peak_mem, process.memory_info().rss / (1024 * 1024))
 
-    # --- [수정] 로그 메시지 변경 ---
     logging.info(f"  - 추론 전 기본 CPU 메모리: {mem_before:.2f} MB")
     logging.info(f"  - 추론 중 최대 CPU 메모리 (Peak): {peak_mem:.2f} MB")
     logging.info(f"  - 추론으로 인한 순수 메모리 증가량: {(peak_mem - mem_before):.2f} MB")
@@ -406,7 +404,7 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
         raise ValueError(f"baseline.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
 
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
-    # [수정] best_metric이 인자로 전달되지 않은 경우에만 초기화합니다.
+    # best_metric이 인자로 전달되지 않은 경우에만 초기화합니다.
     if best_metric is None:
         best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
         logging.info(f"Best metric을 초기값({best_metric})으로 설정합니다.")
@@ -464,9 +462,9 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
                 loss = criterion(outputs, labels)
             loss.backward()
 
-            # --- [추가] Network Slimming을 위한 L1 정규화 손실 추가 ---
+            # Network Slimming을 위한 L1 정규화 손실
             is_slimming_pretrain = getattr(baseline_cfg, 'use_slimming_pruning', False) and \
-                                   train_cfg.epochs == config.get('training_baseline', {}).get('epochs')
+                                    train_cfg.epochs == config.get('training_baseline', {}).get('epochs')
 
             if is_slimming_pretrain:
                 l1_loss = torch.tensor(0., device=device)
@@ -509,7 +507,7 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
         # 최고 성능 모델 저장
         if is_best:
             best_metric = current_metric
-            # [수정] thop.profile에 의해 오염될 수 있는 state_dict를 저장하기 전 정리합니다.
+            # thop.profile에 의해 오염될 수 있는 state_dict를 저장하기 전 정리합니다.
             # 'total_ops' 또는 'total_params'로 끝나는 키를 제거하여 순수한 가중치만 저장합니다.
             clean_state_dict = {k: v for k, v in model.state_dict().items() if not k.endswith(('total_ops', 'total_params'))}
             torch.save(clean_state_dict, model_path)
@@ -528,7 +526,7 @@ def train(run_cfg, train_cfg, baseline_cfg, config, model, optimizer, scheduler,
     
     # 만약 훈련 동안 한 번도 best model이 저장되지 않았다면(e.g., loss가 계속 nan), 마지막 모델이라도 저장합니다.
     if not is_best_saved:
-        # [수정] 여기에서도 state_dict를 정리하여 저장합니다.
+        # 여기에서도 state_dict를 정리하여 저장합니다.
         clean_state_dict = {k: v for k, v in model.state_dict().items() if not k.endswith(('total_ops', 'total_params'))}
         torch.save(clean_state_dict, model_path)
         logging.warning(f"훈련 동안 성능 개선이 없어 Best 모델이 저장되지 않았습니다. 마지막 에포크의 모델을 '{model_path}'에 저장합니다.")
@@ -549,7 +547,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             logging.info(f"ONNX Runtime (v{onnxruntime.__version__})으로 평가를 시작합니다.")
             onnx_session = onnxruntime.InferenceSession(onnx_inference_path)
 
-            # --- [NEW] ONNX CPU Peak Memory Measurement ---
+            # ONNX CPU Peak Memory Measurement
             if device.type == 'cpu':
                 measure_cpu_peak_memory_during_inference(onnx_session, data_loader, device)
 
@@ -703,10 +701,10 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             sess_options = onnxruntime.SessionOptions()
             sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
             torch.onnx.export(model, dummy_input.to('cpu'), onnx_path,
-                              export_params=True, opset_version=14,
-                              do_constant_folding=True,
-                              input_names=['input'], output_names=['output'],
-                              dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
+                                export_params=True, opset_version=14,
+                                do_constant_folding=True,
+                                input_names=['input'], output_names=['output'],
+                                dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
             model.to(device) # 모델을 원래 장치로 복원
 
             # [추가] ONNX 파일 크기 로깅
@@ -729,7 +727,6 @@ def main():
     # [해결] timm의 복합 레이어를 분리하기 위해 타입을 import합니다.
     try:
         from timm.layers import BatchNormAct2d
-        # [추가] torch-pruning 라이브러리를 main 함수 내부에서 import 합니다.
         import torch_pruning as tp
     except ImportError:
         BatchNormAct2d = None
@@ -820,12 +817,12 @@ def main():
     masks = None  # masks를 main 함수 스코프에서 정의
     # --- Pruning 적용 여부 확인 ---
     use_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
-                  getattr(baseline_cfg, 'use_l2_pruning', False) or \
-                  getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
-                  getattr(baseline_cfg, 'use_lamp_pruning', False) or \
-                  getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
-                  getattr(baseline_cfg, 'use_taylor_pruning', False) or \
-                  getattr(baseline_cfg, 'use_slimming_pruning', False)
+                    getattr(baseline_cfg, 'use_l2_pruning', False) or \
+                    getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
+                    getattr(baseline_cfg, 'use_lamp_pruning', False) or \
+                    getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
+                    getattr(baseline_cfg, 'use_taylor_pruning', False) or \
+                    getattr(baseline_cfg, 'use_slimming_pruning', False)
 
     def run_torch_pruning(model, baseline_cfg, model_cfg, device, train_loader=None, criterion=None):
         """torch-pruning 라이브러리를 사용하여 DepGraph 기반 Pruning을 수행합니다."""
@@ -849,11 +846,6 @@ def main():
             imp = tp.importance.MagnitudeImportance(p=2)
             pruner_class = tp.pruner.MagnitudePruner
             pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
-        elif getattr(baseline_cfg, 'use_depgraph_pruning', False):
-            logging.info("DepGraph Pruning (Magnitude-based)을 시작합니다...")
-            imp = tp.importance.MagnitudeImportance(p=1)
-            pruner_class = tp.pruner.MagnitudePruner
-            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
         elif getattr(baseline_cfg, 'use_lamp_pruning', False):
             logging.info("LAMP Pruning을 시작합니다...")
             # LAMP는 중요도 계산에 더 많은 반복이 필요할 수 있습니다.
@@ -874,6 +866,9 @@ def main():
                 logging.error("Taylor Pruning을 사용하려면 train_loader와 criterion이 필요합니다.")
                 return model
             
+            # 그래디언트 계산 전, 모델의 기존 그래디언트를 초기화합니다.
+            model.zero_grad()
+
             logging.info("Taylor 중요도 계산을 위해 샘플 배치에 대한 그래디언트를 계산합니다...")
             images, labels, _ = next(iter(train_loader))
             images, labels = images.to(device), labels.to(device)
@@ -882,6 +877,12 @@ def main():
             loss.backward()
 
             pruner_class = tp.pruner.MagnitudePruner
+            pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
+        elif getattr(baseline_cfg, 'use_fpgm_pruning', False):
+            logging.info("FPGM Pruning을 시작합니다...")
+            # FPGM은 필터 간 기하학적 중앙값을 기반으로 중요도를 계산합니다.
+            imp = tp.importance.FPGMImportance(p=2) # L2-norm 기반 거리 계산이 일반적입니다.
+            pruner_class = tp.pruner.MagnitudePruner # FPGM도 중요도 기반 Pruner를 사용합니다.
             pruner_kwargs = {'importance': imp, 'pruning_ratio': pruning_sparsity}
         else:
             logging.warning("활성화된 torch-pruning 기법이 없습니다.")
@@ -903,7 +904,7 @@ def main():
             ignored_layers.append(last_layer)
             logging.info(f"분류 레이어 '{type(last_layer).__name__}'을(를) Pruning 대상에서 제외합니다.")
 
-        # [추가] ViT 계열 모델의 qkv 레이어를 Pruning 대상에서 제외하여 구조적 오류 방지
+        # ViT 계열 모델의 qkv 레이어를 Pruning 대상에서 제외하여 구조적 오류 방지
         is_vit_family = 'vit' in baseline_model_name or 'deit' in baseline_model_name or 'swin' in baseline_model_name
         if is_vit_family:
             for name, module in model.named_modules():
@@ -953,7 +954,7 @@ def main():
         original_model = copy.deepcopy(model)
         dummy_input = torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device)
 
-        # 이진 탐색 반복 (20회 정도면 충분한 정밀도 확보 가능)
+        # 이진 탐색 반복 (100회 정도면 충분한 정밀도 확보 가능)
         for i in range(100):
             current_sparsity = (low_sparsity + high_sparsity) / 2
             
@@ -1114,7 +1115,7 @@ def main():
                 optimal_sparsity = find_sparsity_for_target_flops(model, baseline_cfg, model_cfg, device, train_loader, criterion) # type: ignore
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
-                # [수정] 계산된 Pruning 정보를 파일에 저장하여 추론 시 재사용
+                # 계산된 Pruning 정보를 파일에 저장하여 추론 시 재사용
                 pruning_info = {
                     'pruning_method': lightweight_option_names[0] if lightweight_option_names else 'unknown',
                     'target_type': 'flops',
@@ -1133,7 +1134,7 @@ def main():
                 optimal_sparsity = find_sparsity_for_target_params(model, baseline_cfg, model_cfg, device, train_loader, criterion) # type: ignore
                 # 찾은 희소도를 설정에 반영
                 baseline_cfg.pruning_sparsity = optimal_sparsity
-                # [수정] 계산된 Pruning 정보를 파일에 저장하여 추론 시 재사용
+                # 계산된 Pruning 정보를 파일에 저장하여 추론 시 재사용
                 pruning_info = {
                     'pruning_method': lightweight_option_names[0] if lightweight_option_names else 'unknown',
                     'target_type': 'params',
@@ -1146,11 +1147,9 @@ def main():
                 logging.info(f"계산된 Pruning 정보(희소도: {optimal_sparsity:.4f})를 '{pruning_info_path}'에 저장했습니다.")
 
             # Pruning 적용
-            # [수정] L1, L2 Pruning도 torch-pruning으로 통합
+            # L1, L2 Pruning도 torch-pruning으로 통합
             use_torch_pruning = getattr(baseline_cfg, 'use_l1_pruning', False) or \
                                 getattr(baseline_cfg, 'use_l2_pruning', False) or \
-                                getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
-                                getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
                                 getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
                                 getattr(baseline_cfg, 'use_taylor_pruning', False) or \
                                 getattr(baseline_cfg, 'use_lamp_pruning', False) or \
@@ -1179,7 +1178,7 @@ def main():
 
                 # Pruning 후 FLOPs 측정 및 감소율 로깅
                 pruned_macs, _ = profile(model, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
-                # [수정] Pruning 후 FLOPs 측정 및 감소율 로깅 (모델 오염 방지를 위해 복사본 사용)
+                # Pruning 후 FLOPs 측정 및 감소율 로깅 (모델 오염 방지를 위해 복사본 사용)
                 logging.info("Pruning 후 모델의 FLOPs를 측정합니다...")
                 model_for_profiling = copy.deepcopy(model)
                 pruned_macs, _ = profile(model_for_profiling, inputs=(torch.randn(1, 3, model_cfg.img_size, model_cfg.img_size).to(device),), verbose=False)
@@ -1196,14 +1195,14 @@ def main():
                 finetune_optimizer, finetune_scheduler = create_optimizer_and_scheduler(finetune_cfg, model)
                 
                 # 미세 조정 훈련 실행
-                # [수정] best_metric을 None으로 전달하여 미세 조정 시점에서 초기화하도록 합니다.
+                # best_metric을 None으로 전달하여 미세 조정 시점에서 초기화하도록 합니다.
                 train(run_cfg, finetune_cfg, baseline_cfg, config, model, finetune_optimizer, finetune_scheduler, train_loader, valid_loader, device, run_dir_path, class_names, pos_weight, epoch_offset=train_cfg.epochs, best_metric=None)
             else:
                 logging.info("활성화된 Pruning 방법이 없어 미세 조정을 건너뜁니다.")
 
         logging.info("="*50)
         logging.info("훈련 완료. 최고 성능 모델을 불러와 테스트 세트로 최종 평가합니다.")
-        # --- [최종 수정] 최종 평가를 위해 깨끗한 모델 객체를 새로 생성하고 가중치를 로드합니다. ---
+        # --- 최종 평가를 위해 깨끗한 모델 객체를 새로 생성하고 가중치를 로드합니다. ---
         # 훈련 과정에서 사용된 model 객체는 FLOPs 측정 등으로 오염되었을 수 있습니다.
         # 따라서, 가장 안정적인 방법은 새로운 모델을 만들고, Pruning 구조를 재현한 뒤, 저장된 가중치를 불러오는 것입니다.
         best_model_path = os.path.join(run_dir_path, run_cfg.pth_best_name)
@@ -1212,7 +1211,7 @@ def main():
             logging.info("최종 평가를 위해 새로운 모델 객체를 생성합니다.")
             final_model = create_baseline_model(baseline_model_name, num_labels, pretrained=False).to(device)
 
-            # [추가] 새로 생성된 모델에도 Pruning 호환성 패치를 적용합니다.
+            # 새로 생성된 모델에도 Pruning 호환성 패치를 적용합니다.
             final_model = patch_timm_model_for_pruning(final_model, baseline_model_name, device)
             
             # 2. Pruning이 사용되었다면, 새로운 모델에도 동일한 Pruning 구조를 적용합니다.
@@ -1254,7 +1253,7 @@ def main():
             logging.info(f"'{onnx_inference_path}' ONNX 파일 평가를 위해 PyTorch 모델 생성을 건너뜁니다.")
             inference(run_cfg, model_cfg, None, test_loader, device, run_dir_path, timestamp, mode_name="Inference", class_names=class_names)
         else:
-            # --- [추가] 추론 모드에서 Pruning 재현 로직 ---
+            # --- 추론 모드에서 Pruning 재현 로직 ---
             # 훈련 시 Pruning이 사용되었는지 확인하고 모델 구조를 동일하게 재구성합니다.
             # 1. 훈련 로그 디렉토리에서 pruning_info.yaml을 읽어 희소도를 가져옵니다.
             pruning_info_path = os.path.join(run_dir_path, 'pruning_info.yaml')
@@ -1268,12 +1267,11 @@ def main():
 
             # 2. config.yaml 또는 run_info.yaml의 설정을 바탕으로 Pruning 적용
             use_pruning_in_inference = getattr(baseline_cfg, 'use_l1_pruning', False) or \
-                                       getattr(baseline_cfg, 'use_l2_pruning', False) or \
-                                       getattr(baseline_cfg, 'use_depgraph_pruning', False) or \
-                                       getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
-                                       getattr(baseline_cfg, 'use_taylor_pruning', False) or \
-                                       getattr(baseline_cfg, 'use_lamp_pruning', False) or \
-                                       getattr(baseline_cfg, 'use_slimming_pruning', False)
+                                        getattr(baseline_cfg, 'use_l2_pruning', False) or \
+                                        getattr(baseline_cfg, 'use_fpgm_pruning', False) or \
+                                        getattr(baseline_cfg, 'use_taylor_pruning', False) or \
+                                        getattr(baseline_cfg, 'use_lamp_pruning', False) or \
+                                        getattr(baseline_cfg, 'use_slimming_pruning', False)
             
             if use_pruning_in_inference:
                 logging.info("추론 모드: 훈련된 모델의 Pruning 구조를 재현합니다...")

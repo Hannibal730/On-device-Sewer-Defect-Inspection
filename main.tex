@@ -297,35 +297,38 @@ These informative, input-conditioned queries allow the decoder to refine salient
 Unlike static learnable queries that primarily capture dataset-level priors, this strategy enables queries to adapt to the characteristics of each instance, which can facilitate faster convergence and improved feature extraction.
 
 \begin{table}[t]
-\centering
-\caption{Detailed breakdown of trainable parameters in our proposed architecture.}
-\label{tab:param_breakdown}
-\begin{tabular}{lr}
-\toprule
-\textbf{Component} & \textbf{Parameters} \\
-\midrule
-\addlinespace[0.5em] % [헤더 아래 여백 추가] 본문과 살짝 떨어뜨림
+    \centering
+    \caption{Detailed breakdown of trainable parameters in our proposed architecture.}
+    \label{tab:param_breakdown}
 
-\textbf{Encoder (PatchConvEncoder)} & \textbf{19,402} \\
-\quad CNN Backbone (EfficientNet-B0 based) & 19,090 \\
-\quad Patch Mixer (Depthwise Conv) & 264 \\
-\quad Normalization (LayerNorm) & 48 \\
-\addlinespace % [섹션 간 여백] 가독성을 위해 추가 (선택 사항)
-
-\textbf{Decoder (Cross-Attention-based)} & \textbf{9,816} \\
-\quad Embedding Layer ($W_{\text{emb}}$) & 600 \\
-\quad Learnable Queries ($N_q=1$) & 24 \\
-\quad Decoder Layers (Cross-Attention) & 8,592 \\
-\quad Projection for Classifier & 600 \\
-\addlinespace % [섹션 간 여백]
-
-\textbf{Classifier (Projection MLP)} & \textbf{353} \\
-
-\addlinespace[0.5em] % [Total 위 여백 추가] 합계 라인 강조
-\midrule % 합계 위에는 보통 선을 하나 그어줌 (계산 완료 의미)
-\textbf{Total Model Parameters} & \textbf{29,571} \\
-\bottomrule
-\end{tabular}
+    \resizebox{0.65\columnwidth}{!}{%
+        \begin{tabular}{lr}
+            \toprule
+            \textbf{Component} & \textbf{Parameters} \\
+            \midrule
+            \addlinespace[0.5em] 
+            
+            \textbf{Encoder (PatchConvEncoder)} & \textbf{19,402} \\
+            \quad CNN Backbone (EfficientNet-B0 based) & 19,090 \\
+            \quad Patch Mixer (Depthwise Conv) & 264 \\
+            \quad Normalization (LayerNorm) & 48 \\
+            \addlinespace 
+            
+            \textbf{Decoder (Cross-Attention-based)} & \textbf{9,816} \\
+            \quad Embedding Layer ($W_{\text{emb}}$) & 600 \\
+            \quad Learnable Queries ($N_q=1$) & 24 \\
+            \quad Decoder Layers (Cross-Attention) & 8,592 \\
+            \quad Projection for Classifier & 600 \\
+            \addlinespace 
+            
+            \textbf{Classifier (Projection MLP)} & \textbf{353} \\
+            
+            \addlinespace[0.5em] 
+            \midrule 
+            \textbf{Total Model Parameters} & \textbf{29,571} \\
+            \bottomrule
+        \end{tabular}%
+    }
 \end{table}
 
 The decoder consists of $L$ identical layers, each comprising a Multi-Head Cross-Attention (MHCA) block and a Feed-Forward Network (FFN).
@@ -336,7 +339,7 @@ The output of the final decoder layer is fed into a lightweight MLP classifier t
 
 To demonstrate the structural efficiency of our method, Table \ref{tab:param_breakdown} provides a breakdown of trainable parameters, totaling fewer than 30K.
 The encoder accounts for the majority of parameters (66\%), indicating that LIQCA emphasizes efficient CNN-based local feature extraction while keeping the cross-attention decoder compact to minimize overhead.
-This compact design makes LIQCA a practical candidate for deep-learning applications on micro-controllers (MCUs), bridging the gap between large-scale models and extremely resource-limited hardware.
+This compact design makes LIQCA a practical candidate for deep learning applications on edge devices, bridging the gap between large-scale models and extremely resource-limited hardware.
 
 % \begin{table}[H]
 % \centering
@@ -367,9 +370,9 @@ This compact design makes LIQCA a practical candidate for deep-learning applicat
 \section{Experiments}
 \label{sec:exp}
 
-We conducted experiments to validate the effectiveness and efficiency of the proposed method, \textbf{LIQCA}.
+We conducted experiments to validate the effectiveness and efficiency of the proposed method.
 Section~\ref{sec:exp_datasets} introduces the public and private sewer datasets used in this study.
-Section~\ref{sec:exp_baselines} describes the baseline methods and the training hyperparameters for LIQCA.
+Section~\ref{sec:exp_baselines} introduces the baseline methods and the training hyperparameters employed for both the baselines and LIQCA.
 Section~\ref{sec:exp_metrics} presents the evaluation metrics used to assess both performance and efficiency.
 Section~\ref{sec:exp_results} compares LIQCA with the baselines under several experimental settings.
 Finally, Section~\ref{sec:exp_ablation} provides an ablation study to verify the contribution of the input-conditioned initial queries.
@@ -433,6 +436,7 @@ Detailed statistics are provided in Table~\ref{tab:dataset_stats}.
 \begin{table}[t]
     \centering
     \caption{Statistics of the Sewer-ML and private datasets used in this study.}
+    \resizebox{0.65\columnwidth}{!}{%
     \label{tab:dataset_stats}
     \begin{tabular}{llrrr}
         \toprule
@@ -450,7 +454,7 @@ Detailed statistics are provided in Table~\ref{tab:dataset_stats}.
         \cmidrule(l){2-5}
         & \textbf{Total} & \textbf{1,353} & \textbf{339} & \textbf{1,692} \\
         \bottomrule
-    \end{tabular}
+    \end{tabular}}
 \end{table}
 
 \subsection{Baselines and Hyperparameters}
@@ -466,7 +470,7 @@ In this section, we compare LIQCA against four categories of baselines.
 
 (iv) \textbf{Domain-specific model.} \citet{xie2019automatic} propose a CNN model tailored to classify defects in sewer imagery. This approach achieves the highest performance among both general-purpose models and sewer-specific methods on the binary classification task of the Sewer-ML dataset \citep{haurum2021sewer}. We include \citet{xie2019automatic} as a domain-specialized baseline to compare practical deployment capability with LIQCA.
 
-For hyperparameters, we follow the Sewer-ML training protocol for image preprocessing and train all models from scratch for 90 epochs. We use cross-entropy loss and the AdamW optimizer with an initial learning rate of 1e-4 and weight decay of 1e-2, together with a cosine-annealing learning-rate schedule. To mitigate overconfident predictions on ambiguous or visually realistic defect images that can also challenge human inspectors, we adopt label smoothing \citep{liu2023model}. All models are trained with a batch size of 256 on a single NVIDIA RTX 5090 GPU.
+For data preprocessing, we follow the Sewer-ML training protocol and train all models from scratch for 90 epochs. We use cross-entropy loss and the AdamW optimizer with an initial learning rate of $1\times10^{-4}$ and weight decay of $1\times10^{-2}$, together with a cosine-annealing learning-rate schedule. To mitigate overconfident predictions on ambiguous or visually realistic defect images that are challenging even for human inspectors, we adopt label smoothing \citep{liu2023model}. For the training phase, we utilize a single NVIDIA RTX 5090 GPU. Considering the scale of each dataset, we use a batch size of 256 for Sewer-ML and 16 for the Private dataset.
 
 % \begin{table}[t]
 % \centering
@@ -497,31 +501,28 @@ This section outlines the evaluation metrics and comparison strategies adopted t
 \subsubsection{Performance Metrics.}
 We employ Top-1 accuracy over all classes and precision, recall, and F1-score for the abnormal class as our primary evaluation metrics. Following \citet{haurum2021sewer}, we prioritize metrics for the abnormal class because false negatives (i.e., undetected defects) pose a greater economic risk than false positives in automated sewer inspection. However, relying solely on recall is insufficient, since frequent false alarms (low precision) can undermine system reliability and increase manual verification costs. Therefore, we consider precision and F1-score alongside recall to ensure a balanced evaluation. We report all performance metrics using the model checkpoint that achieves the lowest validation loss.
 
-\subsubsection{Efficiency Metrics.}
-To assess the deployment potential of LIQCA on edge devices, we measure model size, latency, and peak memory usage. To simulate a realistic deployment environment, we perform evaluations using the ONNX Runtime instead of the standard PyTorch checkpoint (.pth) format. Furthermore, to validate practical feasibility on resource-constrained hardware, we conduct all measurements directly on a \textbf{Raspberry Pi 5}, utilizing its Broadcom BCM2712 SoC featuring a quad-core ARM Cortex-A76 CPU and LPDDR4X memory. Raspberry Pi, widely recognized as a representative benchmark platform in industrial edge computing and robotics \citep{mathe2024comprehensive}, serves as a practical testbed for evaluating on-device performance under strict power and thermal envelopes, in contrast to theoretical metrics derived from server-grade GPUs.
+\subsubsection{Efficiency Metrics}
+To assess the deployment potential of LIQCA on edge devices, we measure model size, latency, and peak memory usage. To simulate a realistic deployment workflow, we first convert the trained PyTorch checkpoints (.pth) to the ONNX format and then perform all efficiency evaluations using ONNX Runtime (v1.23.2). To validate practical feasibility on resource-constrained hardware, all measurements are conducted directly on a \textbf{Raspberry Pi 5 (4GB RAM model)} equipped with a Broadcom BCM2712 SoC (quad-core ARM Cortex-A76 CPU, LPDDR4X memory). The Raspberry Pi platform, widely used as a representative benchmark in industrial edge computing and robotics \citep{mathe2024comprehensive}, serves as a practical testbed for evaluating on-device performance under tight power and thermal constraints, in contrast to theoretical metrics derived from server-grade GPUs.
 
-We first run inference 10 times with a single sample to warm up the system. We then perform 100 additional inferences with the same sample and compute the average latency per inference. To obtain peak memory usage per sample, we record the maximum memory consumption during these 100 runs and subtract the baseline memory usage measured before any inference.
+For latency, we first run inference 10 times with a single sample to warm up the system. We then perform 100 additional inferences with the same sample and report the average latency per inference. For peak memory usage per sample, we record the maximum memory consumption during these 100 runs and subtract the baseline memory usage measured before any inference.
 
 \subsubsection{Fair Comparison Strategy.}
 To ensure fair comparisons across different model architectures, we adopt a structured pruning protocol for all baselines. Specifically, we prune each baseline model to match the computational complexity of LIQCA, measured in floating-point operations (FLOPs). FLOPs are a standard proxy for lightweight model efficiency and often correlate with inference latency and energy consumption on resource-constrained devices \citep{howard2017mobilenets}.
 
 Nevertheless, FLOPs alone do not fully characterize real-world efficiency. A comprehensive comparison should also control the parameter count, which directly affects memory footprint and can influence distributed training efficiency, especially when deploying to hardware with limited on-chip memory \citep{iandola2016squeezenet}. Accordingly, we perform an additional set of comparisons in which we prune baselines to match the parameter scale of LIQCA (approximately 30K parameters), enabling evaluation under realistic storage constraints.
 
-We implement L1-norm structured pruning using the \textbf{torch-pruning} library together with the Dependency Graph (DepGraph) algorithm \citep{fang2023depgraph}. The L1-norm criterion ranks filters by the magnitude of their weights and removes those with the smallest sums of absolute values, which are considered less informative \citep{filters2016pruning}. DepGraph automatically identifies and groups coupled layers (e.g., within residual connections) to preserve structural integrity and dimensional consistency during pruning. For each baseline, we train for the first 10 epochs of the 90-epoch schedule to estimate filter importance and then prune to the target FLOP or parameter budget, excluding the final classification layer. This choice follows \citet{you2019drawing}, who showed that using roughly 6.5\%--12.5\% of the full training schedule is sufficient to identify high-quality subnetworks. With this protocol, we establish a standardized benchmark that facilitates a fair evaluation of LIQCA against all baselines under matched resource constraints.
+We perform L1-norm structured pruning using the \textbf{torch-pruning} library together with the Dependency Graph (DepGraph) algorithm \citep{fang2023depgraph}. The L1-norm criterion ranks filters by the magnitude of their weights and removes those with the smallest sums of absolute values, which are assumed to be less informative \citep{filters2016pruning}. DepGraph automatically identifies and groups coupled layers (e.g., within residual connections), ensuring structural integrity and dimensional consistency during pruning. For each baseline, we first train the model for 10 epochs of a 90-epoch schedule to estimate filter importance. We then employ a binary search procedure to determine the global sparsity ratio that matches the target FLOPs or parameter budget and prune the model accordingly, excluding the final classification layer and, for transformer-based architectures, the query–key–value (QKV) projection layers. This early-pruning strategy follows \citet{you2019drawing}, who showed that using roughly 6.5\%--12.5\% of the full training schedule is sufficient to identify high-quality subnetworks. With this protocol, we establish a standardized benchmark that enables a fair evaluation of LIQCA against all baselines under matched resource constraints.
+
+
+
+
+
 
 \subsection{Experiment Results}
 \label{sec:exp_results}
 In this section, we validate the practical feasibility of LIQCA by comparing it with baselines under standardized resource constraints.
 
 \subsubsection{Performance with Unpruned baselines}
-
-
-
-\subsubsection{Pruning the baselines}
-
-\subsubsection{Comparison under ISO-FLOPs}
-
-\subsubsection{Comparison under ISO-Params}
 
 
 
@@ -537,8 +538,8 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
     \caption{Performance of unpruned model comparison on Sewer-ML and Private datasets.}
     \label{tab:original_info}
     
-    \resizebox{\columnwidth}{!}{%
-        \begin{tabular}{l l c c c c}
+    \resizebox{1.0\columnwidth}{!}{%
+        \begin{tabular}{l l r r r r}
             \toprule
             \multirow{2}{*}{\textbf{Dataset}} & \multirow{2}{*}{\textbf{Model}} & \textbf{Acc$_{\text{abnormal}}$} & \textbf{Prec$_{\text{abnormal}}$} & \textbf{Rec$_{\text{abnormal}}$} & \textbf{F1$_{\text{abnormal}}$} \\
              & & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} \\
@@ -557,43 +558,79 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
             
             % Private Dataset
             \multirow{6}{*}{\textbf{Private}} 
-             & EfficientNet-B0 & 83.78 & 81.87 & 83.44 & 82.65 \\
-             & MobileNetV4-S   & 80.53 & 77.58 & 81.53 & 79.50 \\
-             & Xie2019         & 82.60 & 79.17 & \textbf{84.71} & 81.85 \\
-             & DeiT-Tiny       & 78.17 & 73.45 & 82.80 & 77.84 \\
-             & MobileViT-XXS   & 81.42 & 77.98 & 83.44 & 80.62 \\
+             & EfficientNet-B0 & 83.19 & 85.21 & 77.07 & 80.94 \\
+             & MobileNetV4-S   & 84.07 & 83.23 & \textbf{82.17} & 82.69 \\
+             & Xie2019         & 81.71 & 81.05 & 78.98 & 80.00 \\
+             & DeiT-Tiny       & 80.53 & 77.25 & \textbf{82.17} & 79.63 \\
+             & MobileViT-XXS   & 82.30 & 82.25 & 78.34 & 80.39 \\
              \cmidrule{2-6} 
-             & \textbf{Ours}   & \textbf{85.84} & \textbf{86.09} & 82.80 & \textbf{84.42} \\
+             & \textbf{Ours}   & \textbf{86.73} & \textbf{88.36} & \textbf{82.17} & \textbf{85.15} \\
             \bottomrule
         \end{tabular}%
     }
 \end{table}
 
+
+
 \begin{table}[t]
     \centering
-    \caption{Performance comparison of original (unpruned) models. Note that the computational complexity and model size of baseline models significantly exceed those of LIQCA.}
+    \caption{Performance comparison of original (unpruned) models. \textbf{Size (.pth)} and \textbf{Size (.onnx)} denote the physical storage requirements of the PyTorch checkpoint and the converted ONNX file, respectively. Note that the computational complexity and storage requirements of baseline models significantly exceed those of LIQCA.}
     \label{tab:original_performance}
     
-    % \columnwidth: 단일 컬럼 폭에 맞춤
     \resizebox{\columnwidth}{!}{%
-        % Method 열 제거 -> l (Model) + r r r r (수치) + r@{\pm}l (Latency) + r@{\pm}l (FPS)
-        \begin{tabular}{l r r r r r@{ $\pm$ }l r@{ $\pm$ }l}
+        \begin{tabular}{l r r r r r r@{ $\pm$ }l r@{ $\pm$ }l}
             \toprule
-            \multirow{2}{*}{\textbf{Model}} & \textbf{FLOPs} & \textbf{Params} & \textbf{ONNX} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
-             & \textbf{(G)} & \textbf{(M)} & \textbf{(MB)} & \textbf{(MB)} & \multicolumn{2}{c}{\textbf{(ms)}} & \multicolumn{2}{c}{} \\
+            \multirow{2}{*}{\textbf{Model}} & \textbf{FLOPs} & \textbf{Params} & \textbf{Size (.pth)} & \textbf{Size (.onnx)} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
+             & \textbf{(G)} & \textbf{(M)} & \textbf{(MB)} & \textbf{(MB)} & \textbf{(MB)} & \multicolumn{2}{c}{\textbf{(ms)}} & \multicolumn{2}{c}{} \\
             \midrule
             
-            \textbf{EfficientNet-B0} & 0.83 & 4.01 & 15.29 & 21.08 & 32.30 & 1.89 & 31.03 & 1.21 \\
-            \textbf{MobileNetV4-S}   & 0.39 & 2.50 & 9.49  & 1.00  & 7.79  & 0.18 & 128.48 & 2.55 \\
-            \textbf{Xie2019}         & 2.87 & 9.16 & 34.95 & 28.73 & 34.49 & 1.67 & 29.04 & 1.07 \\
-            \textbf{DeiT-Tiny}       & 2.15 & 5.52 & 21.23 & 2.91  & 34.01 & 1.57 & 29.45 & 1.08 \\
-            \textbf{MobileViT-XXS}   & 0.54 & 0.95 & 3.88  & 10.44 & 22.96 & 0.56 & 43.58 & 0.94 \\
+            \textbf{EfficientNet-B0} & 0.83 & 4.01 & 15.57 & 15.29 & 21.08 & 32.30 & 1.89 & 31.03 & 1.21 \\
+            \textbf{MobileNetV4-S}   & 0.39 & 2.50 & 9.70  & 9.49  & 1.00  & 7.79  & 0.18 & 128.48 & 2.55 \\
+            \textbf{Xie2019}         & 2.87 & 9.16 & 34.95 & 34.95 & 28.73 & 34.49 & 1.67 & 29.04 & 1.07 \\
+            \textbf{DeiT-Tiny}       & 2.15 & 5.52 & 21.12 & 21.23 & 2.91  & 34.01 & 1.57 & 29.45 & 1.08 \\
+            \textbf{MobileViT-XXS}   & 0.54 & 0.95 & 3.74  & 3.87  & 10.44 & 22.96 & 0.56 & 43.58 & 0.94 \\
             \midrule
-            \textbf{Ours}            & \textbf{0.18} & \textbf{0.03} & \textbf{0.19} & 17.31 & 16.48 & 1.60 & 61.07 & 3.94 \\
+            \textbf{Ours}            & 0.18 & 0.03 & 0.16 & 0.19 & 17.31 & 16.48 & 1.60 & 61.07 & 3.94 \\
             \bottomrule
         \end{tabular}%
     }
 \end{table}
+
+
+
+\subsubsection{Pruning the baselines}
+
+
+
+
+
+\begin{table}[t]
+    \centering
+    \caption{Target global sparsity ratios determined via binary search. Note that identical sparsity targets were applied to both L1 Pruning and DepGraph for fair comparison.}
+    
+    \label{tab:sparsity_ratios}
+    \resizebox{0.6\columnwidth}{!}{%
+        \begin{tabular}{l r r}
+            \toprule
+            \multirow{2}{*}{\textbf{Model}} & \textbf{Sparsity} & \textbf{Sparsity} \\
+             & \textbf{(ISO-FLOPs)} & \textbf{(ISO-Params)} \\
+            \midrule
+            \textbf{EfficientNet-B0} & 0.5743 & 0.9368 \\
+            \textbf{MobileNetV4-S}   & 0.3234 & 0.9059 \\
+            \textbf{Xie2019}         & 0.9214 & 0.9426 \\
+            \textbf{DeiT-Tiny}       & 0.8169 & 0.9852 \\
+            \textbf{MobileViT-XXS}   & 0.4757 & 0.9088 \\
+            \bottomrule
+        \end{tabular}%
+    }
+\end{table}
+
+
+
+
+
+
+
 
 % 1.OG(sewer-Ml&tapnew) -> 2.FLOPs 압축표 -> 3.pruned(sewer-ML&tapnew) -> 4.params압축표 -> 5.pruned(sewer-ML&tapnew) -> 6. Ablation study
 
@@ -610,7 +647,7 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
     \resizebox{\textwidth}{!}{%
         \begin{tabular}{l l r r r r r@{ $\pm$ }l r@{ $\pm$ }l}
             \toprule
-            \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{FLOPs} & \textbf{Params} & \textbf{ONNX} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
+            \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{FLOPs} & \textbf{Params} & \textbf{Size (.onnx)} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
              & \textbf{(ISO-FLOPs)}& \textbf{(G)} & \textbf{(M)} & \textbf{(MB)} & \textbf{(MB)} & \multicolumn{2}{c}{\textbf{(ms)}} & \multicolumn{2}{c}{} \\
             \midrule
             
@@ -654,7 +691,7 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
     \resizebox{\textwidth}{!}{%
         \begin{tabular}{l l r r r r r@{ $\pm$ }l r@{ $\pm$ }l}
             \toprule
-            \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{FLOPs} & \textbf{Params} & \textbf{ONNX} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
+            \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{FLOPs} & \textbf{Params} & \textbf{Size (.onnx)} & \textbf{Peak Mem} & \multicolumn{2}{c}{\textbf{Latency}} & \multicolumn{2}{c}{\multirow{2}{*}{\textbf{FPS}}} \\
              & \textbf{(ISO-Params)}& \textbf{(G)} & \textbf{(M)} & \textbf{(MB)} & \textbf{(MB)} & \multicolumn{2}{c}{\textbf{(ms)}} & \multicolumn{2}{c}{} \\
             \midrule
             
@@ -692,6 +729,8 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
 
 
 
+\subsubsection{Comparison under ISO-FLOPs}
+
 
 
 
@@ -702,7 +741,7 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
     \label{tab:flops_performance}
     
     \resizebox{\columnwidth}{!}{%
-        \begin{tabular}{l l l c c c c}
+        \begin{tabular}{l l l r r r r}
             \toprule
             \multirow{2}{*}{\textbf{Dataset}} & \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{Acc$_{\text{abnormal}}$} & \textbf{Prec$_{\text{abnormal}}$} & \textbf{Rec$_{\text{abnormal}}$} & \textbf{F1$_{\text{abnormal}}$} \\
              & & \textbf{(ISO-FLOPs)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} \\
@@ -728,24 +767,24 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
              & \textbf{Ours} & Original & -- & -- & -- & -- \\
             \midrule
             
-            % Private Dataset
+            % Private Dataset (Updated Values)
             \multirow{11}{*}{\textbf{Private}} 
-             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & 81.71 & 81.46 & 78.34 & 79.87 \\
-             & & DepGraph & 81.71 & 81.46 & 78.34 & 79.87 \\
+             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & 82.60 & 85.51 & 75.16 & 80.00 \\
+             & & DepGraph & 82.60 & 78.16 & \textbf{86.62} & 82.18 \\
              \cmidrule{2-7}
-             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & 81.71 & 79.50 & 81.53 & 80.50 \\
-             & & DepGraph & 83.48 & 81.37 & \textbf{83.44} & 82.39 \\
+             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & 83.19 & 84.25 & 78.34 & 81.19 \\
+             & & DepGraph & 81.42 & 81.33 & 77.71 & 79.48 \\
              \cmidrule{2-7}
-             & \multirow{2}{*}{Xie2019} & L1 pruning & 80.53 & 77.91 & 80.89 & 79.37 \\
-             & & DepGraph & 78.76 & 76.07 & 78.98 & 77.50 \\
+             & \multirow{2}{*}{Xie2019} & L1 pruning & 81.12 & 78.18 & 82.17 & 80.12 \\
+             & & DepGraph & 82.01 & 82.00 & 78.34 & 80.13 \\
              \cmidrule{2-7}
-             & \multirow{2}{*}{DeiT-Tiny} & L1 pruning & 80.83 & 79.49 & 78.98 & 79.23 \\
-             & & DepGraph & 80.83 & 79.49 & 78.98 & 79.23 \\
+             & \multirow{2}{*}{DeiT-Tiny} & L1 pruning & 80.83 & 77.71 & 82.17 & 79.88 \\
+             & & DepGraph & 80.24 & 76.79 & 82.17 & 79.38 \\
              \cmidrule{2-7}
-             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & 81.71 & 80.25 & 80.25 & 80.25 \\
-             & & DepGraph & 82.30 & 79.39 & \textbf{83.44} & 81.37 \\
+             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & 82.89 & 80.00 & 84.08 & 81.99 \\
+             & & DepGraph & 80.83 & 78.40 & 80.89 & 79.62 \\
              \cmidrule{2-7}
-             & \textbf{Ours} & Original & \textbf{85.84} & \textbf{86.09} & 82.80 & \textbf{84.42} \\
+             & \textbf{Ours} & Original & \textbf{86.73} & \textbf{88.36} & 82.17 & \textbf{85.15} \\
             \bottomrule
         \end{tabular}%
     }
@@ -753,6 +792,8 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
 
 
 
+
+\subsubsection{Comparison under ISO-Params}
 
 
 
@@ -764,7 +805,7 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
     \label{tab:params_performance}
     
     \resizebox{\columnwidth}{!}{%
-        \begin{tabular}{l l l c c c c}
+        \begin{tabular}{l l l r r r r}
             \toprule
             \multirow{2}{*}{\textbf{Dataset}} & \multirow{2}{*}{\textbf{Model}} & \textbf{Method} & \textbf{Acc$_{\text{abnormal}}$} & \textbf{Prec$_{\text{abnormal}}$} & \textbf{Rec$_{\text{abnormal}}$} & \textbf{F1$_{\text{abnormal}}$} \\
              & & \textbf{(ISO-Params)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} & \textbf{(\%)} \\
@@ -790,24 +831,24 @@ In this section, we validate the practical feasibility of LIQCA by comparing it 
              & \textbf{Ours} & Original & -- & -- & -- & -- \\
             \midrule
             
-            % Private Dataset
+            % Private Dataset (Updated Values)
             \multirow{11}{*}{\textbf{Private}} 
-             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & 80.53 & 78.26 & 80.25 & 79.25 \\
-             & & DepGraph & 82.01 & 80.77 & 80.25 & 80.51 \\
+             & \multirow{2}{*}{EfficientNet-B0} & L1 pruning & 80.24 & 78.85 & 78.34 & 78.59 \\
+             & & DepGraph & 81.12 & 79.62 & 79.62 & 79.62 \\
              \cmidrule{2-7}
-             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & 71.09 & 67.46 & 72.61 & 69.94 \\
-             & & DepGraph & 71.98 & 70.13 & 68.79 & 69.45 \\
+             & \multirow{2}{*}{MobileNetV4-S} & L1 pruning & 82.30 & 79.04 & 84.08 & 81.48 \\
+             & & DepGraph & 81.42 & 83.57 & 74.52 & 78.79 \\
              \cmidrule{2-7}
-             & \multirow{2}{*}{Xie2019} & L1 pruning & 76.70 & 75.00 & 74.52 & 74.76 \\
-             & & DepGraph & 76.11 & 73.75 & 75.16 & 74.45 \\
+             & \multirow{2}{*}{Xie2019} & L1 pruning & 82.30 & 81.70 & 79.62 & 80.65 \\
+             & & DepGraph & 83.78 & 81.48 & 84.08 & 82.76 \\
              \cmidrule{2-7}
              & \multirow{2}{*}{DeiT-Tiny} & L1 pruning & 53.69 & \phantom{0}0.00 & \phantom{0}0.00 & \phantom{0}0.00 \\
-             & & DepGraph & 54.87 & \phantom{0}1.00 & \phantom{0}0.03 & \phantom{0}0.05 \\
+             & & DepGraph & 61.06 & 54.83 & \textbf{90.45} & 68.27 \\
              \cmidrule{2-7}
-             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & 78.17 & 77.12 & 75.16 & 76.13 \\
-             & & DepGraph & 76.40 & 73.91 & 75.80 & 74.84 \\
+             & \multirow{2}{*}{MobileViT-XXS} & L1 pruning & 79.35 & 75.74 & 81.53 & 78.53 \\
+             & & DepGraph & 78.17 & 77.12 & 75.16 & 76.13 \\
              \cmidrule{2-7}
-             & \textbf{Ours} & Original & \textbf{85.84} & \textbf{86.09} & \textbf{82.80} & \textbf{84.42} \\
+             & \textbf{Ours} & Original & \textbf{86.73} & \textbf{88.36} & 82.17 & \textbf{85.15} \\
             \bottomrule
         \end{tabular}%
     }

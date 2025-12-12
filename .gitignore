@@ -7,3 +7,4 @@
 *.docx
 # *.
 ~$table (version 2).xlsx
+/pretrained
