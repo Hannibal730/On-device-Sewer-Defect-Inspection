@@ -171,6 +171,7 @@ class Embedding4Decoder(nn.Module):
 
         # --- 입력 인코딩 ---
         self.W_feat2emb = nn.Linear(featured_patch_dim, emb_dim)      
+        self.W_Q_init = nn.Linear(featured_patch_dim, emb_dim)
         self.dropout = nn.Dropout(dropout)
 
         # --- 학습 가능한 쿼리(Learnable Query) ---
@@ -186,6 +187,10 @@ class Embedding4Decoder(nn.Module):
             self.register_buffer('pos_embed', pos_embed, persistent=False)
         else:
             self.pos_embed = None
+
+        if self.adaptive_initial_query:
+            self.W_K_init = nn.Linear(emb_dim, emb_dim)
+            self.W_V_init = nn.Linear(emb_dim, emb_dim)
 
         # --- 디코더 ---
         self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
@@ -238,24 +243,32 @@ class Embedding4Decoder(nn.Module):
 
         x = self.W_feat2emb(x) # [B, N, emb_dim]
 
+        # [수정] Value용: 위치 인코딩을 더하지 않은 순수 특징 (Content)
+        x_clean = self.dropout(x)
+
         # --- 위치 인코딩 더하기 ---
         if self.use_positional_encoding and self.pos_embed is not None:
             # self.pos_embed: [1, N, emb_dim] -> Broadcasting으로 더해짐
             x = x + self.pos_embed.to(x.device)
 
+        # [수정] Key용: 위치 인코딩이 포함된 특징 (Content + Position)
         seq_encoder_patches = self.dropout(x)
         
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
         if self.adaptive_initial_query:
-            latent_queries = self.W_feat2emb(self.learnable_queries)
+            latent_queries = self.W_Q_init(self.learnable_queries)
             latent_queries = latent_queries.unsqueeze(0).repeat(bs, 1, 1)
             
-            latent_attn_scores = torch.bmm(latent_queries, seq_encoder_patches.transpose(1, 2))
+            # [수정] Key는 위치 정보 포함(seq_encoder_patches), Value는 순수 특징(x_clean) 사용
+            k_init = self.W_K_init(seq_encoder_patches)
+            v_init = self.W_V_init(x_clean)
+            
+            latent_attn_scores = torch.bmm(latent_queries, k_init.transpose(1, 2))
             latent_attn_weights = F.softmax(latent_attn_scores, dim=-1)
             
-            seq_decoder_patches = torch.bmm(latent_attn_weights, seq_encoder_patches)
+            seq_decoder_patches = torch.bmm(latent_attn_weights, v_init)
         else:
-            learnable_queries = self.W_feat2emb(self.learnable_queries)
+            learnable_queries = self.W_Q_init(self.learnable_queries)
             seq_decoder_patches = learnable_queries.unsqueeze(0).repeat(bs, 1, 1)
 
         return seq_encoder_patches, seq_decoder_patches

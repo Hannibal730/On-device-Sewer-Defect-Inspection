@@ -314,8 +314,11 @@ Unlike static learnable queries that primarily capture dataset-level priors, thi
             \quad Normalization (LayerNorm) & 48 \\
             \addlinespace 
             
-            \textbf{Decoder (Cross-Attention-based)} & \textbf{9,816} \\
-            \quad Embedding Layer ($W_{\text{emb}}$) & 600 \\
+            \textbf{Decoder (Cross-Attention-based)} & \textbf{11,616} \\
+            \quad Embedding Layer ($W_{\text{feat2emb}}$) & 600 \\
+            \quad Init Query Proj ($W_{\text{Q\_init}}$) & 600 \\
+            \quad Init Key Proj ($W_{\text{K\_init}}$) & 600 \\
+            \quad Init Value Proj ($W_{\text{V\_init}}$) & 600 \\
             \quad Learnable Queries ($N_q=1$) & 24 \\
             \quad Decoder Layers (Cross-Attention) & 8,592 \\
             \quad Projection for Classifier & 600 \\
@@ -325,7 +328,7 @@ Unlike static learnable queries that primarily capture dataset-level priors, thi
             
             \addlinespace[0.5em] 
             \midrule 
-            \textbf{Total Model Parameters} & \textbf{29,571} \\
+            \textbf{Total Model Parameters} & \textbf{31,371} \\
             \bottomrule
         \end{tabular}%
     }
