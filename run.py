@@ -106,7 +106,7 @@ class FocalLoss(nn.Module):
             return focal_loss
 
 # =============================================================================
-# [NEW] 2-1. ONNX CPU 메모리 측정 함수 (단일 샘플 방식)
+# 2-1. ONNX CPU 메모리 측정 함수 (단일 샘플 방식)
 # =============================================================================
 def measure_cpu_peak_memory_during_inference(session, data_loader, device):
     """ONNX 모델 추론 중 CPU 최대 메모리 사용량(RSS)을 단일 샘플 기준으로 측정합니다."""
@@ -125,7 +125,7 @@ def measure_cpu_peak_memory_during_inference(session, data_loader, device):
         logging.error(f"ONNX 메모리 측정을 위한 더미 데이터 생성 중 오류 발생: {e}")
         return
 
-    # --- [수정] 기준 메모리를 추론 실행 전에 측정 ---
+    # --- 기준 메모리를 추론 실행 전에 측정 ---
     mem_before = process.memory_info().rss / (1024 * 1024) # MB
     logging.info(f"ONNX 추론 실행 전 기본 CPU 메모리: {mem_before:.2f} MB")
     peak_mem = mem_before
@@ -146,7 +146,7 @@ def measure_cpu_peak_memory_during_inference(session, data_loader, device):
         session.run(None, {input_name: single_dummy_input_np})
         peak_mem = max(peak_mem, process.memory_info().rss / (1024 * 1024))
 
-    # --- [수정] 로그 메시지 변경 ---
+    # --- 로그 메시지 변경 ---
     logging.info(f"  - 추론 전 기본 CPU 메모리: {mem_before:.2f} MB")
     logging.info(f"  - 추론 중 최대 CPU 메모리 (Peak): {peak_mem:.2f} MB")
     logging.info(f"  - 추론으로 인한 순수 메모리 증가량: {(peak_mem - mem_before):.2f} MB")
@@ -174,8 +174,6 @@ def log_model_parameters(model):
     embedding_module = model.decoder.embedding4decoder
 
     # Positional Encoding 파라미터 계산
-    # 'pos_embed'는 register_buffer로 등록되어 학습되지 않으므로, requires_grad=True인 파라미터만 계산합니다.
-    # 기존의 'PE'는 'pos_embed'로 변경되었고, 학습되지 않으므로 파라미터 수 계산에서 제외됩니다.
     pe_params = 0
     if hasattr(embedding_module, 'pos_embed') and isinstance(embedding_module.pos_embed, torch.nn.Parameter) and embedding_module.pos_embed.requires_grad:
         pe_params = embedding_module.pos_embed.numel()
@@ -225,7 +223,6 @@ def log_model_parameters(model):
     logging.info(f"    - Decoder Layers (Cross-Attention): {decoder_layers_params:,} 개")
     logging.info(f"    - Projection4Classifier:            {decoder_projection4classifier_params:,} 개")
     logging.info(f"  - Classifier (Projection MLP):        {classifier_total_params:,} 개")
-    # logging.info(f"  - 총 학습 가능 파라미터:                {total_params:,} 개")
 
 def evaluate(run_cfg, model, data_loader, device, criterion, loss_function_name, desc="Evaluating", class_names=None, log_class_metrics=False):
     """모델을 평가하고 정확도, 정밀도, 재현율, F1 점수를 로깅합니다."""
@@ -334,8 +331,6 @@ def train(run_cfg, train_cfg, model, optimizer, scheduler, train_loader, valid_l
         raise ValueError(f"run.py에서 지원하지 않는 손실 함수입니다: {loss_function_name}")
 
     # --- 손실 함수 설정 ---
-
-
     best_model_criterion = getattr(train_cfg, 'best_model_criterion', 'F1_average')
     best_metric = 0.0 if best_model_criterion != 'val_loss' else float('inf')
 
@@ -472,7 +467,7 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             logging.info(f"ONNX Runtime (v{onnxruntime.__version__})으로 평가를 시작합니다.")
             onnx_session = onnxruntime.InferenceSession(onnx_inference_path)
 
-            # --- [NEW] ONNX CPU Peak Memory Measurement ---
+            # --- ONNX CPU Peak Memory Measurement ---
             if device.type == 'cpu':
                 measure_cpu_peak_memory_during_inference(onnx_session, data_loader, device)
 
@@ -710,13 +705,13 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
             sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
 
             torch.onnx.export(model, dummy_input.to('cpu'), onnx_path, 
-                              export_params=True, opset_version=14,
-                              do_constant_folding=True,
-                              input_names=['input'], output_names=['output'],
-                              dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
+                                export_params=True, opset_version=14,
+                                do_constant_folding=True,
+                                input_names=['input'], output_names=['output'],
+                                dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
             model.to(device) # 모델을 원래 장치로 복원
 
-            # [추가] ONNX 파일 크기 로깅
+            # ONNX 파일 크기 로깅
             onnx_file_size_bytes = os.path.getsize(onnx_path)
             onnx_file_size_mb = onnx_file_size_bytes / (1024 * 1024)
             logging.info(f"모델이 ONNX 형식으로 변환되어 '{onnx_path}'에 저장되었습니다. (크기: {onnx_file_size_mb:.2f} MB)")

@@ -108,8 +108,6 @@ class PatchConvEncoder(nn.Module):
         )
         
         # 2. Patch Mixer (Idea 2-1): 패치 간 정보 교환을 위한 Depthwise Convolution
-        # 3x3 Depthwise Conv (groups=in_channels)는 파라미터가 매우 적습니다.
-        # Padding=1을 주어 공간 크기(H_grid, W_grid)를 유지합니다.
         self.patch_mixer = nn.Sequential(
             nn.Conv2d(featured_patch_dim, featured_patch_dim, kernel_size=3, padding=1, groups=featured_patch_dim, bias=False),
             nn.BatchNorm2d(featured_patch_dim),
@@ -128,7 +126,7 @@ class PatchConvEncoder(nn.Module):
         # 각 패치별 특징 추출
         conv_outs = self.shared_conv(patches) # [B * num_patches, D]
         
-        # --- [Idea 2-1] Patch Mixing ---
+        # --- Patch Mixing ---
         # 1. Grid 복원: [B * (H_p * W_p), D] -> [B, D, H_p, W_p]
         #    이 과정은 단순 View 연산으로 비용이 거의 들지 않습니다.
         #    하지만 이를 통해 인접 패치(상하좌우)가 누구인지 알 수 있게 됩니다.
@@ -161,10 +159,10 @@ class Embedding4Decoder(nn.Module):
     [Idea 1-1] 2D Sinusoidal Position Encoding을 적용하여 위치 정보를 주입합니다.
     """
     def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches, 
-                 grid_size_h, grid_size_w, # 2D PE 생성을 위해 그리드 크기 인자 추가
-                 adaptive_initial_query=False, num_decoder_layers=3, emb_dim=128, num_heads=16, 
-                 decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True):
-             
+                    grid_size_h, grid_size_w, # 2D PE 생성을 위해 그리드 크기 인자 추가
+                    adaptive_initial_query=False, num_decoder_layers=3, emb_dim=128, num_heads=16, 
+                    decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False, positional_encoding=True):
+        
         super().__init__()
         
         self.adaptive_initial_query = adaptive_initial_query
@@ -194,7 +192,7 @@ class Embedding4Decoder(nn.Module):
 
         # --- 디코더 ---
         self.decoder = Decoder(num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
-                               res_attention=res_attention, num_decoder_layers=num_decoder_layers, save_attention=save_attention)
+                                res_attention=res_attention, num_decoder_layers=num_decoder_layers, save_attention=save_attention)
         
     def get_2d_sincos_pos_embed(self, embed_dim, grid_h, grid_w):
         """
@@ -243,7 +241,7 @@ class Embedding4Decoder(nn.Module):
 
         x = self.W_feat2emb(x) # [B, N, emb_dim]
 
-        # [수정] Value용: 위치 인코딩을 더하지 않은 순수 특징 (Content)
+        # Value용: 위치 인코딩을 더하지 않은 순수 특징 (Content)
         x_clean = self.dropout(x)
 
         # --- 위치 인코딩 더하기 ---
@@ -251,7 +249,7 @@ class Embedding4Decoder(nn.Module):
             # self.pos_embed: [1, N, emb_dim] -> Broadcasting으로 더해짐
             x = x + self.pos_embed.to(x.device)
 
-        # [수정] Key용: 위치 인코딩이 포함된 특징 (Content + Position)
+        # Key용: 위치 인코딩이 포함된 특징 (Content + Position)
         seq_encoder_patches = self.dropout(x)
         
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
@@ -259,7 +257,7 @@ class Embedding4Decoder(nn.Module):
             latent_queries = self.W_Q_init(self.learnable_queries)
             latent_queries = latent_queries.unsqueeze(0).repeat(bs, 1, 1)
             
-            # [수정] Key는 위치 정보 포함(seq_encoder_patches), Value는 순수 특징(x_clean) 사용
+            # Key는 위치 정보 포함(seq_encoder_patches), Value는 순수 특징(x_clean) 사용
             k_init = self.W_K_init(seq_encoder_patches)
             v_init = self.W_V_init(x_clean)
             
@@ -288,11 +286,11 @@ class Projection4Classifier(nn.Module):
             
 class Decoder(nn.Module):
     def __init__(self, num_encoder_patches, emb_dim, num_heads, num_decoder_patches, decoder_ff_dim=None, attn_dropout=0., dropout=0.,
-                 res_attention=False, num_decoder_layers=1, save_attention=False):
+                    res_attention=False, num_decoder_layers=1, save_attention=False):
         super().__init__()
         
         self.layers = nn.ModuleList([DecoderLayer(num_encoder_patches, emb_dim, num_decoder_patches, num_heads=num_heads, decoder_ff_dim=decoder_ff_dim, attn_dropout=attn_dropout, dropout=dropout,
-                                                      res_attention=res_attention, save_attention=save_attention) for i in range(num_decoder_layers)])
+                                                        res_attention=res_attention, save_attention=save_attention) for i in range(num_decoder_layers)])
         self.res_attention = res_attention
 
     def forward(self, seq_encoder:Tensor, seq_decoder:Tensor):
@@ -306,7 +304,7 @@ class Decoder(nn.Module):
 
 class DecoderLayer(nn.Module):
     def __init__(self, num_encoder_patches, emb_dim, num_decoder_patches, num_heads, decoder_ff_dim=256, save_attention=False,
-                 attn_dropout=0, dropout=0., bias=True, res_attention=False):
+                    attn_dropout=0, dropout=0., bias=True, res_attention=False):
         super().__init__()
         assert not emb_dim%num_heads, f"emb_dim ({emb_dim}) must be divisible by num_heads ({num_heads})"
         
@@ -402,27 +400,6 @@ class Model(nn.Module):
         res_attention = getattr(args, 'res_attention', False)
         
         # 2D PE 생성을 위해 그리드 크기 전달 (PatchConvEncoder에서 계산된 값 필요)
-        # 하지만 Model init 시점에는 Encoder가 이미 생성되어 있을 것이므로,
-        # 아래와 같이 img_size, patch_size 등으로 다시 계산하거나, args에 담아 전달해야 함.
-        # 여기서는 args에 grid 정보를 추가하는 방식이 깔끔하지만, 
-        # run.py의 구조를 변경하지 않기 위해 직접 계산합니다.
-        
-        # models.py 내부에서 계산 (run.py 수정 최소화)
-        # Model 클래스 호출 전에 args에 grid_size_h, w가 없으므로 계산 로직 추가 필요
-        # 하지만 Encoder 객체는 run.py에서 생성되어 주입되는 것이 아니라, 
-        # run.py에서 Model을 생성할 때 encoder는 별도로 생성됨. 
-        # HybridModel에서 결합됨.
-        
-        # *** 수정: Embedding4Decoder는 Model 클래스 안에서 생성됨. ***
-        # 따라서 여기서 계산해서 넘겨줘야 함.
-        # args는 SimpleNamespace이므로 직접 계산해서 추가
-        
-        # 2D Grid 크기 계산 (PatchConvEncoder와 동일한 로직)
-        # 만약 run.py에서 model_cfg를 그대로 넘겨준다면 img_size 등이 있을 것임.
-        # 하지만 현재 코드는 args로 개별 필드만 넘겨받는 구조일 수도 있음.
-        # run.py를 보면 decoder_args를 새로 만들어 넘김.
-        # 따라서 run.py의 decoder_params 딕셔너리에 grid_size를 추가하는 것이 정석이나,
-        # 사용자가 "run.py"는 수정 요청을 안했으므로 여기서 역산해야 함.
         # num_encoder_patches는 제곱수라고 가정 (정사각형 이미지/패치)
         grid_size = int(math.sqrt(num_encoder_patches))
         grid_size_h = grid_size
