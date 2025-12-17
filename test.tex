@@ -1,0 +1,28 @@
+\begin{equation}
+\label{eq:coord_norm}
+\begin{aligned}
+    y_i &= -1 + \frac{2i}{H-1}, \quad x_j = -1 + \frac{2j}{W-1} \\
+    r_{i,j}^{\text{raw}} &= \sqrt{x_j^2 + y_i^2}, \quad \theta_{i,j}^{\text{raw}} = \text{atan2}(y_i, x_j)
+\end{aligned}
+\end{equation}
+
+\begin{equation}
+\label{eq:polar_transform}
+\begin{aligned}
+    r_{i,j} &= \frac{r_{i,j}^{\text{raw}}}{\max_{u,v}(r_{u,v}^{\text{raw}}) + \epsilon} \in [0, 1] \\
+    \theta_{i,j} &= \frac{\theta_{i,j}^{\text{raw}}}{\pi} \in [-1, 1]
+\end{aligned}
+\end{equation}
+
+\begin{equation}
+\label{eq:pe_func}
+\begin{aligned}
+    \text{PE}(p, 2k) &= \sin\left( p \cdot \Omega_k \right), \quad \text{PE}(p, 2k+1) = \cos\left( p \cdot \Omega_k \right) \\
+    \text{where } \Omega_k &= \frac{1}{10000^{4k/D}}, \quad k = 0, \dots, \frac{D}{4}-1
+\end{aligned}
+\end{equation}
+
+\begin{equation}
+\label{eq:final_embedding}
+    \mathbf{E}_{i,j} = \text{Concat}\left( \text{PE}(r_{i,j}), \text{PE}(\theta_{i,j}) \right) \in \mathbb{R}^D
+\end{equation}

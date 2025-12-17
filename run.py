@@ -16,7 +16,7 @@ import logging
 from datetime import datetime
 import random
 import time 
-from models import Model as DecoderBackbone, PatchConvEncoder, Classifier, HybridModel
+from models import Model as DecoderBackbone, PatchConvEncoder, Classifier, HybridModel, GlobalConvEncoder
 
 try:
     import cpuinfo
@@ -162,11 +162,22 @@ def log_model_parameters(model):
         return sum(p.numel() for p in m.parameters() if p.requires_grad)
 
     # Encoder 내부를 세분화하여 파라미터 계산
-    # 1. Encoder (PatchConvEncoder) 내부 파라미터 계산
-    cnn_feature_extractor = model.encoder.shared_conv[0]
+    # 1. Encoder (PatchConvEncoder or GlobalConvEncoder) 내부 파라미터 계산
+    if hasattr(model.encoder, 'backbone'):
+        # GlobalConvEncoder
+        cnn_feature_extractor = model.encoder.backbone
+        patch_mixer_params = count_parameters(model.encoder.mixer)
+        encoder_name = "GlobalConvEncoder"
+        mixer_name = "mixer"
+    else:
+        # PatchConvEncoder (Legacy)
+        cnn_feature_extractor = model.encoder.shared_conv[0]
+        patch_mixer_params = count_parameters(model.encoder.patch_mixer)
+        encoder_name = "PatchConvEncoder"
+        mixer_name = "patch_mixer"
+
     conv_front_params = count_parameters(cnn_feature_extractor.conv_front)
     conv_1x1_params = count_parameters(cnn_feature_extractor.conv_1x1)
-    patch_mixer_params = count_parameters(model.encoder.patch_mixer)
     encoder_norm_params = count_parameters(model.encoder.norm)
     encoder_total_params = conv_front_params + conv_1x1_params + patch_mixer_params + encoder_norm_params
 
@@ -206,12 +217,18 @@ def log_model_parameters(model):
 
     total_params = encoder_total_params + decoder_total_params + classifier_total_params
 
+    # [검증] 실제 전체 파라미터 수와 부분 합계 비교 (누락 방지용)
+    real_total_params = count_parameters(model)
+    if total_params != real_total_params:
+        logging.warning(f"[Parameter Check] 부분 합계({total_params:,})와 실제 전체 파라미터 수({real_total_params:,})가 일치하지 않습니다.")
+        logging.warning("models.py에 새로운 레이어가 추가되었으나 log_model_parameters에 반영되지 않았을 수 있습니다.")
+
     logging.info("="*50)
-    logging.info(f"모델 파라미터 수: {total_params:,} 개")
-    logging.info(f"  - Encoder (PatchConvEncoder):         {encoder_total_params:,} 개")
+    logging.info(f"모델 파라미터 수: {real_total_params:,} 개")
+    logging.info(f"  - Encoder ({encoder_name}):         {encoder_total_params:,} 개")
     logging.info(f"    - conv_front (CNN Backbone):        {conv_front_params:,} 개")
     logging.info(f"    - 1x1_conv (Channel Proj):          {conv_1x1_params:,} 개")
-    logging.info(f"    - patch_mixer (Depthwise Conv):     {patch_mixer_params:,} 개")
+    logging.info(f"    - {mixer_name} (Depthwise Conv):     {patch_mixer_params:,} 개")
     logging.info(f"    - norm (LayerNorm):                 {encoder_norm_params:,} 개")
     logging.info(f"  - Decoder (Cross-Attention-based):    {decoder_total_params:,} 개")
     logging.info(f"    - Embedding Layer (W_feat2emb):     {w_feat2emb_params:,} 개")
@@ -528,12 +545,19 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                 # 1. Encoder 구간
                 encoded_features = model.encoder(single_dummy_input)
                 encoder_end_event.record()
+
+                # [추가] grid_h/grid_w 전달 (새 models.py 필수)
+                grid_h = getattr(model.encoder, 'grid_size_h', None)
+                grid_w = getattr(model.encoder, 'grid_size_w', None)
+
                 # 2. Decoder 구간
-                decoded_features = model.decoder(encoded_features)
+                decoded_features = model.decoder(encoded_features, grid_h=grid_h, grid_w=grid_w)
                 decoder_end_event.record()
+
                 # 3. Classifier 구간
                 _ = model.classifier(decoded_features)
                 classifier_end_event.record()
+
 
                 # 모든 이벤트가 기록된 후 동기화
                 torch.cuda.synchronize()
@@ -806,13 +830,49 @@ def main():
 
     # --- 데이터 준비 ---
     train_loader, valid_loader, test_loader, num_labels, class_names, pos_weight = prepare_data(run_cfg, train_cfg, model_cfg)
-
     # --- 모델 구성 ---
-    # stride를 고려하여 인코더 패치 수 계산
-    num_patches_per_dim = (model_cfg.img_size - model_cfg.patch_size) // model_cfg.stride + 1
-    num_encoder_patches = num_patches_per_dim ** 2
-    logging.info(f"이미지 크기: {model_cfg.img_size}, 패치 크기: {model_cfg.patch_size}, Stride: {model_cfg.stride} -> 인코더 패치 수: {num_encoder_patches}개")
-    
+    # encoder_type이 config에 없으면 기본 global
+    encoder_type = getattr(model_cfg, 'encoder_type', 'global')
+    encoder_type = str(encoder_type).lower()
+
+    if encoder_type in ['patch_wise']:
+        # PatchConvEncoder (호환 유지)
+        encoder = PatchConvEncoder(
+            img_size=model_cfg.img_size,
+            patch_size=model_cfg.patch_size,
+            stride=model_cfg.stride,
+            featured_patch_dim=model_cfg.featured_patch_dim,
+            cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
+            pre_trained=train_cfg.pre_trained
+        )
+        num_encoder_patches = encoder.num_encoder_patches
+        logging.info(f"PatchConvEncoder 사용: 토큰 수 {num_encoder_patches} (H={encoder.grid_size_h}, W={encoder.grid_size_w})")
+
+    elif encoder_type in ['full_image']:
+        # GlobalConvEncoder (권장)
+        encoder = GlobalConvEncoder(
+            featured_patch_dim=model_cfg.featured_patch_dim,
+            cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
+            pre_trained=train_cfg.pre_trained,
+            use_mixer=True
+        )
+
+        # 더미 입력으로 num_encoder_patches 동적 계산
+        # [중요] BN running stats 오염 방지를 위해 eval 모드에서 1회 추론 후 원복
+        dummy_input = torch.zeros(1, 3, model_cfg.img_size, model_cfg.img_size)
+        was_training = encoder.training
+        encoder.eval()
+        with torch.no_grad():
+            dummy_out = encoder(dummy_input)  # [1, N, D]
+        encoder.train(was_training)
+
+        num_encoder_patches = dummy_out.shape[1]
+        logging.info(
+            f"GlobalConvEncoder 사용: 입력 {model_cfg.img_size}x{model_cfg.img_size} -> "
+            f"토큰 수 {num_encoder_patches} (H={encoder.grid_size_h}, W={encoder.grid_size_w})"
+        )
+
+    # Decoder args
     decoder_params = {
         'num_encoder_patches': num_encoder_patches,
         'num_labels': num_labels,
@@ -825,22 +885,26 @@ def main():
         'decoder_ff_ratio': model_cfg.decoder_ff_ratio,
         'dropout': model_cfg.dropout,
         'positional_encoding': model_cfg.positional_encoding,
-        'res_attention': model_cfg.res_attention,
+        'pos_encoding_type': getattr(model_cfg, 'pos_encoding_type', 'polar'),
+        'res_attention': getattr(model_cfg, 'res_attention', False),
         'save_attention': model_cfg.save_attention,
     }
     decoder_args = SimpleNamespace(**decoder_params)
 
-    encoder = PatchConvEncoder(img_size=model_cfg.img_size, patch_size=model_cfg.patch_size, stride=model_cfg.stride,
-                                featured_patch_dim=model_cfg.featured_patch_dim, cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
-                                pre_trained=train_cfg.pre_trained)
-    decoder = DecoderBackbone(args=decoder_args) # models.py의 Model 클래스
-    
-    classifier = Classifier(num_decoder_patches=model_cfg.num_decoder_patches,
-                            featured_patch_dim=model_cfg.featured_patch_dim, num_labels=num_labels, dropout=model_cfg.dropout)
+    decoder = DecoderBackbone(args=decoder_args)
+
+    classifier = Classifier(
+        num_decoder_patches=model_cfg.num_decoder_patches,
+        featured_patch_dim=model_cfg.featured_patch_dim,
+        num_labels=num_labels,
+        dropout=model_cfg.dropout
+    )
+
     model = HybridModel(encoder, decoder, classifier).to(device)
 
     # 모델 생성 후 파라미터 수 로깅
     log_model_parameters(model)
+
     
     # --- 모드에 따라 실행 ---
     if run_cfg.mode == 'train':
