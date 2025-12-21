@@ -9,6 +9,63 @@ from torchvision import models
 # =============================================================================
 # 1. 이미지 인코더 모델 정의
 # =============================================================================
+class SqueezeExcitation(nn.Module):
+    """EfficientNet의 SE 블록 구현"""
+    def __init__(self, input_channels, squeezed_channels):
+        super().__init__()
+        self.fc1 = nn.Conv2d(input_channels, squeezed_channels, 1)
+        self.fc2 = nn.Conv2d(squeezed_channels, input_channels, 1)
+        self.act = nn.SiLU(inplace=True)
+        self.scale_act = nn.Sigmoid()
+
+    def forward(self, x):
+        scale = F.adaptive_avg_pool2d(x, 1)
+        scale = self.fc1(scale)
+        scale = self.act(scale)
+        scale = self.fc2(scale)
+        scale = self.scale_act(scale)
+        return x * scale
+
+class MBConvBlock(nn.Module):
+    """EfficientNet의 Inverted Residual Block (MBConv) 구현"""
+    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, se_ratio=0.25):
+        super().__init__()
+        self.use_res_connect = (stride == 1 and in_channels == out_channels)
+        expanded_channels = in_channels * expand_ratio
+
+        # EfficientNet의 기본 BN 파라미터 (eps=1e-3, momentum=0.01)
+        bn_eps = 1e-3
+        bn_momentum = 0.01
+
+        layers = []
+        # 1. Expansion Phase (expand_ratio가 1이면 생략)
+        if expand_ratio != 1:
+            layers.append(nn.Conv2d(in_channels, expanded_channels, 1, bias=False))
+            layers.append(nn.BatchNorm2d(expanded_channels, eps=bn_eps, momentum=bn_momentum))
+            layers.append(nn.SiLU(inplace=True))
+
+        # 2. Depthwise Convolution
+        layers.append(nn.Conv2d(expanded_channels, expanded_channels, kernel_size, stride,
+                                padding=kernel_size//2, groups=expanded_channels, bias=False))
+        layers.append(nn.BatchNorm2d(expanded_channels, eps=bn_eps, momentum=bn_momentum))
+        layers.append(nn.SiLU(inplace=True))
+
+        # 3. Squeeze and Excitation
+        num_squeezed_channels = max(1, int(in_channels * se_ratio))
+        layers.append(SqueezeExcitation(expanded_channels, num_squeezed_channels))
+
+        # 4. Pointwise Convolution
+        layers.append(nn.Conv2d(expanded_channels, out_channels, 1, bias=False))
+        layers.append(nn.BatchNorm2d(out_channels, eps=bn_eps, momentum=bn_momentum))
+
+        self.block = nn.Sequential(*layers)
+
+    def forward(self, x):
+        if self.use_res_connect:
+            return x + self.block(x)
+        else:
+            return self.block(x)
+
 class CnnFeatureExtractor(nn.Module):
     """
     다양한 CNN 아키텍처의 앞부분을 특징 추출기로 사용하는 범용 클래스입니다.
@@ -49,6 +106,30 @@ class CnnFeatureExtractor(nn.Module):
             base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = base_model.features[:4]  # features의 4번째 블록까지
             base_out_channels = 40
+
+        elif cnn_feature_extractor_name == 'custom':
+            # EfficientNet-B0 feat2 구조를 직접 코드로 구현 (커스터마이징 용도)
+            # 주의: 이 옵션은 pretrained 가중치를 자동으로 로드하지 않습니다.
+            
+            # EfficientNet의 기본 BN 파라미터
+            bn_eps = 1e-3
+            bn_momentum = 0.01
+
+            layers = [
+                # Stem: 채널3 -> 32, stride 2: 해상도224-> 112
+                nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1, bias=False),
+                nn.BatchNorm2d(32, eps=bn_eps, momentum=bn_momentum),
+                nn.SiLU(inplace=True),
+                
+                # Block 1: MBConv1, 3x3, 32->16, stride 1, expand 1
+                MBConvBlock(32, 16, kernel_size=3, stride=1, expand_ratio=1, se_ratio=0.25),
+                
+                # Block 2: MBConv6, 3x3, 16->24, stride 2, expand 6 (2 layers)
+                MBConvBlock(16, 24, kernel_size=3, stride=2, expand_ratio=6, se_ratio=0.25), # stride2: 해상도 112 -> 224
+                MBConvBlock(24, 24, kernel_size=3, stride=1, expand_ratio=6, se_ratio=0.25)
+            ]
+            self.conv_front = nn.Sequential(*layers)
+            base_out_channels = 24
 
         # --- MobileNetV4 (timm) ---
         elif cnn_feature_extractor_name == 'mobilenet_v4_feat1':
