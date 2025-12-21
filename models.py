@@ -110,11 +110,8 @@ class CnnFeatureExtractor(nn.Module):
         elif cnn_feature_extractor_name == 'custom':
             # EfficientNet-B0 feat2 구조를 직접 코드로 구현 (커스터마이징 용도)
             # 주의: 이 옵션은 pretrained 가중치를 자동으로 로드하지 않습니다.
-            
-            # EfficientNet의 기본 BN 파라미터
-            bn_eps = 1e-3
-            bn_momentum = 0.01
-
+            bn_eps = 1e-5
+            bn_momentum = 0.1
             layers = [
                 # Stem: 채널3 -> 32, stride 2: 해상도224-> 112
                 nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1, bias=False),
@@ -125,7 +122,7 @@ class CnnFeatureExtractor(nn.Module):
                 MBConvBlock(32, 16, kernel_size=3, stride=1, expand_ratio=1, se_ratio=0.25),
                 
                 # Block 2: MBConv6, 3x3, 16->24, stride 2, expand 6 (2 layers)
-                MBConvBlock(16, 24, kernel_size=3, stride=2, expand_ratio=6, se_ratio=0.25), # stride2: 해상도 112 -> 224
+                MBConvBlock(16, 24, kernel_size=3, stride=2, expand_ratio=6, se_ratio=0.25), # stride2: 해상도 112 -> 56
                 MBConvBlock(24, 24, kernel_size=3, stride=1, expand_ratio=6, se_ratio=0.25)
             ]
             self.conv_front = nn.Sequential(*layers)
