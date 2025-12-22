@@ -183,7 +183,8 @@ model:
   img_size: 224                # 모델에 입력하기 전 이미지의 리사이즈 크기 (정사각형).
   patch_size: 56              # 이미지를 나눌 정사각형 패치의 크기. `img_size`는 `patch_size`로 나누어 떨어져야 합니다.
   stride: 56                   # 패치를 추출할 때의 보폭(stride). `patch_size`보다 작으면 오버랩됩니다.
-  encoder_type: 'full_image'   # 인코더 방식 선택. 'patch_wise': 패치별 CNN (기본), 'full_image': 전체 이미지 CNN (표준 방식)
+  encoder_type: 'patch_wise'   # 인코더 방식 선택. 'patch_wise': 패치별 CNN (기본), 'full_image': 전체 이미지 CNN (표준 방식)
+  pool_dim: 2                  # [추가] PatchConvEncoder의 풀링 출력 크기 (예: 2 -> 2x2). 기본값 1.
   cnn_feature_extractor:
     # 이미지 패치에서 특징을 추출할 CNN 모델을 선택합니다.
     # 사용 가능한 옵션:
@@ -220,7 +221,7 @@ model:
   save_attention: true       # 추론 시 어텐션 맵을 저장할지 여부. True로 설정하면 시각화에 사용할 수 있습니다.
   num_plot_attention: 500     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
   pos_encoding_type: polar   ## 사용할 PE 타입 ('polar' 또는 '2d')
-  use_global_context: true   # true: 디코더 초기 쿼리에 전역 컨텍스트 벡터를 주입합니다.
+  use_global_context: false   # true: 디코더 초기 쿼리에 전역 컨텍스트 벡터를 주입합니다.
 
 # =============================================================================
 # 5. Baseline 모델 설정 (baseline.py 전용)

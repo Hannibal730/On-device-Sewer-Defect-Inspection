@@ -215,34 +215,38 @@ class GlobalConvEncoder(nn.Module):
 
 
 class PatchConvEncoder(nn.Module):
-    """이미지를 패치로 나누고, 각 패치에서 특징을 추출하여 1D 시퀀스로 변환하는 인코더입니다."""
-    def __init__(self, img_size, patch_size, stride, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True):
+    """
+    이미지를 패치로 나누고, 각 패치에서 특징을 추출하여 1D 시퀀스로 변환하는 인코더입니다.
+    [수정] 각 패치를 NxN 하위 토큰으로 분할하여, 어텐션이 더 세분화된 단위에서 수행되도록 합니다. (N=pool_dim)
+    """
+    def __init__(self, img_size, patch_size, stride, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True, pool_dim=1):
         super(PatchConvEncoder, self).__init__()
         self.patch_size = patch_size
         self.stride = stride
         self.featured_patch_dim = featured_patch_dim
+        self.pool_dim = pool_dim
 
-        # stride를 고려한 패치 수 계산 (H, W 각각 계산)
-        self.num_patches_H = (img_size - self.patch_size) // self.stride + 1
-        self.num_patches_W = (img_size - self.patch_size) // self.stride + 1
-        self.num_encoder_patches = self.num_patches_H * self.num_patches_W
+        # 원본 패치 그리드 크기
+        self.num_patches_H_orig = (img_size - self.patch_size) // self.stride + 1
+        self.num_patches_W_orig = (img_size - self.patch_size) // self.stride + 1
+        num_patches_orig = self.num_patches_H_orig * self.num_patches_W_orig
 
-        # [PATCH] HybridModel에서 grid_h/grid_w를 읽을 수 있도록 추가
-        self.grid_size_h = self.num_patches_H
-        self.grid_size_w = self.num_patches_W
+        # [수정] 풀링을 통해 생성된 하위 토큰을 포함한 새로운 그리드 크기 및 토큰 수
+        self.grid_size_h = self.num_patches_H_orig * self.pool_dim
+        self.grid_size_w = self.num_patches_W_orig * self.pool_dim
+        self.num_encoder_patches = self.grid_size_h * self.grid_size_w
 
-        # 1. Shared CNN Feature Extractor
-        self.shared_conv = nn.Sequential(
-            CnnFeatureExtractor(
-                cnn_feature_extractor_name=cnn_feature_extractor_name,
-                pretrained=pre_trained,
-                featured_patch_dim=featured_patch_dim
-            ),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(start_dim=1)  # [B*num_encoder_patches, D]
+        # 1. CNN Feature Extractor
+        self.feature_extractor = CnnFeatureExtractor(
+            cnn_feature_extractor_name=cnn_feature_extractor_name,
+            pretrained=pre_trained,
+            featured_patch_dim=featured_patch_dim
         )
+        
+        # 2. Adaptive Pooling
+        self.pool = nn.AdaptiveAvgPool2d((self.pool_dim, self.pool_dim))
 
-        # 2. Patch Mixer (Idea 2-1): 패치 간 정보 교환을 위한 Depthwise Convolution
+        # 3. Patch Mixer: 이제 더 세분화된 그리드 위에서 동작
         self.patch_mixer = nn.Sequential(
             nn.Conv2d(featured_patch_dim, featured_patch_dim, kernel_size=3, padding=1, groups=featured_patch_dim, bias=False),
             nn.BatchNorm2d(featured_patch_dim),
@@ -251,23 +255,42 @@ class PatchConvEncoder(nn.Module):
 
         self.norm = nn.LayerNorm(featured_patch_dim)
 
+    @property
+    def shared_conv(self):
+        """외부 로깅 스크립트와의 호환성을 위해 유지합니다."""
+        return nn.Sequential(self.feature_extractor)
+
     def forward(self, x):
         B, C, H, W = x.shape
-        # 이미지를 패치로 분할
+        
+        # 1. 이미지를 원본 패치로 분할
         patches = x.unfold(2, self.patch_size, self.stride).unfold(3, self.patch_size, self.stride)
-        patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous().view(-1, C, self.patch_size, self.patch_size)
-        # patches: [B * num_patches, C, patch_size, patch_size]
+        patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous()
+        patches = patches.view(-1, C, self.patch_size, self.patch_size) # [B*N_orig, C, P, P]
 
-        # 각 패치별 특징 추출
-        conv_outs = self.shared_conv(patches)  # [B * num_patches, D]
+        # 2. 각 패치별 특징 추출 및 풀링
+        patch_features = self.feature_extractor(patches)       # [B*N_orig, D, Hf, Wf]
+        pooled_features = self.pool(patch_features)            # [B*N_orig, D, pool_dim, pool_dim]
+        
+        # 3. [수정] 하위 토큰들을 2D 그리드로 재구성
+        # [B*H_orig*W_orig, D, pool_h, pool_w] -> [B, H_orig, W_orig, D, pool_h, pool_w]
+        tokens_as_grid = pooled_features.view(
+            B, self.num_patches_H_orig, self.num_patches_W_orig, self.featured_patch_dim, self.pool_dim, self.pool_dim
+        )
+        # -> [B, D, H_orig, pool_h, W_orig, pool_w]
+        tokens_as_grid = tokens_as_grid.permute(0, 3, 1, 4, 2, 5)
+        # -> [B, D, H_orig*pool_h, W_orig*pool_w], 즉 [B, D, H_new, W_new]
+        tokens_as_grid = tokens_as_grid.reshape(B, self.featured_patch_dim, self.grid_size_h, self.grid_size_w)
 
-        # --- Patch Mixing ---
-        conv_outs_grid = conv_outs.view(B, self.num_patches_H, self.num_patches_W, self.featured_patch_dim).permute(0, 3, 1, 2)
-        mixed_outs = self.patch_mixer(conv_outs_grid)
-        mixed_outs = mixed_outs.permute(0, 2, 3, 1).contiguous().view(B, -1, self.featured_patch_dim)
+        # 4. 세분화된 그리드 위에서 Patch Mixing 수행
+        mixed_grid = self.patch_mixer(tokens_as_grid) # [B, D, H_new, W_new]
 
-        mixed_outs = self.norm(mixed_outs)
-        return mixed_outs
+        # 5. 디코더로 전달할 최종 토큰 시퀀스로 변환
+        # [B, D, H_new, W_new] -> [B, H_new, W_new, D] -> [B, H_new*W_new, D]
+        mixed_tokens = mixed_grid.permute(0, 2, 3, 1).contiguous().view(B, -1, self.featured_patch_dim)
+
+        final_tokens = self.norm(mixed_tokens)
+        return final_tokens
 
 
 # =============================================================================
