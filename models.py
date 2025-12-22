@@ -289,13 +289,14 @@ class Embedding4Decoder(nn.Module):
     def __init__(self, num_encoder_patches, featured_patch_dim, num_decoder_patches,
                  adaptive_initial_query=False, num_decoder_layers=3, emb_dim=128, num_heads=16,
                  decoder_ff_dim=256, attn_dropout=0., dropout=0., save_attention=False, res_attention=False,
-                 positional_encoding=True, pos_encoding_type="polar"):
+                 positional_encoding=True, pos_encoding_type="polar", use_global_context=True):
 
         super().__init__()
 
         self.adaptive_initial_query = adaptive_initial_query
         self.emb_dim = emb_dim
         self.pos_encoding_type = pos_encoding_type
+        self.use_global_context = use_global_context
 
         # --- 입력 인코딩 ---
         self.W_feat2emb = nn.Linear(featured_patch_dim, emb_dim)
@@ -426,9 +427,17 @@ class Embedding4Decoder(nn.Module):
         seq_encoder_patches = self.dropout(x)
 
         # --- 2. 디코더에 입력할 쿼리(Query) 준비 ---
+        # [Idea] Global Context를 초기 쿼리에 주입하여 Context-aware하게 만듭니다.
+        global_context = None
+        if self.use_global_context:
+            global_context = torch.mean(seq_encoder_patches, dim=1, keepdim=True)
+
         if self.adaptive_initial_query:
             latent_queries = self.W_Q_init(self.learnable_queries)
             latent_queries = latent_queries.unsqueeze(0).repeat(bs, 1, 1)
+
+            if global_context is not None:
+                latent_queries = latent_queries + global_context
 
             # Key는 위치 정보 포함(seq_encoder_patches), Value는 순수 특징(x_clean) 사용
             k_init = self.W_K_init(seq_encoder_patches)
@@ -441,6 +450,9 @@ class Embedding4Decoder(nn.Module):
         else:
             learnable_queries = self.W_Q_init(self.learnable_queries)
             seq_decoder_patches = learnable_queries.unsqueeze(0).repeat(bs, 1, 1)
+
+            if global_context is not None:
+                seq_decoder_patches = seq_decoder_patches + global_context
 
         return seq_encoder_patches, x_clean, seq_decoder_patches
 
@@ -591,6 +603,8 @@ class Model(nn.Module):
         res_attention = getattr(args, 'res_attention', False)
         pos_encoding_type = getattr(args, 'pos_encoding_type', 'polar')  # Default to polar
 
+        use_global_context = getattr(args, 'use_global_context', True)
+
         decoder_ff_dim = emb_dim * decoder_ff_ratio
 
         self.embedding4decoder = Embedding4Decoder(
@@ -607,7 +621,8 @@ class Model(nn.Module):
             attn_dropout=attn_dropout,
             dropout=dropout,
             res_attention=res_attention,
-            save_attention=save_attention
+            save_attention=save_attention,
+            use_global_context=use_global_context
         )
 
         self.projection4classifier = Projection4Classifier(emb_dim, self.featured_patch_dim)

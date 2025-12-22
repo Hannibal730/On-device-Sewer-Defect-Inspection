@@ -888,6 +888,7 @@ def main():
         'pos_encoding_type': getattr(model_cfg, 'pos_encoding_type', 'polar'),
         'res_attention': getattr(model_cfg, 'res_attention', False),
         'save_attention': model_cfg.save_attention,
+        'use_global_context': getattr(model_cfg, 'use_global_context', True),
     }
     decoder_args = SimpleNamespace(**decoder_params)
 
