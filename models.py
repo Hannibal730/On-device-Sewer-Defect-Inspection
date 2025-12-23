@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import timm
 import math
 from torch import Tensor
-from torchvision import models
+from torchvision import models as torchvision_models
 
 # =============================================================================
 # 1. 이미지 인코더 모델 정의
@@ -77,33 +77,33 @@ class CnnFeatureExtractor(nn.Module):
 
         # CNN 모델 이름에 따라 모델과 잘라낼 레이어, 기본 출력 채널을 설정합니다.
         if cnn_feature_extractor_name == 'resnet18_layer1':
-            base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+            base_model = torchvision_models.resnet18(weights=torchvision_models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = nn.Sequential(*list(base_model.children())[:5])  # layer1까지
             base_out_channels = 64
         elif cnn_feature_extractor_name == 'resnet18_layer2':
-            base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+            base_model = torchvision_models.resnet18(weights=torchvision_models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = nn.Sequential(*list(base_model.children())[:6])  # layer2까지
             base_out_channels = 128
 
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat1':
-            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+            base_model = torchvision_models.mobilenet_v3_small(weights=torchvision_models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = base_model.features[:2]  # features의 2번째 블록까지
             base_out_channels = 16
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat3':
-            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+            base_model = torchvision_models.mobilenet_v3_small(weights=torchvision_models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = base_model.features[:4]  # features의 4번째 블록까지
             base_out_channels = 24
         elif cnn_feature_extractor_name == 'mobilenet_v3_small_feat4':
-            base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
+            base_model = torchvision_models.mobilenet_v3_small(weights=torchvision_models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = base_model.features[:5]  # features의 5번째 블록까지
             base_out_channels = 40
 
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat2':
-            base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
+            base_model = torchvision_models.efficientnet_b0(weights=torchvision_models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = base_model.features[:3]  # features의 3번째 블록까지
             base_out_channels = 24
         elif cnn_feature_extractor_name == 'efficientnet_b0_feat3':
-            base_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
+            base_model = torchvision_models.efficientnet_b0(weights=torchvision_models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             self.conv_front = base_model.features[:4]  # features의 4번째 블록까지
             base_out_channels = 40
 

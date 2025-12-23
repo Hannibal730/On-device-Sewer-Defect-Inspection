@@ -843,7 +843,8 @@ def main():
             stride=model_cfg.stride,
             featured_patch_dim=model_cfg.featured_patch_dim,
             cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
-            pre_trained=train_cfg.pre_trained
+            pre_trained=train_cfg.pre_trained,
+            pool_dim=getattr(model_cfg, 'pool_dim', 1)
         )
         num_encoder_patches = encoder.num_encoder_patches
         logging.info(f"PatchConvEncoder 사용: 토큰 수 {num_encoder_patches} (H={encoder.grid_size_h}, W={encoder.grid_size_w})")
