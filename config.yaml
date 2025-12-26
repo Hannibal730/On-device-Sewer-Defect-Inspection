@@ -183,8 +183,19 @@ model:
   img_size: 224                # 모델에 입력하기 전 이미지의 리사이즈 크기 (정사각형).
   patch_size: 56              # 이미지를 나눌 정사각형 패치의 크기. `img_size`는 `patch_size`로 나누어 떨어져야 합니다.
   stride: 56                   # 패치를 추출할 때의 보폭(stride). `patch_size`보다 작으면 오버랩됩니다.
-  encoder_type: 'patch_wise'   # 인코더 방식 선택. 'patch_wise': 패치별 CNN (기본), 'full_image': 전체 이미지 CNN (표준 방식)
-  pool_dim: 2                  # [추가] PatchConvEncoder의 풀링 출력 크기 (예: 2 -> 2x2). 기본값 1.
+  encoder_type: 'full_image'   # 인코더 방식 선택. 'patch_wise': 패치별 CNN (기본), 'full_image': 전체 이미지 CNN (표준 방식)
+  full_image_tokenizer: 'ring_sector'  # 'flatten' 또는 'ring_sector'
+  ring_sector:
+    num_rings:  4              # 4
+    num_sectors:  12             # 12
+    mask_outside_circle: false
+  cylindrical_token_cnn:
+    enabled: true
+    theta_kernel_size: 3
+    r_kernel_size: 3
+    dropout: 0.0
+    residual: true
+  pool_dim: 2                  # PatchConvEncoder의 풀링 출력 크기 (예: 2 -> 2x2). 기본값 1.
   cnn_feature_extractor:
     # 이미지 패치에서 특징을 추출할 CNN 모델을 선택합니다.
     # 사용 가능한 옵션:
@@ -211,7 +222,7 @@ model:
   featured_patch_dim: 24     # CNN 특징 추출기가 각 이미지 패치에서 추출하는 특징 벡터의 차원.
   emb_dim: 24                # 트랜스포머 모델 내부에서 사용하는 통일된 임베딩 차원.
   num_heads: 2               # 멀티헤드 어텐션에서 사용할 헤드의 수. `emb_dim`은 `num_heads`로 나누어 떨어져야 합니다.
-  num_decoder_layers: 1      # 모델 내부의 디코더 레이어 수.
+  num_decoder_layers: 3      # 모델 내부의 디코더 레이어 수.
   num_decoder_patches: 1     # 디코더에서 사용할 학습 가능한 쿼리(패치)의 수. 모델의 표현력을 조절합니다.
   adaptive_initial_query: true # true: 학습 가능한 쿼리와 인코더 출력을 cross-attention하여 동적 초기 쿼리 생성, false: 고정된 학습 가능 쿼리 사용.
   decoder_ff_ratio: 2        # 트랜스포머의 피드포워드 네트워크(FFN) 내부 차원을 결정하는 비율 (decoder_ff_dim = emb_dim * decoder_ff_ratio).
@@ -219,8 +230,8 @@ model:
   positional_encoding: true  # 이미지 패치 시퀀스 (인코더 출력)에 위치 인코딩 추가 여부. False로 설정하면 위치 정보를 사용하지 않습니다.
   res_attention: true        # 디코더 레이어 간에 어텐션 스코어를 전달하는 잔차 어텐션 사용 여부.
   save_attention: true       # 추론 시 어텐션 맵을 저장할지 여부. True로 설정하면 시각화에 사용할 수 있습니다.
-  num_plot_attention: 500     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
-  pos_encoding_type: polar    # 사용할 PE 타입 ('polar' 또는 '2d')
+  num_plot_attention: 50     # 어텐션 맵을 시각화하여 저장할 최대 샘플 수.
+  pos_encoding_type: ring_sector    # 사용할 PE 타입 ('ring_sector' 또는 'polar' 또는 '2d')
   use_global_context: false   # true: 디코더 초기 쿼리에 전역 컨텍스트 벡터를 주입합니다.
 
 # =============================================================================
@@ -232,7 +243,7 @@ baseline:
   model_name: 'mobile_vit_xxs'
 
   # --- 경량화 옵션 ---
-  use_l1_pruning: true   # L1 Norm Pruning 적용 여부
+  use_l1_pruning: false   # L1 Norm Pruning 적용 여부
   use_l2_pruning: false     # L2 Norm Pruning 적용 여부 (torch-pruning 사용)
   use_lamp_pruning: false     # LAMP Pruning (torch-pruning 라이브러리 사용) 적용 여부
   use_slimming_pruning: false # Network Slimming (BN-Scale) Pruning (torch-pruning 라이브러리 사용) 적용 여부

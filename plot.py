@@ -7,6 +7,128 @@ import torch
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
 from PIL import Image
+import math
+
+
+def plot_and_save_ring_sector_token_layout(
+    save_dir: str,
+    timestamp: str,
+    num_rings: int,
+    num_sectors: int,
+    grid_h: int = 56,
+    grid_w: int = 56,
+    mask_outside_circle: bool = False,
+    show_boundaries: bool = True,
+    dpi: int = 200,
+):
+    """\
+    모델의 ring×sector tokenization(encoder feature-map grid에서 (r,θ) binning)을
+    시각화하여 PNG 파일로 저장합니다.
+
+    - models.py(GlobalConvEncoder._build_ring_sector_index)의 로직과 동일하게,
+      feature grid 좌표를 [-1,1]로 정규화한 뒤 r,θ를 계산하여 bin index를 만듭니다.
+
+    Args:
+        save_dir (str): 저장할 상위 폴더 경로.
+        timestamp (str): 파일명/폴더명에 사용할 타임스탬프.
+        num_rings (int): 링 개수 K.
+        num_sectors (int): 섹터 개수 M.
+        grid_h (int): encoder feature map height(Hf).
+        grid_w (int): encoder feature map width(Wf).
+        mask_outside_circle (bool): True면 단위원(r_raw<=1) 밖은 비움.
+        show_boundaries (bool): True면 링/섹터 경계선을 함께 표시.
+        dpi (int): 저장 dpi.
+
+    Returns:
+        str: 저장된 png 경로
+    """
+    if num_rings <= 0 or num_sectors <= 0:
+        raise ValueError('num_rings and num_sectors must be positive integers.')
+    if grid_h <= 1 or grid_w <= 1:
+        raise ValueError('grid_h and grid_w must be > 1.')
+
+    graph_dir = os.path.join(save_dir, f'graph_{timestamp}')
+    os.makedirs(graph_dir, exist_ok=True)
+
+    device = torch.device('cpu')
+    ys = torch.linspace(-1.0, 1.0, steps=grid_h, device=device)
+    xs = torch.linspace(-1.0, 1.0, steps=grid_w, device=device)
+    grid_y, grid_x = torch.meshgrid(ys, xs, indexing='ij')  # [Hf,Wf]
+
+    r_raw = torch.sqrt(grid_x * grid_x + grid_y * grid_y)   # [Hf,Wf], [0, sqrt(2)]
+    theta = torch.atan2(grid_y, grid_x)                     # [-pi, pi]
+
+    # r normalized to [0,1] using max(r_raw)
+    r = r_raw / (r_raw.max() + 1e-6)
+    ring_idx = torch.clamp((r * num_rings).floor().long(), 0, num_rings - 1)
+
+    theta_01 = (theta + math.pi) / (2.0 * math.pi)          # [0,1]
+    sector_idx = torch.clamp((theta_01 * num_sectors).floor().long(), 0, num_sectors - 1)
+
+    bin_idx = (ring_idx * num_sectors + sector_idx).to(torch.long)  # [Hf,Wf]
+
+    if mask_outside_circle:
+        # unit circle in normalized coords
+        outside = r_raw > 1.0
+        bin_idx = bin_idx.clone()
+        bin_idx[outside] = -1
+
+    # Plot
+    plt.figure(figsize=(8, 8))
+    # -1 영역은 투명하게 보이도록 마스크
+    if mask_outside_circle:
+        masked = bin_idx.numpy().astype('float32')
+        masked[masked < 0] = float('nan')
+        im = plt.imshow(masked, interpolation='nearest', origin='upper', cmap='hsv')
+    else:
+        im = plt.imshow(bin_idx.numpy(), interpolation='nearest', origin='upper', cmap='hsv')
+
+    plt.title(f'Ring×Sector Token Layout (K={num_rings}, M={num_sectors}, Grid={grid_h}×{grid_w})')
+    plt.axis('off')
+
+    if show_boundaries:
+        # boundary overlay (approximate): draw sector rays and ring circles in grid coordinates
+        ax = plt.gca()
+
+        # center in pixel coordinates
+        cx = (grid_w - 1) / 2.0
+        cy = (grid_h - 1) / 2.0
+        # feature-grid 좌표를 [-1,1]로 정규화했기 때문에
+        # r_raw의 최대값은 코너에서 sqrt(2) 입니다.
+        # 따라서 픽셀 좌표에서도 중심->코너 거리(max_px)를 기준으로 매핑하면
+        # 링 경계가 (models.py의 binning)과 일관되게 보입니다.
+        max_px = math.sqrt(((grid_w - 1) / 2.0) ** 2 + ((grid_h - 1) / 2.0) ** 2)
+
+        # draw sector boundaries
+        for j in range(num_sectors):
+            ang = -math.pi + (2.0 * math.pi * j / num_sectors)
+            x2 = cx + max_px * math.cos(ang)
+            y2 = cy + max_px * math.sin(ang)
+            ax.plot([cx, x2], [cy, y2], linewidth=0.6, alpha=0.7, color='white')
+
+        # draw ring boundaries (equal in r-normalized space; convert to r_raw then to pixels)
+        # ring_idx uses r = r_raw / max(r_raw). Here max(r_raw)=sqrt(2) for the corners.
+        # so boundary in r_raw is (i/num_rings) * sqrt(2)
+        max_r_raw = float(torch.sqrt(torch.tensor(2.0)))
+        for i in range(1, num_rings):
+            r_raw_b = (i / num_rings) * max_r_raw
+            # convert r_raw boundary to pixel radius: r_raw==max_r_raw corresponds to max_px
+            r_px = (r_raw_b / max_r_raw) * max_px
+            circ = plt.Circle((cx, cy), r_px, fill=False, linewidth=0.6, alpha=0.7, color='white')
+            ax.add_patch(circ)
+
+        # unit circle (r_raw==1.0) reference
+        unit_r_px = (1.0 / max_r_raw) * max_px
+        ax.add_patch(plt.Circle((cx, cy), unit_r_px, fill=False, linewidth=0.9, alpha=0.9, color='white'))
+
+    # colorbar는 토큰 수가 많을 때 오히려 복잡해질 수 있어 기본적으로 생략
+
+    save_path = os.path.join(graph_dir, f'ring_sector_layout_K{num_rings}_M{num_sectors}_G{grid_h}x{grid_w}.png')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=dpi, bbox_inches='tight')
+    plt.close()
+    logging.info(f"Ring/Sector layout 이미지 저장 완료: '{save_path}'")
+    return save_path
 
 def plot_and_save_val_accuracy_graph(log_file_path, save_dir, final_acc, timestamp):
     """
@@ -391,7 +513,27 @@ def plot_and_save_compiled_graph(save_dir, timestamp):
     except Exception as e:
         logging.error(f"종합 그래프 생성 중 오류 발생: {e}")
 
-def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, model_cfg, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None):
+def _map_ring_sector_to_image(attn_map_1d, img_size, num_rings, num_sectors):
+    """Ring-Sector 1D 어텐션 맵을 이미지 좌표계로 변환합니다."""
+    device = attn_map_1d.device
+    ys = torch.linspace(-1.0, 1.0, steps=img_size, device=device)
+    xs = torch.linspace(-1.0, 1.0, steps=img_size, device=device)
+    grid_y, grid_x = torch.meshgrid(ys, xs, indexing='ij')
+    
+    r_raw = torch.sqrt(grid_x**2 + grid_y**2)
+    theta = torch.atan2(grid_y, grid_x)
+    
+    # models.py와 동일한 정규화 방식 적용
+    r = r_raw / (r_raw.max() + 1e-6)
+    
+    ring_idx = torch.clamp((r * num_rings).floor().long(), 0, num_rings - 1)
+    theta_01 = (theta + math.pi) / (2.0 * math.pi)
+    sector_idx = torch.clamp((theta_01 * num_sectors).floor().long(), 0, num_sectors - 1)
+    
+    bin_idx = ring_idx * num_sectors + sector_idx
+    return attn_map_1d[bin_idx].cpu().numpy()
+
+def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_size, model_cfg, sample_idx=0, original_filename=None, actual_class=None, predicted_class=None, grid_h=None, grid_w=None, tokenizer_type='flatten'):
     """
     어텐션 맵을 다양한 형식으로 시각화하고, 원본 이미지 이름에 해당하는 폴더 내에
     'compile', 'original', 'head_N' 형태로 분리하여 저장합니다.
@@ -406,6 +548,9 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
         original_filename (str, optional): 원본 이미지 파일 이름.
         actual_class (str, optional): 실제 클래스 이름.
         predicted_class (str, optional): 예측된 클래스 이름.
+        grid_h (int, optional): 어텐션 맵의 높이(또는 Ring 수).
+        grid_w (int, optional): 어텐션 맵의 너비(또는 Sector 수).
+        tokenizer_type (str, optional): 토크나이저 타입 ('flatten' 또는 'ring_sector').
     """
     try:
         # 1. 시각화를 위해 배치에서 해당 인덱스(sample_idx)의 데이터만 선택
@@ -432,9 +577,14 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
 
         # 3. 어텐션 맵 차원 정보 추출
         num_heads, num_queries, num_patches = attention_maps.shape
-        grid_size = int(num_patches**0.5)
-        if grid_size * grid_size != num_patches:
-            logging.error("어텐션 맵의 패치 수가 제곱수가 아니므로 2D로 변환할 수 없습니다.")
+        
+        # 그리드 크기 결정 (전달받지 못한 경우 정사각형 가정)
+        if grid_h is None or grid_w is None:
+            grid_h = int(num_patches**0.5)
+            grid_w = grid_h
+
+        if grid_h * grid_w != num_patches:
+            logging.error(f"어텐션 맵의 패치 수({num_patches})가 그리드 크기({grid_h}x{grid_w})와 일치하지 않아 시각화할 수 없습니다.")
             return
 
         # 4. 원본 이미지 저장 (_original.png)
@@ -473,12 +623,15 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
                 # 올바른 위치: [해당 쿼리 행, 원본 이미지 열 다음부터]
                 ax = axes[query_patch, head + 1]
                 
-                # 1D 어텐션 맵 -> 2D 그리드로 변환
-                attn_map_2d = attention_maps[head, query_patch].view(1, 1, grid_size, grid_size)
-                
-                # 원본 이미지 크기로 업샘플링
-                upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
-                upscaled_map = upscaled_map.squeeze().numpy()
+                if tokenizer_type == 'ring_sector':
+                    # Ring-Sector 매핑을 통해 이미지 좌표계로 변환
+                    upscaled_map = _map_ring_sector_to_image(attention_maps[head, query_patch], img_size, grid_h, grid_w)
+                else:
+                    # 1D 어텐션 맵 -> 2D 그리드로 변환 (직사각형 그리드 지원)
+                    attn_map_2d = attention_maps[head, query_patch].view(1, 1, grid_h, grid_w)
+                    # 원본 이미지 크기로 업샘플링
+                    upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+                    upscaled_map = upscaled_map.squeeze().numpy()
 
                 # 원본 이미지와 히트맵 그리기
                 ax.imshow(image, extent=(0, img_size, 0, img_size))
@@ -496,10 +649,13 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
             # attention_maps: [num_heads, num_queries, num_patches]
             avg_attn_map = attention_maps[:, query_patch, :].mean(dim=0) # [num_patches]
             
-            # 1D -> 2D 그리드로 변환 및 업샘플링
-            attn_map_2d = avg_attn_map.view(1, 1, grid_size, grid_size)
-            upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
-            upscaled_map = upscaled_map.squeeze().numpy()
+            if tokenizer_type == 'ring_sector':
+                upscaled_map = _map_ring_sector_to_image(avg_attn_map, img_size, grid_h, grid_w)
+            else:
+                # 1D -> 2D 그리드로 변환 및 업샘플링
+                attn_map_2d = avg_attn_map.view(1, 1, grid_h, grid_w)
+                upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+                upscaled_map = upscaled_map.squeeze().numpy()
             
             ax_avg.imshow(image, extent=(0, img_size, 0, img_size))
             ax_avg.imshow(upscaled_map, cmap='jet', alpha=0.3, extent=(0, img_size, 0, img_size))
@@ -520,10 +676,13 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
             # 해당 헤드의 모든 쿼리에 대한 어텐션 맵을 평균냅니다.
             head_attn_map = attention_maps[head].mean(dim=0) # [num_patches]
             
-            # 1D -> 2D 그리드로 변환 및 업샘플링
-            attn_map_2d = head_attn_map.view(1, 1, grid_size, grid_size)
-            upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
-            upscaled_map = upscaled_map.squeeze().numpy()
+            if tokenizer_type == 'ring_sector':
+                upscaled_map = _map_ring_sector_to_image(head_attn_map, img_size, grid_h, grid_w)
+            else:
+                # 1D -> 2D 그리드로 변환 및 업샘플링
+                attn_map_2d = head_attn_map.view(1, 1, grid_h, grid_w)
+                upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+                upscaled_map = upscaled_map.squeeze().numpy()
 
             # 시각화
             plt.figure(figsize=(8, 8))
@@ -541,10 +700,13 @@ def plot_and_save_attention_maps(attention_maps, image_tensor, save_dir, img_siz
         # 모든 헤드와 모든 쿼리에 대해 평균을 냅니다.
         layer_avg_map = attention_maps.mean(dim=(0, 1)) # [num_patches]
 
-        # 1D -> 2D 그리드로 변환 및 업샘플링
-        attn_map_2d = layer_avg_map.view(1, 1, grid_size, grid_size)
-        upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
-        upscaled_map = upscaled_map.squeeze().numpy()
+        if tokenizer_type == 'ring_sector':
+            upscaled_map = _map_ring_sector_to_image(layer_avg_map, img_size, grid_h, grid_w)
+        else:
+            # 1D -> 2D 그리드로 변환 및 업샘플링
+            attn_map_2d = layer_avg_map.view(1, 1, grid_h, grid_w)
+            upscaled_map = F.interpolate(attn_map_2d, size=(img_size, img_size), mode='bilinear', align_corners=False)
+            upscaled_map = upscaled_map.squeeze().numpy()
 
         plt.figure(figsize=(8, 8))
         plt.imshow(image, extent=(0, img_size, 0, img_size))

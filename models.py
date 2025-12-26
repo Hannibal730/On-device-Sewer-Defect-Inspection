@@ -166,12 +166,122 @@ class CnnFeatureExtractor(nn.Module):
         return x
 
 
+
+
+class CylindricalTokenCNN(nn.Module):
+    """
+    ring×sector 토큰([B, K*M, D])을 원통 구조에 맞게 국소적으로 혼합하는 토큰-레벨 CNN.
+
+    - θ(섹터) 축: circular padding + depthwise Conv1d
+    - r(링) 축: replicate padding + depthwise Conv1d
+
+    입력 tokens: [B, N, D] where N = K*M
+    반환 tokens: [B, N, D]
+    """
+    def __init__(
+        self,
+        emb_dim: int,
+        num_rings: int,
+        num_sectors: int,
+        theta_kernel_size: int = 3,
+        r_kernel_size: int = 3,
+        dropout: float = 0.0,
+        residual: bool = True,
+    ):
+        super().__init__()
+        if theta_kernel_size % 2 == 0 or r_kernel_size % 2 == 0:
+            raise ValueError("theta_kernel_size and r_kernel_size should be odd for symmetric padding.")
+        self.emb_dim = int(emb_dim)
+        self.num_rings = int(num_rings)
+        self.num_sectors = int(num_sectors)
+        self.theta_kernel_size = int(theta_kernel_size)
+        self.r_kernel_size = int(r_kernel_size)
+        self.residual = bool(residual)
+
+        # Depthwise 1D conv along theta (sector) and r (ring)
+        self.theta_conv = nn.Conv1d(
+            in_channels=self.emb_dim,
+            out_channels=self.emb_dim,
+            kernel_size=self.theta_kernel_size,
+            groups=self.emb_dim,
+            bias=False,
+        )
+        self.r_conv = nn.Conv1d(
+            in_channels=self.emb_dim,
+            out_channels=self.emb_dim,
+            kernel_size=self.r_kernel_size,
+            groups=self.emb_dim,
+            bias=False,
+        )
+
+        self.dropout = nn.Dropout(float(dropout))
+        self.norm = nn.LayerNorm(self.emb_dim)
+
+    def forward(self, tokens: Tensor) -> Tensor:
+        # tokens: [B, K*M, D]
+        B, N, D = tokens.shape
+        if D != self.emb_dim:
+            raise ValueError(f"CylindricalTokenCNN: emb_dim mismatch: got {D}, expected {self.emb_dim}")
+        if N != self.num_rings * self.num_sectors:
+            raise ValueError(
+                f"CylindricalTokenCNN: token length mismatch: got {N}, expected {self.num_rings*self.num_sectors} (K*M)"
+            )
+
+        x0 = tokens
+        x = tokens.view(B, self.num_rings, self.num_sectors, D)  # [B, K, M, D]
+
+        # ---- θ mixing (circular) ----
+        # reshape to [B*K, D, M]
+        xt = x.permute(0, 1, 3, 2).contiguous().view(B * self.num_rings, D, self.num_sectors)
+        pad_t = self.theta_kernel_size // 2
+        xt = F.pad(xt, (pad_t, pad_t), mode='circular')
+        xt = self.theta_conv(xt)  # [B*K, D, M]
+        xt = xt.view(B, self.num_rings, D, self.num_sectors).permute(0, 1, 3, 2).contiguous()  # [B,K,M,D]
+
+        # ---- r mixing (replicate) ----
+        # reshape to [B*M, D, K]
+        xr = xt.permute(0, 2, 3, 1).contiguous().view(B * self.num_sectors, D, self.num_rings)
+        pad_r = self.r_kernel_size // 2
+        xr = F.pad(xr, (pad_r, pad_r), mode='replicate')
+        xr = self.r_conv(xr)  # [B*M, D, K]
+        xr = xr.view(B, self.num_sectors, D, self.num_rings).permute(0, 3, 1, 2).contiguous()  # [B,K,M,D]
+
+        out = xr.view(B, N, D)
+        out = self.dropout(out)
+        if self.residual:
+            out = out + x0
+        out = self.norm(out)
+        return out
+
+
 class GlobalConvEncoder(nn.Module):
     """
     전체 이미지에 대해 CNN을 '1번만' 수행하고,
-    feature map을 [B, Hf*Wf, D] 토큰 시퀀스로 변환하는 인코더.
+    (A) feature map을 flatten하여 [B, Hf*Wf, D] 토큰 시퀀스로 만들거나,
+    (B) ring×sector pooling으로 [B, (K*M), D] 토큰 시퀀스로 만드는 인코더.
+
+    tokenizer_type:
+      - "flatten": 기존 방식 (Hf×Wf grid tokens)
+      - "ring_sector": 원통형 도메인에 맞춘 ring×sector binning + masked pooling tokens
     """
-    def __init__(self, featured_patch_dim, cnn_feature_extractor_name, pre_trained=True, use_mixer=True):
+    def __init__(
+        self,
+        featured_patch_dim: int,
+        cnn_feature_extractor_name: str,
+        pre_trained: bool = True,
+        use_mixer: bool = True,
+        cylindrical_token_cnn: bool = False,
+        cylindrical_theta_kernel_size: int = 3,
+        cylindrical_r_kernel_size: int = 3,
+        cylindrical_dropout: float = 0.0,
+        cylindrical_residual: bool = True,
+        tokenizer_type: str = "flatten",
+        # ring×sector tokenizer params
+        num_rings: int = 4,
+        num_sectors: int = 12,
+        mask_outside_circle: bool = False,
+        use_empty_token: bool = False,
+    ):
         super().__init__()
         self.featured_patch_dim = featured_patch_dim
 
@@ -195,21 +305,158 @@ class GlobalConvEncoder(nn.Module):
 
         self.norm = nn.LayerNorm(featured_patch_dim)
 
+        # tokenization mode
+        self.tokenizer_type = str(tokenizer_type).lower()
+        if self.tokenizer_type not in ["flatten", "ring_sector"]:
+            raise ValueError(f"Unknown tokenizer_type: {tokenizer_type}. Use 'flatten' or 'ring_sector'.")
+
+        # ring×sector params
+        self.num_rings = int(num_rings)
+        self.num_sectors = int(num_sectors)
+        if self.num_rings <= 0 or self.num_sectors <= 0:
+            raise ValueError("num_rings and num_sectors must be positive integers.")
+        self.mask_outside_circle = bool(mask_outside_circle)
+
+        # Optional: learnable embedding for empty bins (only relevant when mask_outside_circle=True)
+        self.use_empty_token = bool(use_empty_token)
+        if self.use_empty_token:
+            self.empty_token = nn.Parameter(torch.zeros(1, 1, featured_patch_dim))
+            nn.init.trunc_normal_(self.empty_token, std=0.02)
+        else:
+            self.empty_token = None
+
         # forward에서 채워짐
         self.grid_size_h = None
         self.grid_size_w = None
         self.num_encoder_patches = None
 
-    def forward(self, x):
+        # ring/sector bin index cache (for speed)
+        self._rs_cache_key = None
+        self._rs_bin_idx = None          # [N] long
+        self._rs_valid_w = None          # [N] float weights (0/1)
+
+        # Optional: cylindrical token-level CNN (only meaningful for ring×sector tokenizer)
+        self.use_cylindrical_token_cnn = bool(cylindrical_token_cnn)
+        if self.use_cylindrical_token_cnn and self.tokenizer_type != "ring_sector":
+            raise ValueError("cylindrical_token_cnn is only supported when tokenizer_type == 'ring_sector'.")
+        if self.use_cylindrical_token_cnn:
+            self.token_cnn = CylindricalTokenCNN(
+                emb_dim=featured_patch_dim,
+                num_rings=self.num_rings,
+                num_sectors=self.num_sectors,
+                theta_kernel_size=int(cylindrical_theta_kernel_size),
+                r_kernel_size=int(cylindrical_r_kernel_size),
+                dropout=float(cylindrical_dropout),
+                residual=bool(cylindrical_residual),
+            )
+        else:
+            self.token_cnn = None
+
+    def _build_ring_sector_index(self, Hf: int, Wf: int, device):
+        """
+        feature map grid(Hf×Wf)에서 각 위치를 (ring_idx, sector_idx) bin으로 매핑하는 인덱스를 생성합니다.
+        반환:
+          bin_idx: [N] long, N=Hf*Wf, values in [0, K*M-1]
+          valid_w: [N] float, mask_outside_circle=True일 때 원 내부(1), 외부(0)
+        """
+        key = (int(Hf), int(Wf), int(self.num_rings), int(self.num_sectors), bool(self.mask_outside_circle), device)
+        if self._rs_cache_key == key and self._rs_bin_idx is not None and self._rs_valid_w is not None:
+            return self._rs_bin_idx, self._rs_valid_w
+
+        # normalized coords in [-1, 1]
+        ys = torch.linspace(-1.0, 1.0, steps=Hf, device=device)
+        xs = torch.linspace(-1.0, 1.0, steps=Wf, device=device)
+        grid_y, grid_x = torch.meshgrid(ys, xs, indexing='ij')  # [Hf,Wf]
+
+        # raw polar
+        r_raw = torch.sqrt(grid_x * grid_x + grid_y * grid_y)   # [Hf,Wf], range [0, sqrt(2)]
+        theta = torch.atan2(grid_y, grid_x)                     # [-pi, pi]
+
+        # r normalized to [0, 1]
+        r = r_raw / (r_raw.max() + 1e-6)
+
+        # ring index in [0, K-1]
+        ring_idx = torch.clamp((r * self.num_rings).floor().long(), 0, self.num_rings - 1)
+
+        # sector index in [0, M-1], with wrap-around
+        theta_01 = (theta + math.pi) / (2.0 * math.pi)  # [0,1]
+        sector_idx = torch.clamp((theta_01 * self.num_sectors).floor().long(), 0, self.num_sectors - 1)
+
+        # flatten order must match token flatten order (H-major, W-minor)
+        ring_idx = ring_idx.reshape(-1)     # [N]
+        sector_idx = sector_idx.reshape(-1) # [N]
+        bin_idx = ring_idx * self.num_sectors + sector_idx  # [N]
+
+        if self.mask_outside_circle:
+            # inside unit circle in normalized coords (r_raw <= 1)
+            valid = (r_raw <= 1.0).reshape(-1)
+            valid_w = valid.to(dtype=torch.float32)
+        else:
+            valid_w = torch.ones(Hf * Wf, device=device, dtype=torch.float32)
+
+        self._rs_cache_key = key
+        self._rs_bin_idx = bin_idx
+        self._rs_valid_w = valid_w
+        return bin_idx, valid_w
+
+    def _ring_sector_pool(self, feat: Tensor) -> Tensor:
+        """
+        feat: [B, D, Hf, Wf]
+        returns tokens: [B, K*M, D]
+        """
+        B, D, Hf, Wf = feat.shape
+        N = Hf * Wf
+        K, M = self.num_rings, self.num_sectors
+        KM = K * M
+
+        bin_idx, valid_w = self._build_ring_sector_index(Hf, Wf, feat.device)  # [N], [N]
+        # to [B,N,1] weight
+        w = valid_w.view(1, N, 1).to(dtype=feat.dtype).expand(B, N, 1)
+
+        # [B, N, D]
+        feat_tokens = feat.flatten(2).transpose(1, 2).contiguous()
+        feat_tokens = feat_tokens * w
+
+        # scatter add into bins
+        out = torch.zeros(B, KM, D, device=feat.device, dtype=feat.dtype)
+        idx = bin_idx.view(1, N, 1).expand(B, N, D)
+        out.scatter_add_(1, idx, feat_tokens)
+
+        # counts
+        counts = torch.zeros(B, KM, 1, device=feat.device, dtype=feat.dtype)
+        idx_c = bin_idx.view(1, N, 1).expand(B, N, 1)
+        ones = torch.ones(B, N, 1, device=feat.device, dtype=feat.dtype) * w
+        counts.scatter_add_(1, idx_c, ones)
+
+        out = out / counts.clamp(min=1.0)
+
+        # optional empty token fill (only meaningful if some bins are empty)
+        if self.empty_token is not None:
+            empty_mask = (counts <= 0.0).to(dtype=feat.dtype)  # [B,KM,1]
+            out = out * (1.0 - empty_mask) + self.empty_token.to(dtype=feat.dtype, device=feat.device) * empty_mask
+
+        return out
+
+    def forward(self, x: Tensor) -> Tensor:
         feat = self.backbone(x)          # [B, D, Hf, Wf]
         feat = self.mixer(feat)          # [B, D, Hf, Wf]
         B, D, Hf, Wf = feat.shape
 
-        self.grid_size_h = Hf
-        self.grid_size_w = Wf
-        self.num_encoder_patches = Hf * Wf
+        if self.tokenizer_type == "flatten":
+            self.grid_size_h = Hf
+            self.grid_size_w = Wf
+            self.num_encoder_patches = Hf * Wf
+            tokens = feat.flatten(2).transpose(1, 2).contiguous()  # [B, Hf*Wf, D] (h-major, w-minor)
+        else:
+            # ring×sector
+            self.grid_size_h = self.num_rings
+            self.grid_size_w = self.num_sectors
+            self.num_encoder_patches = self.num_rings * self.num_sectors
+            tokens = self._ring_sector_pool(feat)  # [B, K*M, D]
 
-        tokens = feat.flatten(2).transpose(1, 2).contiguous()  # [B, Hf*Wf, D] (h-major, w-minor)
+        if self.token_cnn is not None:
+            tokens = self.token_cnn(tokens)
+
         tokens = self.norm(tokens)
         return tokens
 
@@ -411,6 +658,33 @@ class Embedding4Decoder(nn.Module):
         pos = torch.cat([emb_r, emb_t], dim=1)  # [N, D]
         return pos.unsqueeze(0)                 # [1, N, D]
 
+    
+    def get_ring_sector_sincos_pos_embed(self, embed_dim, num_rings, num_sectors, device=None):
+        """
+        Ring×Sector 토큰(annular-sector bins)을 위한 Positional Embedding.
+        - grid_h = num_rings (radial bands)
+        - grid_w = num_sectors (angular sectors)
+        각 토큰의 중심 좌표:
+          r_i     = (i+0.5)/num_rings  in [0,1]
+          theta_j = (-pi + (j+0.5)*2pi/num_sectors) / pi  in [-1,1]
+        """
+        assert embed_dim % 4 == 0, "Ring/Sector PE를 위해 embed_dim은 4의 배수여야 합니다."
+        device = device or torch.device('cpu')
+
+        rings = (torch.arange(num_rings, device=device, dtype=torch.float32) + 0.5) / float(num_rings)  # [K]
+        thetas = -math.pi + (torch.arange(num_sectors, device=device, dtype=torch.float32) + 0.5) * (2.0 * math.pi / float(num_sectors))  # [M]
+        thetas = thetas / math.pi  # [-1,1]
+
+        # [PATCH] flatten 순서(H-major, W-minor)와 맞추기 위해 ij 사용 (K,M)
+        grid_r, grid_t = torch.meshgrid(rings, thetas, indexing='ij')  # [K,M]
+        r = grid_r.reshape(-1)  # [K*M]
+        t = grid_t.reshape(-1)  # [K*M]
+
+        emb_r = self.get_1d_sincos_pos_embed_from_grid(embed_dim // 2, r)  # [K*M, D/2]
+        emb_t = self.get_1d_sincos_pos_embed_from_grid(embed_dim // 2, t)  # [K*M, D/2]
+
+        pos = torch.cat([emb_r, emb_t], dim=1)  # [K*M, D]
+        return pos.unsqueeze(0)  # [1, K*M, D]
     def forward(self, x, grid_h=None, grid_w=None) -> Tensor:
         # x: [B, num_encoder_patches, featured_patch_dim]
         bs = x.shape[0]
@@ -437,6 +711,8 @@ class Embedding4Decoder(nn.Module):
             if (self.pos_embed is None) or (self._pe_cache_key != key) or (self.pos_embed.shape[1] != x.shape[1]):
                 if self.pos_encoding_type == "polar":
                     pe = self.get_polar_sincos_pos_embed(self.emb_dim, grid_h, grid_w, device=x.device)
+                elif self.pos_encoding_type in ["ring_sector", "ringsector", "ring-sector"]:
+                    pe = self.get_ring_sector_sincos_pos_embed(self.emb_dim, grid_h, grid_w, device=x.device)
                 else:
                     pe = self.get_2d_sincos_pos_embed(self.emb_dim, grid_h, grid_w, device=x.device)
 

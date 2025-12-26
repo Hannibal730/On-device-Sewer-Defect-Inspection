@@ -706,9 +706,14 @@ def inference(run_cfg, model_cfg, model, data_loader, device, run_dir_path, time
                     
                     actual_class = "Unknown" if only_inference_mode else class_names[sample_labels[i].item()]
 
+                    grid_h = getattr(model.encoder, 'grid_size_h', None)
+                    grid_w = getattr(model.encoder, 'grid_size_w', None)
+                    tokenizer_type = getattr(model.encoder, 'tokenizer_type', 'flatten')
+
                     plot_and_save_attention_maps(
                         batch_attention_maps, sample_images, attn_save_dir, model_cfg.img_size, model_cfg,
-                        sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class
+                        sample_idx=i, original_filename=original_filename, actual_class=actual_class, predicted_class=predicted_class,
+                        grid_h=grid_h, grid_w=grid_w, tokenizer_type=tokenizer_type
                     )
                     saved_count += 1
             
@@ -851,12 +856,41 @@ def main():
 
     elif encoder_type in ['full_image']:
         # GlobalConvEncoder (권장)
+        tokenizer_type = str(getattr(model_cfg, 'full_image_tokenizer', 'flatten')).lower()
+
+        rs_cfg = getattr(model_cfg, 'ring_sector', {}) if hasattr(model_cfg, 'ring_sector') else {}
+        if rs_cfg is None:
+            rs_cfg = {}
+        # ring/sector params (only used when tokenizer_type == 'ring_sector')
+        num_rings = int(rs_cfg.get('num_rings', 4)) if isinstance(rs_cfg, dict) else int(getattr(rs_cfg, 'num_rings', 4))
+        num_sectors = int(rs_cfg.get('num_sectors', 12)) if isinstance(rs_cfg, dict) else int(getattr(rs_cfg, 'num_sectors', 12))
+        mask_outside_circle = bool(rs_cfg.get('mask_outside_circle', False)) if isinstance(rs_cfg, dict) else bool(getattr(rs_cfg, 'mask_outside_circle', False))
+
+
+        # cylindrical token-level CNN (ring×sector tokens only)
+        ctc_cfg = getattr(model_cfg, 'cylindrical_token_cnn', {}) if hasattr(model_cfg, 'cylindrical_token_cnn') else {}
+        if ctc_cfg is None:
+            ctc_cfg = {}
+        use_cyl_token_cnn = bool(ctc_cfg.get('enabled', False)) if isinstance(ctc_cfg, dict) else bool(getattr(ctc_cfg, 'enabled', False))
+        ctc_theta_kernel = int(ctc_cfg.get('theta_kernel_size', 3)) if isinstance(ctc_cfg, dict) else int(getattr(ctc_cfg, 'theta_kernel_size', 3))
+        ctc_r_kernel = int(ctc_cfg.get('r_kernel_size', 3)) if isinstance(ctc_cfg, dict) else int(getattr(ctc_cfg, 'r_kernel_size', 3))
+        ctc_dropout = float(ctc_cfg.get('dropout', 0.0)) if isinstance(ctc_cfg, dict) else float(getattr(ctc_cfg, 'dropout', 0.0))
+        ctc_residual = bool(ctc_cfg.get('residual', True)) if isinstance(ctc_cfg, dict) else bool(getattr(ctc_cfg, 'residual', True))
         encoder = GlobalConvEncoder(
             featured_patch_dim=model_cfg.featured_patch_dim,
             cnn_feature_extractor_name=model_cfg.cnn_feature_extractor['name'],
             pre_trained=train_cfg.pre_trained,
-            use_mixer=True
-        )
+            use_mixer=True,
+            tokenizer_type=tokenizer_type,
+            num_rings=num_rings,
+            num_sectors=num_sectors,
+            mask_outside_circle=mask_outside_circle,
+            cylindrical_token_cnn=use_cyl_token_cnn,
+            cylindrical_theta_kernel_size=ctc_theta_kernel,
+            cylindrical_r_kernel_size=ctc_r_kernel,
+            cylindrical_dropout=ctc_dropout,
+            cylindrical_residual=ctc_residual
+)
 
         # 더미 입력으로 num_encoder_patches 동적 계산
         # [중요] BN running stats 오염 방지를 위해 eval 모드에서 1회 추론 후 원복
@@ -869,7 +903,7 @@ def main():
 
         num_encoder_patches = dummy_out.shape[1]
         logging.info(
-            f"GlobalConvEncoder 사용: 입력 {model_cfg.img_size}x{model_cfg.img_size} -> "
+            f"GlobalConvEncoder 사용 (tokenizer={tokenizer_type}): 입력 {model_cfg.img_size}x{model_cfg.img_size} -> "
             f"토큰 수 {num_encoder_patches} (H={encoder.grid_size_h}, W={encoder.grid_size_w})"
         )
 
